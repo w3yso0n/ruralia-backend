@@ -1,0 +1,6 @@
+export enum EstadoProyecto {
+  BORRADOR = 'BORRADOR',
+  ACTIVO = 'ACTIVO',
+  COMPLETADO = 'COMPLETADO',
+  SUSPENDIDO = 'SUSPENDIDO',
+}

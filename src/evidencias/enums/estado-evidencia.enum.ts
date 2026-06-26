@@ -1,0 +1,5 @@
+export enum EstadoEvidencia {
+  PENDIENTE_ARCHIVO = 'PENDIENTE_ARCHIVO',
+  EN_COLA = 'EN_COLA',
+  SINCRONIZADA = 'SINCRONIZADA',
+}

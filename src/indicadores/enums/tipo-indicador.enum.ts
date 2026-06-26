@@ -1,0 +1,4 @@
+export enum TipoIndicador {
+  CUANTITATIVO = 'CUANTITATIVO',
+  CUALITATIVO = 'CUALITATIVO',
+}
