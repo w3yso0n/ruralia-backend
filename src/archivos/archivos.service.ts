@@ -13,11 +13,7 @@ import { ColaEvidenciasService } from '../cola/cola-evidencias.service';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EstadoEvidencia } from '../evidencias/enums/estado-evidencia.enum';
 import { Jornada } from '../jornadas/entities/jornada.entity';
-
-export interface RespuestaSubidaArchivoDto {
-  archivoId: string;
-  estado: 'en_cola';
-}
+import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto';
 
 @Injectable()
 export class ArchivosService {
@@ -34,7 +30,7 @@ export class ArchivosService {
     archivo: Express.Multer.File,
     evidenciaId: string,
     jornadaId: string,
-  ): Promise<RespuestaSubidaArchivoDto> {
+  ): Promise<RespuestaSubirEvidenciaDto> {
     const evidencia = await this.evidenciaRepository.findOne({
       where: { id: evidenciaId },
       relations: { jornada: true },

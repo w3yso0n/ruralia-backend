@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { ArchivosService } from './archivos.service';
+import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto';
 import { SubirEvidenciaDto } from './dto/subir-evidencia.dto';
 
 const TIPOS_PERMITIDOS = [
@@ -63,7 +64,11 @@ export class ArchivosController {
     }),
   )
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Subir archivo de evidencia' })
+  @ApiOperation({
+    summary: 'Subir archivo de evidencia',
+    description:
+      'Recibe un archivo multimedia (imagen, PDF o video) y lo encola para procesamiento asíncrono. Actualiza el estado de la evidencia en la tabla `evidencias`.',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -75,7 +80,7 @@ export class ArchivosController {
       },
     },
   })
-  @ApiResponse({ status: 201, description: 'Archivo encolado para procesamiento' })
+  @ApiResponse({ status: 201, type: RespuestaSubirEvidenciaDto })
   @ApiResponse({ status: 400, description: 'Archivo inválido o faltante' })
   @ApiResponse({ status: 404, description: 'Evidencia no encontrada' })
   subirEvidencia(
