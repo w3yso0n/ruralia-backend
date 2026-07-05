@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { EnvioFormulario } from './entities/envio-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
 import { RespuestaFormulario } from './entities/respuesta-formulario.entity';
@@ -24,16 +24,28 @@ export class EnvioProcesamientoService {
   async procesarEnvio(datos: ProcesarEnvioJob): Promise<void> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id: datos.jornadaId },
-      relations: { subactividad: true },
+      relations: { jornadaActividades: { subactividad: true } },
     });
 
-    if (!jornada?.subactividad) {
+    if (!jornada?.jornadaActividades?.length) {
+      return;
+    }
+
+    const subactividadIds = [
+      ...new Set(
+        jornada.jornadaActividades
+          .map((ja) => ja.subactividad?.id)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
+    if (!subactividadIds.length) {
       return;
     }
 
     const plantillasActivas = await this.plantillaRepository.find({
       where: {
-        subactividad: { id: jornada.subactividad.id },
+        subactividad: { id: In(subactividadIds) },
         estaActivo: true,
       },
       relations: { campos: true },

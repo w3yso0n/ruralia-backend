@@ -2,11 +2,11 @@ import {
   Column,
   Entity,
   JoinColumn,
-  ManyToMany,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Proyecto } from '../../proyectos/entities/proyecto.entity';
+import { ProyectoAsociacion } from '../../proyectos/entities/proyecto-asociacion.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 
 @Entity('asociaciones')
@@ -32,8 +32,8 @@ export class Asociacion {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
-  @ManyToMany(() => Proyecto, (proyecto) => proyecto.asociaciones)
-  proyectos: Proyecto[];
+  @OneToMany(() => ProyectoAsociacion, (pa) => pa.asociacion)
+  proyectoAsociaciones: ProyectoAsociacion[];
 
   @ManyToOne(() => Vereda, { nullable: false })
   @JoinColumn({ name: 'vereda_id' })

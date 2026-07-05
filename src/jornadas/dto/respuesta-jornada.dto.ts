@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
+import { EstadoEjecucionJornada } from '../enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 
 export class RespuestaResumenDto {
@@ -10,6 +11,40 @@ export class RespuestaResumenDto {
   @ApiProperty({ description: 'Nombre del recurso' })
   @Expose()
   nombre: string;
+}
+
+export class RespuestaJornadaActividadDto {
+  @ApiProperty({ description: 'ID de la fila jornada-actividad' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ type: RespuestaResumenDto, description: 'Actividad del plan' })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  actividad: RespuestaResumenDto;
+
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Subactividad del plan',
+  })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  subactividad?: RespuestaResumenDto;
+
+  @ApiProperty({
+    enum: EstadoEjecucionJornada,
+    description: 'Estado de ejecución de esta actividad en la jornada',
+  })
+  @Expose()
+  estadoEjecucion: EstadoEjecucionJornada;
+
+  @ApiPropertyOptional({ description: 'Nota de completado' })
+  @Expose()
+  nota?: string;
+
+  @ApiProperty({ description: 'Orden en la jornada' })
+  @Expose()
+  orden: number;
 }
 
 export class RespuestaJornadaDto {
@@ -54,15 +89,13 @@ export class RespuestaJornadaDto {
   @Type(() => RespuestaResumenDto)
   proyecto?: RespuestaResumenDto;
 
-  @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Actividad asociada' })
+  @ApiPropertyOptional({
+    type: [RespuestaJornadaActividadDto],
+    description: 'Actividades incluidas en la jornada',
+  })
   @Expose()
-  @Type(() => RespuestaResumenDto)
-  actividad?: RespuestaResumenDto;
-
-  @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Subactividad asociada' })
-  @Expose()
-  @Type(() => RespuestaResumenDto)
-  subactividad?: RespuestaResumenDto;
+  @Type(() => RespuestaJornadaActividadDto)
+  actividades?: RespuestaJornadaActividadDto[];
 
   @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Vereda asociada' })
   @Expose()

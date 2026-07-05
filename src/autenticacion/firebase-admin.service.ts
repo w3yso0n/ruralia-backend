@@ -1,7 +1,11 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { DecodedIdToken, getAuth } from 'firebase-admin/auth';
+import {
+  DecodedIdToken,
+  getAuth,
+  UserRecord,
+} from 'firebase-admin/auth';
 
 @Injectable()
 export class FirebaseAdminService implements OnModuleInit {
@@ -37,5 +41,39 @@ export class FirebaseAdminService implements OnModuleInit {
 
   async verificarToken(token: string): Promise<DecodedIdToken> {
     return getAuth(this.app).verifyIdToken(token);
+  }
+
+  async crearUsuario(
+    correo: string,
+    contrasena: string,
+    nombreCompleto: string,
+  ): Promise<UserRecord> {
+    return getAuth(this.app).createUser({
+      email: correo,
+      password: contrasena,
+      displayName: nombreCompleto,
+      emailVerified: true,
+    });
+  }
+
+  async actualizarUsuario(
+    uid: string,
+    datos: {
+      correo?: string;
+      contrasena?: string;
+      nombreCompleto?: string;
+      deshabilitado?: boolean;
+    },
+  ): Promise<UserRecord> {
+    return getAuth(this.app).updateUser(uid, {
+      email: datos.correo,
+      password: datos.contrasena,
+      displayName: datos.nombreCompleto,
+      disabled: datos.deshabilitado,
+    });
+  }
+
+  async eliminarUsuario(uid: string): Promise<void> {
+    await getAuth(this.app).deleteUser(uid);
   }
 }

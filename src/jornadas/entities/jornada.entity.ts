@@ -6,16 +6,16 @@ import {
   JoinTable,
   ManyToMany,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { Actividad } from '../../actividades/entities/actividad.entity';
-import { Subactividad } from '../../actividades/entities/subactividad.entity';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+import { JornadaActividad } from './jornada-actividad.entity';
 
 @Entity('jornadas')
 @Unique('UQ_jornada_dispositivo_id_local', ['dispositivoId', 'idLocal'])
@@ -61,13 +61,8 @@ export class Jornada {
   @JoinColumn({ name: 'proyecto_id' })
   proyecto: Proyecto;
 
-  @ManyToOne(() => Actividad, { nullable: false })
-  @JoinColumn({ name: 'actividad_id' })
-  actividad: Actividad;
-
-  @ManyToOne(() => Subactividad, { nullable: true })
-  @JoinColumn({ name: 'subactividad_id' })
-  subactividad: Subactividad;
+  @OneToMany(() => JornadaActividad, (ja) => ja.jornada, { cascade: true })
+  jornadaActividades: JornadaActividad[];
 
   @ManyToOne(() => Vereda, { nullable: false })
   @JoinColumn({ name: 'vereda_id' })

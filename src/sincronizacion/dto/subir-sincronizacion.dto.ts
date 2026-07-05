@@ -92,6 +92,17 @@ export class EnvioFormularioOfflineDto {
   respuestas: RespuestaFormularioOfflineDto[];
 }
 
+export class ActividadJornadaOfflineDto {
+  @ApiProperty({ description: 'ID de la actividad' })
+  @IsUUID('4')
+  actividadId: string;
+
+  @ApiPropertyOptional({ description: 'ID de la subactividad' })
+  @IsUUID('4')
+  @IsOptional()
+  subactividadId?: string;
+}
+
 export class JornadaOfflineDto {
   @ApiProperty({ description: 'ID local de la jornada en el dispositivo' })
   @IsString()
@@ -125,14 +136,14 @@ export class JornadaOfflineDto {
   @IsUUID('4')
   proyectoId: string;
 
-  @ApiProperty({ description: 'ID de la actividad' })
-  @IsUUID('4')
-  actividadId: string;
-
-  @ApiPropertyOptional({ description: 'ID de la subactividad' })
-  @IsUUID('4')
-  @IsOptional()
-  subactividadId?: string;
+  @ApiProperty({
+    type: [ActividadJornadaOfflineDto],
+    description: 'Actividades del plan incluidas en la jornada',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ActividadJornadaOfflineDto)
+  actividades: ActividadJornadaOfflineDto[];
 
   @ApiProperty({ description: 'ID de la vereda' })
   @IsUUID('4')

@@ -12,13 +12,13 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Actividad } from '../../actividades/entities/actividad.entity';
-import { Asociacion } from '../../asociaciones/entities/asociacion.entity';
-import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Indicador } from '../../indicadores/entities/indicador.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoProyecto } from '../enums/estado-proyecto.enum';
 import { TipoProyecto } from '../enums/tipo-proyecto.enum';
+import { ProyectoAsociacion } from './proyecto-asociacion.entity';
+import { ProyectoBeneficiario } from './proyecto-beneficiario.entity';
 
 @Entity('proyectos')
 @Unique('UQ_proyecto_nombre_tipo', ['nombre', 'tipo'])
@@ -61,21 +61,11 @@ export class Proyecto {
   @OneToMany(() => Actividad, (actividad) => actividad.proyecto)
   actividades: Actividad[];
 
-  @ManyToMany(() => Beneficiario, (beneficiario) => beneficiario.proyectos)
-  @JoinTable({
-    name: 'proyecto_beneficiarios',
-    joinColumn: { name: 'proyecto_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'beneficiario_id', referencedColumnName: 'id' },
-  })
-  beneficiarios: Beneficiario[];
+  @OneToMany(() => ProyectoBeneficiario, (pb) => pb.proyecto, { cascade: true })
+  proyectoBeneficiarios: ProyectoBeneficiario[];
 
-  @ManyToMany(() => Asociacion, (asociacion) => asociacion.proyectos)
-  @JoinTable({
-    name: 'proyecto_asociaciones',
-    joinColumn: { name: 'proyecto_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'asociacion_id', referencedColumnName: 'id' },
-  })
-  asociaciones: Asociacion[];
+  @OneToMany(() => ProyectoAsociacion, (pa) => pa.proyecto, { cascade: true })
+  proyectoAsociaciones: ProyectoAsociacion[];
 
   @ManyToMany(() => Indicador, (indicador) => indicador.proyectos)
   indicadores: Indicador[];

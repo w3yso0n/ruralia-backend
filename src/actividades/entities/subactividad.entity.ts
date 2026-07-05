@@ -5,6 +5,8 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Usuario } from '../../usuarios/entities/usuario.entity';
+import { EstadoAvanceActividad } from '../enums/estado-avance-actividad.enum';
 import { Actividad } from './actividad.entity';
 
 @Entity('subactividades')
@@ -26,6 +28,24 @@ export class Subactividad {
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
+
+  @Column({
+    name: 'estado_avance',
+    type: 'enum',
+    enum: EstadoAvanceActividad,
+    default: EstadoAvanceActividad.PENDIENTE,
+  })
+  estadoAvance: EstadoAvanceActividad;
+
+  @Column({ name: 'nota_completado', type: 'text', nullable: true })
+  notaCompletado?: string;
+
+  @Column({ name: 'completada_en', type: 'timestamptz', nullable: true })
+  completadaEn?: Date;
+
+  @ManyToOne(() => Usuario, { nullable: true })
+  @JoinColumn({ name: 'completada_por_id' })
+  completadaPor?: Usuario;
 
   @ManyToOne(() => Actividad, (actividad) => actividad.subactividades, {
     nullable: false,

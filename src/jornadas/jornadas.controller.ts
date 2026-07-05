@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -113,5 +116,15 @@ export class JornadasController {
     @Body() dto: AgregarMiembroEquipoDto,
   ): Promise<RespuestaJornadaDto> {
     return this.jornadasService.agregarMiembroEquipo(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancelar una jornada' })
+  @ApiResponse({ status: 200, type: RespuestaJornadaDto })
+  cancelar(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaJornadaDto> {
+    return this.jornadasService.cancelar(id);
   }
 }

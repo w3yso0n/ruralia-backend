@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -7,8 +10,20 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+
+export class ActividadJornadaDto {
+  @ApiProperty({ description: 'ID de la actividad del plan' })
+  @IsUUID('4')
+  actividadId: string;
+
+  @ApiPropertyOptional({ description: 'ID de la subactividad' })
+  @IsUUID('4')
+  @IsOptional()
+  subactividadId?: string;
+}
 
 export class CrearJornadaDto {
   @ApiProperty({ description: 'Fecha de la jornada (ISO 8601)' })
@@ -34,14 +49,15 @@ export class CrearJornadaDto {
   @IsUUID('4')
   proyectoId: string;
 
-  @ApiProperty({ description: 'ID de la actividad' })
-  @IsUUID('4')
-  actividadId: string;
-
-  @ApiPropertyOptional({ description: 'ID de la subactividad' })
-  @IsUUID('4')
-  @IsOptional()
-  subactividadId?: string;
+  @ApiProperty({
+    type: [ActividadJornadaDto],
+    description: 'Actividades del plan incluidas en la jornada',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ActividadJornadaDto)
+  actividades: ActividadJornadaDto[];
 
   @ApiProperty({ description: 'ID de la vereda' })
   @IsUUID('4')
@@ -74,10 +90,16 @@ export class ActualizarJornadaDto {
   @IsOptional()
   longitud?: number;
 
-  @ApiPropertyOptional({ description: 'ID de la subactividad' })
-  @IsUUID('4')
+  @ApiPropertyOptional({
+    type: [ActividadJornadaDto],
+    description: 'Reemplaza las actividades de la jornada',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ActividadJornadaDto)
   @IsOptional()
-  subactividadId?: string;
+  actividades?: ActividadJornadaDto[];
 
   @ApiPropertyOptional({ description: 'ID de la vereda' })
   @IsUUID('4')

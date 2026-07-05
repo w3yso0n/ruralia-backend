@@ -8,6 +8,8 @@ import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity
 import { PlantillaFormulario } from '../formularios/entities/plantilla-formulario.entity';
 import { RespuestaFormulario } from '../formularios/entities/respuesta-formulario.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { JornadaActividad } from '../jornadas/entities/jornada-actividad.entity';
+import { EstadoEjecucionJornada } from '../jornadas/enums/estado-ejecucion-jornada.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   EnvioFormularioOfflineDto,
@@ -154,6 +156,17 @@ export class SincronizacionService {
     }
 
     try {
+      const jornadaActividades = dto.actividades.map((item, index) =>
+        manager.create(JornadaActividad, {
+          actividad: { id: item.actividadId },
+          subactividad: item.subactividadId
+            ? { id: item.subactividadId }
+            : undefined,
+          estadoEjecucion: EstadoEjecucionJornada.PENDIENTE,
+          orden: index,
+        }),
+      );
+
       const jornada = manager.create(Jornada, {
         fecha: new Date(dto.fecha),
         estado: dto.estado,
@@ -161,10 +174,9 @@ export class SincronizacionService {
         latitud: dto.latitud,
         longitud: dto.longitud,
         proyecto: { id: dto.proyectoId },
-        actividad: { id: dto.actividadId },
-        subactividad: dto.subactividadId ? { id: dto.subactividadId } : undefined,
         vereda: { id: dto.veredaId },
         tecnicoResponsable: { id: dto.tecnicoResponsableId },
+        jornadaActividades,
         esOffline: true,
         sincronizadoEn,
         idLocal: dto.idLocal,

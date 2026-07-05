@@ -22,6 +22,10 @@ import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import { AsignarPersonalDto } from './dto/asignar-personal.dto';
 import { AsignarTerritoriosDto } from './dto/asignar-territorios.dto';
+import {
+  AsignarAsociacionesProyectoDto,
+  AsignarBeneficiariosProyectoDto,
+} from './dto/asignar-vinculos.dto';
 import { CrearProyectoDto } from './dto/crear-proyecto.dto';
 import { FiltrosProyectoDto } from './dto/filtros-proyecto.dto';
 import {
@@ -97,6 +101,17 @@ export class ProyectosController {
     return this.proyectosService.suspender(id);
   }
 
+  @Post(':id/activar')
+  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @ApiOperation({ summary: 'Activar un proyecto en borrador' })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  activar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.activar(id, usuario);
+  }
+
   @Post(':id/territorios')
   @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
   @ApiOperation({ summary: 'Asignar veredas al proyecto' })
@@ -119,5 +134,29 @@ export class ProyectosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaProyectoDto> {
     return this.proyectosService.asignarPersonal(id, dto, usuario);
+  }
+
+  @Post(':id/beneficiarios')
+  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @ApiOperation({ summary: 'Asignar beneficiarios al proyecto' })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  asignarBeneficiarios(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarBeneficiariosProyectoDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.asignarBeneficiarios(id, dto, usuario);
+  }
+
+  @Post(':id/asociaciones')
+  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @ApiOperation({ summary: 'Asignar asociaciones al proyecto' })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  asignarAsociaciones(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarAsociacionesProyectoDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.asignarAsociaciones(id, dto, usuario);
   }
 }

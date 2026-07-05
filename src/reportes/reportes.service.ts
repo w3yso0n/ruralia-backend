@@ -49,7 +49,7 @@ export class ReportesService {
 
     const conteoBeneficiarios = await this.proyectoRepository
       .createQueryBuilder('proyecto')
-      .innerJoin('proyecto.beneficiarios', 'beneficiario')
+      .innerJoin('proyecto.proyectoBeneficiarios', 'pb')
       .where('proyecto.id = :proyectoId', { proyectoId })
       .getCount();
 
@@ -163,18 +163,19 @@ export class ReportesService {
     const resultado: Record<string, unknown>[] = [];
 
     for (const actividad of actividades) {
-      const jornadasPlanificadas = await this.jornadaRepository.countBy({
-        proyecto: { id: proyectoId },
-        actividad: { id: actividad.id },
-        estado: EstadoJornada.PLANIFICADA,
-      });
+      const jornadasPlanificadas = await this.jornadaRepository
+        .createQueryBuilder('jornada')
+        .innerJoin('jornada.jornadaActividades', 'ja')
+        .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere('ja.actividad_id = :actividadId', { actividadId: actividad.id })
+        .andWhere('jornada.estado = :estado', { estado: EstadoJornada.PLANIFICADA })
+        .getCount();
 
       const jornadasEjecutadas = await this.jornadaRepository
         .createQueryBuilder('jornada')
+        .innerJoin('jornada.jornadaActividades', 'ja')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-        .andWhere('jornada.actividad_id = :actividadId', {
-          actividadId: actividad.id,
-        })
+        .andWhere('ja.actividad_id = :actividadId', { actividadId: actividad.id })
         .andWhere('jornada.estado IN (:...estados)', {
           estados: [EstadoJornada.COMPLETADA, EstadoJornada.EN_PROGRESO],
         })

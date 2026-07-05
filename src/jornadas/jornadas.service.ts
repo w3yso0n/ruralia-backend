@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { Actividad } from '../actividades/entities/actividad.entity';
+import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
@@ -15,6 +17,7 @@ import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
 import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
+  ActividadJornadaDto,
   ActualizarJornadaDto,
   AgregarBeneficiariosDto,
   AgregarMiembroEquipoDto,
@@ -27,7 +30,9 @@ import {
   RespuestaJornadaDto,
   RespuestaPaginadaJornadasDto,
 } from './dto/respuesta-jornada.dto';
+import { JornadaActividad } from './entities/jornada-actividad.entity';
 import { Jornada } from './entities/jornada.entity';
+import { EstadoEjecucionJornada } from './enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from './enums/estado-jornada.enum';
 import {
   aResumenJornada,
@@ -38,8 +43,8 @@ import {
 const TRANSICIONES_VALIDAS: Partial<
   Record<EstadoJornada, EstadoJornada[]>
 > = {
-  [EstadoJornada.PLANIFICADA]: [EstadoJornada.EN_PROGRESO],
-  [EstadoJornada.EN_PROGRESO]: [EstadoJornada.COMPLETADA],
+  [EstadoJornada.PLANIFICADA]: [EstadoJornada.EN_PROGRESO, EstadoJornada.CANCELADA],
+  [EstadoJornada.EN_PROGRESO]: [EstadoJornada.COMPLETADA, EstadoJornada.CANCELADA],
 };
 
 @Injectable()
@@ -47,8 +52,14 @@ export class JornadasService {
   constructor(
     @InjectRepository(Jornada)
     private readonly jornadaRepository: Repository<Jornada>,
+    @InjectRepository(JornadaActividad)
+    private readonly jornadaActividadRepository: Repository<JornadaActividad>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    @InjectRepository(Actividad)
+    private readonly actividadRepository: Repository<Actividad>,
+    @InjectRepository(Subactividad)
+    private readonly subactividadRepository: Repository<Subactividad>,
     @InjectRepository(Beneficiario)
     private readonly beneficiarioRepository: Repository<Beneficiario>,
     @InjectRepository(Usuario)
@@ -77,19 +88,22 @@ export class JornadasService {
       );
     }
 
+    const tecnicoId = dto.tecnicoResponsableId ?? usuarioActual.id;
+    const lineas = await this.validarActividadesJornada(
+      dto.proyectoId,
+      dto.actividades,
+    );
+
     const jornada = this.jornadaRepository.create({
       fecha: new Date(dto.fecha),
       observaciones: dto.observaciones,
       latitud: dto.latitud,
       longitud: dto.longitud,
       proyecto: { id: dto.proyectoId },
-      actividad: { id: dto.actividadId },
-      subactividad: dto.subactividadId ? { id: dto.subactividadId } : undefined,
       vereda: { id: dto.veredaId },
-      tecnicoResponsable: {
-        id: dto.tecnicoResponsableId ?? usuarioActual.id,
-      },
-      equipo: [{ id: dto.tecnicoResponsableId ?? usuarioActual.id }],
+      tecnicoResponsable: { id: tecnicoId },
+      equipo: [{ id: tecnicoId }],
+      jornadaActividades: lineas,
     });
 
     const guardada = await this.jornadaRepository.save(jornada);
@@ -106,9 +120,12 @@ export class JornadasService {
     const query = this.jornadaRepository
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
-      .leftJoinAndSelect('jornada.actividad', 'actividad')
+      .leftJoinAndSelect('jornada.jornadaActividades', 'ja')
+      .leftJoinAndSelect('ja.actividad', 'actividad')
+      .leftJoinAndSelect('ja.subactividad', 'subactividad')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
-      .orderBy('jornada.fecha', 'DESC');
+      .orderBy('jornada.fecha', 'DESC')
+      .addOrderBy('ja.orden', 'ASC');
 
     if (filtros.proyectoId) {
       query.andWhere('jornada.proyecto_id = :proyectoId', {
@@ -117,9 +134,10 @@ export class JornadasService {
     }
 
     if (filtros.actividadId) {
-      query.andWhere('jornada.actividad_id = :actividadId', {
-        actividadId: filtros.actividadId,
-      });
+      query.andWhere(
+        'EXISTS (SELECT 1 FROM jornada_actividades jax WHERE jax.jornada_id = jornada.id AND jax.actividad_id = :actividadId)',
+        { actividadId: filtros.actividadId },
+      );
     }
 
     if (filtros.estado) {
@@ -155,13 +173,13 @@ export class JornadasService {
       where: { id },
       relations: {
         proyecto: true,
-        actividad: true,
-        subactividad: true,
+        jornadaActividades: { actividad: true, subactividad: true },
         vereda: true,
         tecnicoResponsable: true,
         beneficiarios: true,
         equipo: true,
       },
+      order: { jornadaActividades: { orden: 'ASC' } },
     });
 
     if (!jornada) {
@@ -187,19 +205,46 @@ export class JornadasService {
     id: string,
     dto: ActualizarJornadaDto,
   ): Promise<RespuestaJornadaDto> {
-    const jornada = await this.buscarJornada(id);
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id },
+      relations: { proyecto: true },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
 
     if (dto.fecha !== undefined) jornada.fecha = new Date(dto.fecha);
     if (dto.observaciones !== undefined) jornada.observaciones = dto.observaciones;
     if (dto.latitud !== undefined) jornada.latitud = dto.latitud;
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
-    if (dto.subactividadId !== undefined) {
-      jornada.subactividad = { id: dto.subactividadId } as Jornada['subactividad'];
-    }
     if (dto.veredaId !== undefined) {
       jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
     }
 
+    if (dto.actividades !== undefined) {
+      await this.jornadaActividadRepository.delete({ jornada: { id } });
+      const lineas = await this.validarActividadesJornada(
+        jornada.proyecto.id,
+        dto.actividades,
+      );
+      jornada.jornadaActividades = lineas.map((linea) =>
+        this.jornadaActividadRepository.create({ ...linea, jornada: { id } }),
+      );
+    }
+
+    await this.jornadaRepository.save(jornada);
+    return this.obtenerUna(id);
+  }
+
+  async cancelar(id: string): Promise<RespuestaJornadaDto> {
+    const jornada = await this.buscarJornada(id);
+
+    if (jornada.estado === EstadoJornada.CANCELADA) {
+      return this.obtenerUna(id);
+    }
+
+    jornada.estado = EstadoJornada.CANCELADA;
     await this.jornadaRepository.save(jornada);
     return this.obtenerUna(id);
   }
@@ -322,6 +367,49 @@ export class JornadasService {
       conteoFirmas,
       beneficiariosAtendidos: Number(resultado?.conteo ?? 0),
     });
+  }
+
+  private async validarActividadesJornada(
+    proyectoId: string,
+    actividades: ActividadJornadaDto[],
+  ): Promise<Partial<JornadaActividad>[]> {
+    const lineas: Partial<JornadaActividad>[] = [];
+
+    for (let i = 0; i < actividades.length; i++) {
+      const item = actividades[i];
+      const actividad = await this.actividadRepository.findOne({
+        where: { id: item.actividadId, proyecto: { id: proyectoId } },
+      });
+
+      if (!actividad) {
+        throw new BadRequestException(
+          `Actividad ${item.actividadId} no pertenece al proyecto`,
+        );
+      }
+
+      if (item.subactividadId) {
+        const sub = await this.subactividadRepository.findOne({
+          where: { id: item.subactividadId, actividad: { id: item.actividadId } },
+        });
+
+        if (!sub) {
+          throw new BadRequestException(
+            `Subactividad ${item.subactividadId} no pertenece a la actividad`,
+          );
+        }
+      }
+
+      lineas.push({
+        actividad: { id: item.actividadId } as Actividad,
+        subactividad: item.subactividadId
+          ? ({ id: item.subactividadId } as Subactividad)
+          : undefined,
+        estadoEjecucion: EstadoEjecucionJornada.PENDIENTE,
+        orden: i,
+      });
+    }
+
+    return lineas;
   }
 
   private verificarPermisoEstado(

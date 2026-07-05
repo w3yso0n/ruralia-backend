@@ -27,6 +27,30 @@ export class RespuestaActividadResumenDto {
   estaActivo: boolean;
 }
 
+export class RespuestaBeneficiarioResumenDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  nombres: string;
+
+  @ApiProperty()
+  @Expose()
+  apellidos: string;
+}
+
+export class RespuestaAsociacionResumenDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  nombre: string;
+}
+
 export class RespuestaProyectoDto {
   @ApiProperty({ description: 'ID del proyecto' })
   @Expose()
@@ -96,6 +120,42 @@ export class RespuestaProyectoDto {
   @ApiPropertyOptional({ description: 'Cantidad de beneficiarios del proyecto' })
   @Expose()
   conteoBeneficiarios?: number;
+
+  @ApiPropertyOptional({ description: 'Progreso del plan (0-100)' })
+  @Expose()
+  progresoPorcentaje?: number;
+
+  @ApiPropertyOptional({
+    type: RespuestaBeneficiarioResumenDto,
+    description: 'Beneficiario principal del proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  beneficiarioPrincipal?: RespuestaBeneficiarioResumenDto;
+
+  @ApiPropertyOptional({
+    type: [RespuestaBeneficiarioResumenDto],
+    description: 'Beneficiarios vinculados al proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  beneficiarios?: RespuestaBeneficiarioResumenDto[];
+
+  @ApiPropertyOptional({
+    type: RespuestaAsociacionResumenDto,
+    description: 'Asociación principal del proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaAsociacionResumenDto)
+  asociacionPrincipal?: RespuestaAsociacionResumenDto;
+
+  @ApiPropertyOptional({
+    type: [RespuestaAsociacionResumenDto],
+    description: 'Asociaciones vinculadas al proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaAsociacionResumenDto)
+  asociaciones?: RespuestaAsociacionResumenDto[];
 }
 
 export class RespuestaPaginadaProyectosDto {

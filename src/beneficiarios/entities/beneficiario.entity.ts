@@ -3,11 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
-  ManyToMany,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Proyecto } from '../../proyectos/entities/proyecto.entity';
+import { ProyectoBeneficiario } from '../../proyectos/entities/proyecto-beneficiario.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Genero } from '../enums/genero.enum';
 import { TipoDocumento } from '../enums/tipo-documento.enum';
@@ -47,8 +47,8 @@ export class Beneficiario {
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 
-  @ManyToMany(() => Proyecto, (proyecto) => proyecto.beneficiarios)
-  proyectos: Proyecto[];
+  @OneToMany(() => ProyectoBeneficiario, (pb) => pb.beneficiario)
+  proyectoBeneficiarios: ProyectoBeneficiario[];
 
   @ManyToOne(() => Vereda, { nullable: false })
   @JoinColumn({ name: 'vereda_id' })

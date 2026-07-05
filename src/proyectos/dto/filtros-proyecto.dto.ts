@@ -5,10 +5,12 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
 } from 'class-validator';
 import { EstadoProyecto } from '../enums/estado-proyecto.enum';
+import { OrdenProyecto } from '../enums/orden-proyecto.enum';
 import { TipoProyecto } from '../enums/tipo-proyecto.enum';
 
 export class FiltrosProyectoDto {
@@ -26,6 +28,30 @@ export class FiltrosProyectoDto {
   @IsString()
   @IsOptional()
   busqueda?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por miembro del personal' })
+  @IsUUID('4')
+  @IsOptional()
+  personalId?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por asociación vinculada' })
+  @IsUUID('4')
+  @IsOptional()
+  asociacionId?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por vereda asignada' })
+  @IsUUID('4')
+  @IsOptional()
+  veredaId?: string;
+
+  @ApiPropertyOptional({
+    enum: OrdenProyecto,
+    description: 'Orden de resultados',
+    default: OrdenProyecto.CREADO_DESC,
+  })
+  @IsEnum(OrdenProyecto)
+  @IsOptional()
+  orden?: OrdenProyecto = OrdenProyecto.CREADO_DESC;
 
   @ApiPropertyOptional({ description: 'Número de página', default: 1, minimum: 1 })
   @Type(() => Number)
