@@ -184,17 +184,20 @@ export class ReportesService {
       const subactividadesDetalle: Record<string, unknown>[] = [];
 
       for (const sub of actividad.subactividades ?? []) {
-        const plantillasActivas = await this.plantillaRepository.countBy({
-          subactividad: { id: sub.id },
-          estaActivo: true,
-        });
+        const plantillasActivas = await this.plantillaRepository
+          .createQueryBuilder('plantilla')
+          .innerJoin('plantilla.subactividades', 'subactividad')
+          .where('subactividad.id = :subactividadId', { subactividadId: sub.id })
+          .andWhere('plantilla.esta_activo = true')
+          .getCount();
 
         const formulariosRecibidos = await this.envioRepository
           .createQueryBuilder('envio')
           .innerJoin('envio.jornada', 'jornada')
           .innerJoin('envio.plantillaFormulario', 'plantilla')
+          .innerJoin('plantilla.subactividades', 'subactividad')
           .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-          .andWhere('plantilla.subactividad_id = :subactividadId', {
+          .andWhere('subactividad.id = :subactividadId', {
             subactividadId: sub.id,
           })
           .getCount();

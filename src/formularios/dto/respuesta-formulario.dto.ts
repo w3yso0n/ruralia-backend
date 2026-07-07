@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Expose, Type } from 'class-transformer';
+import { Expose, Transform, Type } from 'class-transformer';
 import { TipoCampo } from '../enums/tipo-campo.enum';
 
 export class RespuestaCampoFormularioDto {
@@ -26,6 +26,14 @@ export class RespuestaCampoFormularioDto {
   @ApiProperty({ description: 'Orden de visualización' })
   @Expose()
   orden: number;
+
+  @ApiPropertyOptional({ description: 'Opciones del campo (para selección)' })
+  @Expose()
+  opciones?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Reglas de validación del campo' })
+  @Expose()
+  reglasValidacion?: Record<string, unknown>;
 }
 
 export class RespuestaPlantillaFormularioDto {
@@ -48,6 +56,16 @@ export class RespuestaPlantillaFormularioDto {
   @ApiProperty({ description: 'Indica si la plantilla está activa' })
   @Expose()
   estaActivo: boolean;
+
+  @ApiPropertyOptional({
+    description: 'IDs de las subactividades asignadas a la plantilla',
+    type: [String],
+  })
+  @Expose()
+  @Transform(({ obj }) =>
+    (obj.subactividades ?? []).map((s: { id: string }) => s.id),
+  )
+  subactividadIds: string[];
 
   @ApiPropertyOptional({
     type: [RespuestaCampoFormularioDto],

@@ -70,9 +70,15 @@ export class CrearPlantillaFormularioDto {
   @IsOptional()
   version?: number;
 
-  @ApiProperty({ description: 'ID de la subactividad asociada' })
-  @IsUUID('4')
-  subactividadId: string;
+  @ApiPropertyOptional({
+    description:
+      'IDs de subactividades a las que se asigna la plantilla (opcional, se puede asignar después)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  subactividadIds?: string[];
 
   @ApiProperty({
     type: [CrearCampoFormularioDto],
@@ -84,10 +90,89 @@ export class CrearPlantillaFormularioDto {
   campos: CrearCampoFormularioDto[];
 }
 
-export class ClonarPlantillaDto {
-  @ApiProperty({ description: 'ID de la nueva subactividad destino' })
+export class ActualizarCampoFormularioDto {
+  @ApiPropertyOptional({ description: 'ID del campo existente (omitir si es nuevo)' })
   @IsUUID('4')
-  nuevaSubactividadId: string;
+  @IsOptional()
+  id?: string;
+
+  @ApiProperty({ description: 'Etiqueta visible del campo' })
+  @IsString()
+  @IsNotEmpty()
+  etiqueta: string;
+
+  @ApiProperty({ description: 'Clave única del campo' })
+  @IsString()
+  @IsNotEmpty()
+  clave: string;
+
+  @ApiProperty({ enum: TipoCampo, description: 'Tipo de campo del formulario' })
+  @IsEnum(TipoCampo)
+  tipoCampo: TipoCampo;
+
+  @ApiPropertyOptional({ description: 'Opciones del campo (para selección)' })
+  @IsObject()
+  @IsOptional()
+  opciones?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Indica si el campo es obligatorio' })
+  @IsBoolean()
+  @IsOptional()
+  esObligatorio?: boolean;
+
+  @ApiPropertyOptional({ description: 'Orden de visualización del campo', minimum: 0 })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  orden?: number;
+
+  @ApiPropertyOptional({ description: 'Reglas de validación del campo' })
+  @IsObject()
+  @IsOptional()
+  reglasValidacion?: Record<string, unknown>;
+}
+
+export class ActualizarPlantillaFormularioDto {
+  @ApiPropertyOptional({ description: 'Nombre de la plantilla' })
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  nombre?: string;
+
+  @ApiPropertyOptional({ description: 'Descripción de la plantilla' })
+  @IsString()
+  @IsOptional()
+  descripcion?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de subactividades asignadas (reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  subactividadIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [ActualizarCampoFormularioDto],
+    description: 'Campos de la plantilla (reemplaza el conjunto completo)',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ActualizarCampoFormularioDto)
+  @IsOptional()
+  campos?: ActualizarCampoFormularioDto[];
+}
+
+export class AsignarSubactividadesDto {
+  @ApiProperty({
+    description: 'IDs de subactividades a asignar (reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  subactividadIds: string[];
 }
 
 export class RespuestaEnviarDto {

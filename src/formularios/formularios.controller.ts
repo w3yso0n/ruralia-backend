@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import {
@@ -12,10 +13,13 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Roles } from '../autenticacion/decorators/roles.decorator';
+import { RolEnum } from '../autenticacion/enums/rol.enum';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
-  ClonarPlantillaDto,
+  ActualizarPlantillaFormularioDto,
+  AsignarSubactividadesDto,
   CrearPlantillaFormularioDto,
   EnviarFormularioDto,
 } from './dto/formulario.dto';
@@ -37,12 +41,20 @@ export class FormulariosController {
   ) {}
 
   @Post('plantillas')
+  @Roles(RolEnum.ADMINISTRADOR)
   @ApiOperation({ summary: 'Crear una plantilla de formulario' })
   @ApiResponse({ status: 201, type: RespuestaPlantillaFormularioDto })
   crearPlantilla(
     @Body() dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
     return this.plantillasService.crear(dto);
+  }
+
+  @Get('plantillas')
+  @ApiOperation({ summary: 'Listar todas las plantillas de formulario' })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarPlantillas(): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarTodas();
   }
 
   @Get('plantillas/subactividad/:subactividadId')
@@ -54,7 +66,28 @@ export class FormulariosController {
     return this.plantillasService.listarPorSubactividad(subactividadId);
   }
 
+  @Get('plantillas/:id')
+  @ApiOperation({ summary: 'Obtener una plantilla de formulario por ID' })
+  @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
+  obtenerPlantilla(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    return this.plantillasService.obtenerPorId(id);
+  }
+
+  @Patch('plantillas/:id')
+  @Roles(RolEnum.ADMINISTRADOR)
+  @ApiOperation({ summary: 'Actualizar una plantilla de formulario' })
+  @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
+  actualizarPlantilla(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarPlantillaFormularioDto,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    return this.plantillasService.actualizar(id, dto);
+  }
+
   @Post('plantillas/:id/publicar')
+  @Roles(RolEnum.ADMINISTRADOR)
   @ApiOperation({ summary: 'Publicar una plantilla de formulario' })
   @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
   publicarPlantilla(
@@ -64,13 +97,29 @@ export class FormulariosController {
   }
 
   @Post('plantillas/:id/clonar')
-  @ApiOperation({ summary: 'Clonar una plantilla en otra subactividad' })
+  @Roles(RolEnum.ADMINISTRADOR)
+  @ApiOperation({ summary: 'Clonar una plantilla (sin subactividades asignadas)' })
   @ApiResponse({ status: 201, type: RespuestaPlantillaFormularioDto })
   clonarPlantilla(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ClonarPlantillaDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
-    return this.plantillasService.clonar(id, dto.nuevaSubactividadId);
+    return this.plantillasService.clonar(id);
+  }
+
+  @Patch('plantillas/:id/subactividades')
+  @Roles(RolEnum.ADMINISTRADOR)
+  @ApiOperation({
+    summary: 'Asignar subactividades a una plantilla (reemplaza el conjunto)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
+  asignarSubactividades(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarSubactividadesDto,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    return this.plantillasService.asignarSubactividades(
+      id,
+      dto.subactividadIds,
+    );
   }
 
   @Post('envios')

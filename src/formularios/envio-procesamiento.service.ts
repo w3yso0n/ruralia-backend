@@ -45,7 +45,7 @@ export class EnvioProcesamientoService {
 
     const plantillasActivas = await this.plantillaRepository.find({
       where: {
-        subactividad: { id: In(subactividadIds) },
+        subactividades: { id: In(subactividadIds) },
         estaActivo: true,
       },
       relations: { campos: true },

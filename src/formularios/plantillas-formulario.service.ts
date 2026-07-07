@@ -6,7 +6,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
-import { CrearPlantillaFormularioDto } from './dto/formulario.dto';
+import {
+  ActualizarPlantillaFormularioDto,
+  CrearPlantillaFormularioDto,
+} from './dto/formulario.dto';
 import { RespuestaPlantillaFormularioDto } from './dto/respuesta-formulario.dto';
 import { CampoFormulario } from './entities/campo-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
@@ -25,15 +28,9 @@ export class PlantillasFormularioService {
   async crear(
     dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
-    const subactividad = await this.subactividadRepository.findOne({
-      where: { id: dto.subactividadId },
-    });
-
-    if (!subactividad) {
-      throw new NotFoundException(
-        `Subactividad ${dto.subactividadId} no encontrada`,
-      );
-    }
+    const subactividades = await this.resolverSubactividades(
+      dto.subactividadIds,
+    );
 
     const plantillaGuardada = await this.dataSource.transaction(
       async (manager) => {
@@ -42,7 +39,7 @@ export class PlantillasFormularioService {
           descripcion: dto.descripcion,
           version: dto.version ?? 1,
           estaActivo: false,
-          subactividad: { id: dto.subactividadId },
+          subactividades,
         });
 
         const guardada = await manager.save(PlantillaFormulario, plantilla);
@@ -68,12 +65,113 @@ export class PlantillasFormularioService {
     return this.obtenerPlantilla(plantillaGuardada.id);
   }
 
+  async listarTodas(): Promise<RespuestaPlantillaFormularioDto[]> {
+    const plantillas = await this.plantillaRepository.find({
+      relations: { campos: true, subactividades: true },
+      order: { nombre: 'ASC' },
+    });
+
+    return plantillas.map((p) => aRespuestaPlantilla(p));
+  }
+
+  async obtenerPorId(id: string): Promise<RespuestaPlantillaFormularioDto> {
+    return this.obtenerPlantilla(id);
+  }
+
+  async actualizar(
+    id: string,
+    dto: ActualizarPlantillaFormularioDto,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    const plantilla = await this.plantillaRepository.findOne({
+      where: { id },
+      relations: { campos: true },
+    });
+
+    if (!plantilla) {
+      throw new NotFoundException(`Plantilla ${id} no encontrada`);
+    }
+
+    const subactividades = dto.subactividadIds
+      ? await this.resolverSubactividades(dto.subactividadIds)
+      : undefined;
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(PlantillaFormulario, {
+        id,
+        nombre: dto.nombre ?? plantilla.nombre,
+        descripcion: dto.descripcion ?? plantilla.descripcion,
+        subactividades,
+      });
+
+      if (dto.campos) {
+        const idsExistentes = plantilla.campos.map((c) => c.id);
+        const idsConservados = dto.campos
+          .map((c) => c.id)
+          .filter((cid): cid is string => Boolean(cid));
+
+        const idsAEliminar = idsExistentes.filter(
+          (cid) => !idsConservados.includes(cid),
+        );
+
+        if (idsAEliminar.length) {
+          await manager.delete(CampoFormulario, idsAEliminar);
+        }
+
+        for (const [indice, campoDto] of dto.campos.entries()) {
+          const datosCampo = {
+            etiqueta: campoDto.etiqueta,
+            clave: campoDto.clave,
+            tipoCampo: campoDto.tipoCampo,
+            opciones: campoDto.opciones ?? null,
+            esObligatorio: campoDto.esObligatorio ?? false,
+            orden: campoDto.orden ?? indice,
+            reglasValidacion: campoDto.reglasValidacion ?? null,
+          };
+
+          if (campoDto.id) {
+            await manager.save(CampoFormulario, {
+              id: campoDto.id,
+              ...datosCampo,
+            });
+          } else {
+            const nuevoCampo = manager.create(CampoFormulario, {
+              ...datosCampo,
+              plantillaFormulario: { id },
+            });
+            await manager.save(CampoFormulario, nuevoCampo);
+          }
+        }
+      }
+    });
+
+    return this.obtenerPlantilla(id);
+  }
+
+  async asignarSubactividades(
+    id: string,
+    subactividadIds: string[],
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    const plantilla = await this.plantillaRepository.findOne({
+      where: { id },
+    });
+
+    if (!plantilla) {
+      throw new NotFoundException(`Plantilla ${id} no encontrada`);
+    }
+
+    const subactividades = await this.resolverSubactividades(subactividadIds);
+
+    await this.plantillaRepository.save({ id, subactividades });
+
+    return this.obtenerPlantilla(id);
+  }
+
   async listarPorSubactividad(
     subactividadId: string,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     const plantillas = await this.plantillaRepository.find({
-      where: { subactividad: { id: subactividadId } },
-      relations: { campos: true },
+      where: { subactividades: { id: subactividadId } },
+      relations: { campos: true, subactividades: true },
       order: { version: 'DESC' },
     });
 
@@ -101,10 +199,7 @@ export class PlantillasFormularioService {
     return aRespuestaPlantilla(plantilla);
   }
 
-  async clonar(
-    plantillaId: string,
-    nuevaSubactividadId: string,
-  ): Promise<RespuestaPlantillaFormularioDto> {
+  async clonar(plantillaId: string): Promise<RespuestaPlantillaFormularioDto> {
     const original = await this.plantillaRepository.findOne({
       where: { id: plantillaId },
       relations: { campos: true },
@@ -114,23 +209,13 @@ export class PlantillasFormularioService {
       throw new NotFoundException(`Plantilla ${plantillaId} no encontrada`);
     }
 
-    const subactividad = await this.subactividadRepository.findOne({
-      where: { id: nuevaSubactividadId },
-    });
-
-    if (!subactividad) {
-      throw new NotFoundException(
-        `Subactividad ${nuevaSubactividadId} no encontrada`,
-      );
-    }
-
     const clonada = await this.dataSource.transaction(async (manager) => {
       const nuevaPlantilla = manager.create(PlantillaFormulario, {
         nombre: `${original.nombre} (copia)`,
         descripcion: original.descripcion,
         version: 1,
         estaActivo: false,
-        subactividad: { id: nuevaSubactividadId },
+        subactividades: [],
       });
 
       const guardada = await manager.save(PlantillaFormulario, nuevaPlantilla);
@@ -158,12 +243,37 @@ export class PlantillasFormularioService {
     return this.obtenerPlantilla(clonada.id);
   }
 
+  private async resolverSubactividades(
+    subactividadIds?: string[],
+  ): Promise<Subactividad[]> {
+    if (!subactividadIds?.length) {
+      return [];
+    }
+
+    const subactividades = await this.subactividadRepository.findBy(
+      subactividadIds.map((id) => ({ id })),
+    );
+
+    const idsEncontrados = new Set(subactividades.map((s) => s.id));
+    const idsFaltantes = subactividadIds.filter(
+      (id) => !idsEncontrados.has(id),
+    );
+
+    if (idsFaltantes.length) {
+      throw new NotFoundException(
+        `Subactividad(es) no encontrada(s): ${idsFaltantes.join(', ')}`,
+      );
+    }
+
+    return subactividades;
+  }
+
   private async obtenerPlantilla(
     id: string,
   ): Promise<RespuestaPlantillaFormularioDto> {
     const plantilla = await this.plantillaRepository.findOne({
       where: { id },
-      relations: { campos: true },
+      relations: { campos: true, subactividades: true },
     });
 
     if (!plantilla) {

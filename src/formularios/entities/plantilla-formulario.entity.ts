@@ -1,8 +1,8 @@
 import {
   Column,
   Entity,
-  JoinColumn,
-  ManyToOne,
+  JoinTable,
+  ManyToMany,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -27,9 +27,13 @@ export class PlantillaFormulario {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
-  @ManyToOne(() => Subactividad, { nullable: false })
-  @JoinColumn({ name: 'subactividad_id' })
-  subactividad: Subactividad;
+  @ManyToMany(() => Subactividad)
+  @JoinTable({
+    name: 'plantilla_formulario_subactividades',
+    joinColumn: { name: 'plantilla_formulario_id' },
+    inverseJoinColumn: { name: 'subactividad_id' },
+  })
+  subactividades: Subactividad[];
 
   @OneToMany(() => CampoFormulario, (campo) => campo.plantillaFormulario)
   campos: CampoFormulario[];
