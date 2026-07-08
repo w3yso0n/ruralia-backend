@@ -20,6 +20,7 @@ import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarPlantillaFormularioDto,
   AsignarSubactividadesDto,
+  AsignarUsuariosDto,
   CrearPlantillaFormularioDto,
   EnviarFormularioDto,
 } from './dto/formulario.dto';
@@ -64,6 +65,18 @@ export class FormulariosController {
     @Param('subactividadId', ParseUUIDPipe) subactividadId: string,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarPorSubactividad(subactividadId);
+  }
+
+  @Get('plantillas/asignadas')
+  @ApiOperation({
+    summary:
+      'Listar plantillas publicadas asignadas al usuario autenticado (directamente o vía proyectos donde participa)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarPlantillasAsignadas(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarAsignadasAUsuario(usuario);
   }
 
   @Get('plantillas/:id')
@@ -120,6 +133,20 @@ export class FormulariosController {
       id,
       dto.subactividadIds,
     );
+  }
+
+  @Patch('plantillas/:id/usuarios')
+  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @ApiOperation({
+    summary:
+      'Asignar usuarios directamente a una plantilla (reemplaza el conjunto)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
+  asignarUsuarios(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarUsuariosDto,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    return this.plantillasService.asignarUsuarios(id, dto.usuarioIds);
   }
 
   @Post('envios')

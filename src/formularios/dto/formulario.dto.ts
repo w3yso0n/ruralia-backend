@@ -80,6 +80,16 @@ export class CrearPlantillaFormularioDto {
   @IsOptional()
   subactividadIds?: string[];
 
+  @ApiPropertyOptional({
+    description:
+      'IDs de usuarios a los que se asigna directamente la plantilla (opcional, sin necesidad de proyecto/subactividad)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  usuarioIds?: string[];
+
   @ApiProperty({
     type: [CrearCampoFormularioDto],
     description: 'Campos del formulario',
@@ -155,6 +165,15 @@ export class ActualizarPlantillaFormularioDto {
   subactividadIds?: string[];
 
   @ApiPropertyOptional({
+    description: 'IDs de usuarios asignados (reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  usuarioIds?: string[];
+
+  @ApiPropertyOptional({
     type: [ActualizarCampoFormularioDto],
     description: 'Campos de la plantilla (reemplaza el conjunto completo)',
   })
@@ -175,6 +194,16 @@ export class AsignarSubactividadesDto {
   subactividadIds: string[];
 }
 
+export class AsignarUsuariosDto {
+  @ApiProperty({
+    description: 'IDs de usuarios a asignar (reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  usuarioIds: string[];
+}
+
 export class RespuestaEnviarDto {
   @ApiProperty({ description: 'Clave del campo respondido' })
   @IsString()
@@ -187,9 +216,13 @@ export class RespuestaEnviarDto {
 }
 
 export class EnviarFormularioDto {
-  @ApiProperty({ description: 'ID de la jornada' })
+  @ApiPropertyOptional({
+    description:
+      'ID de la jornada (opcional: se omite para formularios asignados directamente a un usuario, sin contexto de jornada)',
+  })
   @IsUUID('4')
-  jornadaId: string;
+  @IsOptional()
+  jornadaId?: string;
 
   @ApiProperty({ description: 'ID de la plantilla de formulario' })
   @IsUUID('4')

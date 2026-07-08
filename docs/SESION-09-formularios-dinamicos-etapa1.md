@@ -157,14 +157,62 @@ El usuario preguntó dónde se hace la asignación de proyectos — la respuesta
 
 ---
 
+## Addendum 2: asignación directa a usuario + envíos sin jornada (arranque de Etapa 2)
+
+El usuario preguntó por la relación completa `Usuario → Proyecto → Subactividad → PlantillaFormulario` y planteó agregar una vía alterna: `PlantillaFormulario ↔ Usuario` directa, para plantillas que aún no tienen proyecto/subactividad asignado. Se confirmó el diseño con dos decisiones explícitas antes de implementar:
+
+- Un envío de una plantilla asignada directamente a un usuario (sin subactividad) se responde **sin jornada asociada** — es una encuesta "suelta".
+- La asignación directa a usuario la pueden hacer `ADMINISTRADOR` y `COORDINADOR` (a diferencia de la asignación a subactividad, que sigue siendo solo `ADMINISTRADOR`).
+
+### Cambios de modelo
+
+- `PlantillaFormulario.usuarios: Usuario[]` — nueva relación `ManyToMany`, tabla `plantilla_formulario_usuarios`. Una plantilla puede tener subactividades asignadas, usuarios asignados, ambos, o ninguno — no son excluyentes.
+- `EnvioFormulario.jornada` pasó de `ManyToOne({ nullable: false })` a `ManyToOne({ nullable: true })` (tipo `Jornada | null`). Es un cambio de fondo: hasta ahora todo envío exigía una jornada.
+- `EnvioFormulario.usuario: Usuario` — nueva columna `ManyToOne` obligatoria. Antes el usuario que respondía solo quedaba registrado dentro del JSONB `datosRaw.usuarioId`; ahora es una relación real de primera clase, necesaria porque sin jornada es la única forma confiable de saber quién respondió.
+- `EnviarFormularioDto.jornadaId` pasó de obligatorio a opcional.
+
+### Cambios de comportamiento en el envío (`EnviosFormularioService.enviar`)
+
+- Si `dto.jornadaId` viene, se valida que la jornada exista (`jornadasService.obtenerUna`) igual que antes.
+- Si no viene, se omite esa validación y el envío se guarda con `jornada: null`.
+- El encolado de `EnvioProcesamientoService` (que autocompleta la jornada cuando se cumplen los formularios obligatorios) **solo se dispara si hay `jornadaId`** — no tiene sentido ni tiene datos suficientes para correr sobre un envío sin jornada. Envíos sueltos no disparan ningún post-procesamiento por ahora.
+
+### Endpoints nuevos
+
+| Método | Ruta | Roles | Descripción |
+|--------|------|-------|-------------|
+| `PATCH` | `/formularios/plantillas/:id/usuarios` | `ADMINISTRADOR`, `COORDINADOR` | Asigna usuarios directamente a una plantilla (reemplaza el conjunto completo, mismo patrón que `/subactividades`) |
+| `GET` | `/formularios/plantillas/asignadas` | cualquier usuario autenticado | Devuelve las plantillas **publicadas** asignadas al usuario autenticado — combina asignación directa (`usuarios`) y asignación vía proyecto (`Usuario → proyecto_personal → Actividad → Subactividad → PlantillaFormulario`) en una sola consulta con `createQueryBuilder` y un `OR` con subquery. **Este es el endpoint que debe consumir mobile** para saber qué formularios mostrarle a un usuario tras el login. |
+
+**Importante sobre el orden de rutas:** `GET /plantillas/asignadas` se registró **antes** de `GET /plantillas/:id` en el controller — si estuviera después, Nest lo interpretaría como `id = "asignadas"` y el `ParseUUIDPipe` fallaría con 400.
+
+### Por qué la consulta de "asignadas" no usa el ORM declarativo
+
+`listarAsignadasAUsuario` en `PlantillasFormularioService` usa `createQueryBuilder` con una subquery SQL cruda (`subactividades.id IN (SELECT ... FROM subactividades ... JOIN proyecto_personal ...)`) en vez de relaciones TypeORM anidadas, porque la cadena de join real es larga (`Subactividad → Actividad → Proyecto → proyecto_personal → Usuario`) y expresar un `OR` entre "está en mis usuarios directos" y "está en una subactividad de un proyecto donde participo" con el `where` declarativo de TypeORM habría sido más frágil que una subquery explícita.
+
+### Frontend
+
+- `PlantillaFormulario.usuarioIds: string[]` (tipo nuevo), igual que `subactividadIds`.
+- El editor (`editor-plantilla-formulario.tsx`) agregó una sección **"Usuarios asignados (opcional)"** justo antes de "Campos del formulario" — carga `listarUsuarios` (ya existía, usado en gestión de usuarios) y muestra chips seleccionables por usuario, mismo patrón visual que las subactividades.
+- El atajo rápido de asignación en el listado (`gestion-formularios.tsx`, agregado en el Addendum 1) se extendió para cubrir también usuarios: el modal "Asignar plantilla" ahora tiene dos secciones independientes ("Por proyecto / subactividad" y "Directamente a usuarios"), y `confirmarAsignacion` llama en paralelo a `PATCH .../subactividades` y `PATCH .../usuarios` (`Promise.all`) — cada endpoint reemplaza su propio conjunto sin afectar al otro.
+
+### Verificación
+
+- `tsc --noEmit` limpio en ambos proyectos.
+- Backend reiniciado con `synchronize: true`: TypeORM alteró `envios_formulario` (columna `jornada_id` ahora nullable, nueva columna `usuario_id`) y creó `plantilla_formulario_usuarios` sin errores — confirmado con `GET /salud` (base de datos y Redis "up") tras el reinicio.
+- Rutas verificadas en el log de arranque, incluyendo `GET /formularios/plantillas/asignadas` registrada en la posición correcta (antes de `:id`) y `PATCH /formularios/plantillas/:id/usuarios`.
+- Pendiente de verificación manual en navegador por el usuario (sin extensión de Chrome conectada en esta sesión).
+
+---
+
 ## Etapa 2 (futura — pendiente, no implementada aún)
 
 Objetivo: cerrar el ciclo de vida completo de un formulario dinámico, más allá del diseño de la plantilla.
 
-1. **Asignación de plantillas**: ya existe la relación N:N `PlantillaFormulario ↔ Subactividad` (`PATCH /formularios/plantillas/:id/subactividades`) como mecanismo base. Falta decidir si esto es suficiente para mobile o si hace falta una asignación más granular a usuario/técnico específico (ej. tabla `asignaciones_formulario` con usuario), dado que hoy la asignación es a nivel de subactividad completa, no de usuario individual.
-2. **Visualización en mobile**: el motor de captura de `ruralia-mobile` (`src/components/FormularioCaptura.jsx`, `src/lib/formSchema.js`) hoy usa un schema local propio, desconectado del contrato real `PlantillaFormulario`/`CampoFormulario` del backend. Hay que conectar ese componente a `GET /formularios/plantillas/subactividad/:subactividadId` (o al mecanismo de asignación que se defina) para que renderice dinámicamente según `TipoCampo`.
-3. **Sincronización de respuestas**: el mobile debe enviar respuestas usando el contrato ya existente `POST /formularios/envios` (`EnviarFormularioDto`), pero hay que resolver la discrepancia de endpoint detectada en sesiones previas de mobile (`POST /registros` vs. el real `POST /sincronizacion/subir` / `POST /formularios/envios`) y la renovación de token Firebase antes de sincronizar envíos acumulados offline (expira en 1h).
-4. **Procesamiento de respuestas**: ya existe `EnvioProcesamientoService` (Bull, sesión 05) que completa automáticamente la jornada cuando se cumplen los formularios obligatorios de sus plantillas activas — confirmar que este flujo siga siendo válido una vez se introduzca el mecanismo de asignación de la Etapa 2, o si necesita ajustarse.
+1. **Asignación de plantillas**: ✅ cubierto por este addendum — existen ambas vías (`PlantillaFormulario ↔ Subactividad` y `PlantillaFormulario ↔ Usuario`), y el endpoint `GET /formularios/plantillas/asignadas` ya resuelve "qué le toca a este usuario" combinando las dos.
+2. **Visualización en mobile**: sigue pendiente — es el siguiente paso natural ahora que existe el endpoint. El motor de captura de `ruralia-mobile` (`src/components/FormularioCaptura.jsx`, `src/lib/formSchema.js`) hoy usa un schema local propio, desconectado del contrato real `PlantillaFormulario`/`CampoFormulario` del backend. Hay que conectar la pantalla post-login a `GET /formularios/plantillas/asignadas` y renderizar cada campo dinámicamente según `TipoCampo`.
+3. **Sincronización de respuestas**: el mobile debe enviar respuestas usando el contrato ya existente `POST /formularios/envios` (`EnviarFormularioDto`, con `jornadaId` ahora opcional — los formularios asignados directamente a usuario se envían sin jornada). Sigue pendiente resolver la discrepancia de endpoint detectada en sesiones previas de mobile (`POST /registros` vs. el real `POST /sincronizacion/subir` / `POST /formularios/envios`) y la renovación de token Firebase antes de sincronizar envíos acumulados offline (expira en 1h).
+4. **Procesamiento de respuestas**: `EnvioProcesamientoService` (Bull, sesión 05) solo se dispara para envíos con jornada — los envíos sueltos (asignación directa a usuario) no tienen post-procesamiento automático todavía. Definir si hace falta alguno (ej. notificar al coordinador, marcar la asignación como "respondida").
 5. **Permisos de captura**: definir qué rol(es) pueden enviar respuestas (`POST /formularios/envios`) — hoy el endpoint no tiene `@Roles`, y el flujo esperado es que sea el técnico de campo (rol `TECNICO`) quien complete formularios asignados.
 
 ---

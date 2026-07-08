@@ -62,10 +62,24 @@ export class RespuestaPlantillaFormularioDto {
     type: [String],
   })
   @Expose()
-  @Transform(({ obj }) =>
-    (obj.subactividades ?? []).map((s: { id: string }) => s.id),
+  @Transform(({ obj, value }) =>
+    Array.isArray(obj.subactividades)
+      ? obj.subactividades.map((s: { id: string }) => s.id)
+      : (value ?? []),
   )
   subactividadIds: string[];
+
+  @ApiPropertyOptional({
+    description: 'IDs de usuarios asignados directamente a la plantilla',
+    type: [String],
+  })
+  @Expose()
+  @Transform(({ obj, value }) =>
+    Array.isArray(obj.usuarios)
+      ? obj.usuarios.map((u: { id: string }) => u.id)
+      : (value ?? []),
+  )
+  usuarioIds: string[];
 
   @ApiPropertyOptional({
     type: [RespuestaCampoFormularioDto],
@@ -92,6 +106,18 @@ export class RespuestaEnvioFormularioDto {
   @ApiProperty({ description: 'Indica si fue enviado en modo offline' })
   @Expose()
   esOffline: boolean;
+
+  @ApiPropertyOptional({
+    description: 'ID de la jornada asociada (ausente si es un envío sin jornada)',
+  })
+  @Expose()
+  @Transform(({ obj, value }) => obj.jornada?.id ?? value)
+  jornadaId?: string;
+
+  @ApiProperty({ description: 'ID del usuario que respondió el formulario' })
+  @Expose()
+  @Transform(({ obj, value }) => obj.usuario?.id ?? value)
+  usuarioId: string;
 }
 
 export class RespuestaDetalleRespuestaDto {

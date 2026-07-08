@@ -8,6 +8,7 @@ import {
   Unique,
 } from 'typeorm';
 import { Jornada } from '../../jornadas/entities/jornada.entity';
+import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { CampoFormulario } from './campo-formulario.entity';
 import { PlantillaFormulario } from './plantilla-formulario.entity';
 import { RespuestaFormulario } from './respuesta-formulario.entity';
@@ -36,9 +37,13 @@ export class EnvioFormulario {
   @Column({ name: 'dispositivo_id', nullable: true })
   dispositivoId: string;
 
-  @ManyToOne(() => Jornada, { nullable: false })
+  @ManyToOne(() => Jornada, { nullable: true })
   @JoinColumn({ name: 'jornada_id' })
-  jornada: Jornada;
+  jornada: Jornada | null;
+
+  @ManyToOne(() => Usuario, { nullable: false })
+  @JoinColumn({ name: 'usuario_id' })
+  usuario: Usuario;
 
   @ManyToOne(
     () => PlantillaFormulario,

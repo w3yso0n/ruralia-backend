@@ -46,7 +46,9 @@ export class EnviosFormularioService {
     dto: EnviarFormularioDto,
     usuarioActual: Usuario,
   ): Promise<RespuestaEnvioFormularioDto> {
-    await this.jornadasService.obtenerUna(dto.jornadaId);
+    if (dto.jornadaId) {
+      await this.jornadasService.obtenerUna(dto.jornadaId);
+    }
 
     const plantilla = await this.plantillaRepository.findOne({
       where: { id: dto.plantillaFormularioId },
@@ -76,7 +78,8 @@ export class EnviosFormularioService {
         sincronizadoEn: ahora,
         esOffline: false,
         datosRaw: { respuestas: dto.respuestas, usuarioId: usuarioActual.id },
-        jornada: { id: dto.jornadaId },
+        jornada: dto.jornadaId ? { id: dto.jornadaId } : null,
+        usuario: { id: usuarioActual.id },
         plantillaFormulario: { id: dto.plantillaFormularioId },
       });
 
@@ -104,10 +107,12 @@ export class EnviosFormularioService {
       return guardado;
     });
 
-    await this.colaEnviosService.encolarProcesarEnvio({
-      envioId: envioGuardado.id,
-      jornadaId: dto.jornadaId,
-    });
+    if (dto.jornadaId) {
+      await this.colaEnviosService.encolarProcesarEnvio({
+        envioId: envioGuardado.id,
+        jornadaId: dto.jornadaId,
+      });
+    }
 
     return aRespuestaEnvio(envioGuardado);
   }

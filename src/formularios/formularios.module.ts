@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { JornadasModule } from '../jornadas/jornadas.module';
+import { Usuario } from '../usuarios/entities/usuario.entity';
 import { CampoFormulario } from './entities/campo-formulario.entity';
 import { EnvioFormulario } from './entities/envio-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
@@ -19,6 +20,7 @@ import { PlantillasFormularioService } from './plantillas-formulario.service';
       EnvioFormulario,
       RespuestaFormulario,
       Subactividad,
+      Usuario,
     ]),
   ],
   controllers: [FormulariosController],
