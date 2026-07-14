@@ -153,9 +153,14 @@ export class JornadasService {
     const query = this.jornadaRepository
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
+      .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.meta', 'meta')
+      .leftJoinAndSelect('meta.proceso', 'proceso')
+      .leftJoinAndSelect('proceso.subactividad', 'subactividad')
+      .leftJoinAndSelect('subactividad.actividad', 'actividad')
       .leftJoinAndSelect('jornada.jornadaActividades', 'ja')
-      .leftJoinAndSelect('ja.actividad', 'actividad')
-      .leftJoinAndSelect('ja.subactividad', 'subactividad')
+      .leftJoinAndSelect('ja.actividad', 'actividadJa')
+      .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
       .orderBy('jornada.fecha', 'DESC')
       .addOrderBy('ja.orden', 'ASC');
@@ -340,6 +345,28 @@ export class JornadasService {
     jornada.estado = EstadoJornada.CANCELADA;
     await this.jornadaRepository.save(jornada);
     return this.obtenerUna(id);
+  }
+
+  async eliminar(id: string): Promise<void> {
+    const jornada = await this.jornadaRepository.findOne({ where: { id } });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
+
+    const [envios, evidencias] = await Promise.all([
+      this.envioRepository.count({ where: { jornada: { id } } }),
+      this.evidenciaRepository.count({ where: { jornada: { id } } }),
+    ]);
+
+    if (envios > 0 || evidencias > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar una jornada con formularios enviados o evidencias registradas',
+      );
+    }
+
+    await this.jornadaActividadRepository.delete({ jornada: { id } });
+    await this.jornadaRepository.remove(jornada);
   }
 
   async cambiarEstado(

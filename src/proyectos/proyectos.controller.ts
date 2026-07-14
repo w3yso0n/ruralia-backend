@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -91,6 +93,18 @@ export class ProyectosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaProyectoDto> {
     return this.proyectosService.actualizar(id, dto, usuario);
+  }
+
+  @Delete(':id/permanente')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequierePermisos('proyectos.eliminar')
+  @ApiOperation({ summary: 'Eliminar permanentemente un proyecto' })
+  @ApiResponse({ status: 204 })
+  eliminar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<void> {
+    return this.proyectosService.eliminar(id, usuario);
   }
 
   @Delete(':id')

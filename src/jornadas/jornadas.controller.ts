@@ -141,6 +141,15 @@ export class JornadasController {
     return this.jornadasService.agregarMiembroEquipo(id, dto);
   }
 
+  @Delete(':id/permanente')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequierePermisos('jornadas.eliminar')
+  @ApiOperation({ summary: 'Eliminar permanentemente una jornada' })
+  @ApiResponse({ status: 204 })
+  eliminar(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.jornadasService.eliminar(id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @RequierePermisos('jornadas.eliminar')

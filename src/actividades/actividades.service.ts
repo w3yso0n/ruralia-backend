@@ -28,6 +28,9 @@ import {
   RespuestaSubactividadDto,
 } from './dto/respuesta-actividad.dto';
 import { Actividad } from './entities/actividad.entity';
+import { Meta } from './entities/meta.entity';
+import { MetaPeriodo } from './entities/meta-periodo.entity';
+import { Proceso } from './entities/proceso.entity';
 import { Subactividad } from './entities/subactividad.entity';
 import { EstadoAvanceActividad } from './enums/estado-avance-actividad.enum';
 import {
@@ -43,6 +46,12 @@ export class ActividadesService {
     private readonly actividadRepository: Repository<Actividad>,
     @InjectRepository(Subactividad)
     private readonly subactividadRepository: Repository<Subactividad>,
+    @InjectRepository(Proceso)
+    private readonly procesoRepository: Repository<Proceso>,
+    @InjectRepository(Meta)
+    private readonly metaRepository: Repository<Meta>,
+    @InjectRepository(MetaPeriodo)
+    private readonly metaPeriodoRepository: Repository<MetaPeriodo>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
     @InjectRepository(Jornada)
@@ -265,6 +274,55 @@ export class ActividadesService {
     const actividades = await this.cargarActividadesProyecto(proyectoId);
     const ejecutadoPorMeta = await this.contarJornadasPorMeta(proyectoId);
     return aRespuestaProgreso(proyectoId, actividades, ejecutadoPorMeta);
+  }
+
+  async eliminarPlanPorProyecto(proyectoId: string): Promise<void> {
+    const actividades = await this.actividadRepository.find({
+      where: { proyecto: { id: proyectoId } },
+      select: { id: true },
+    });
+
+    for (const actividad of actividades) {
+      const subactividades = await this.subactividadRepository.find({
+        where: { actividad: { id: actividad.id } },
+        select: { id: true },
+      });
+
+      for (const subactividad of subactividades) {
+        const procesos = await this.procesoRepository.find({
+          where: { subactividad: { id: subactividad.id } },
+          select: { id: true },
+        });
+
+        for (const proceso of procesos) {
+          await this.procesoRepository.manager.query(
+            'DELETE FROM plantilla_formulario_procesos WHERE proceso_id = $1',
+            [proceso.id],
+          );
+
+          const metas = await this.metaRepository.find({
+            where: { proceso: { id: proceso.id } },
+            select: { id: true },
+          });
+
+          for (const meta of metas) {
+            await this.metaPeriodoRepository.delete({ meta: { id: meta.id } });
+          }
+
+          await this.metaRepository.delete({ proceso: { id: proceso.id } });
+        }
+
+        await this.procesoRepository.delete({
+          subactividad: { id: subactividad.id },
+        });
+      }
+
+      await this.subactividadRepository.delete({
+        actividad: { id: actividad.id },
+      });
+    }
+
+    await this.actividadRepository.delete({ proyecto: { id: proyectoId } });
   }
 
   private async obtenerActividadRespuesta(

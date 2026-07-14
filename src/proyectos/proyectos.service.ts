@@ -320,6 +320,43 @@ export class ProyectosService {
     return this.obtenerUno(id);
   }
 
+  async eliminar(
+    id: string,
+    usuarioActual: Usuario,
+  ): Promise<void> {
+    const proyecto = await this.buscarProyectoConPersonal(id);
+    this.verificarPermisoGestion(proyecto, usuarioActual);
+
+    const jornadas = await this.jornadaRepository.count({
+      where: { proyecto: { id } },
+    });
+
+    if (jornadas > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar un proyecto con jornadas registradas. Elimina las jornadas primero.',
+      );
+    }
+
+    await this.actividadesService.eliminarPlanPorProyecto(id);
+    await this.proyectoBeneficiarioRepository.delete({ proyecto: { id } });
+    await this.proyectoAsociacionRepository.delete({ proyecto: { id } });
+
+    const detalle = await this.proyectoRepository.findOne({
+      where: { id },
+      relations: { veredas: true, personal: true, indicadores: true },
+    });
+
+    if (!detalle) {
+      throw new NotFoundException(`Proyecto con id ${id} no encontrado`);
+    }
+
+    detalle.veredas = [];
+    detalle.personal = [];
+    detalle.indicadores = [];
+    await this.proyectoRepository.save(detalle);
+    await this.proyectoRepository.remove(detalle);
+  }
+
   async activar(
     id: string,
     usuarioActual: Usuario,
