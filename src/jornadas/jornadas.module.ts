@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Actividad } from '../actividades/entities/actividad.entity';
+import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
@@ -17,6 +18,7 @@ import { JornadasService } from './jornadas.service';
     TypeOrmModule.forFeature([
       Jornada,
       JornadaActividad,
+      Meta,
       Proyecto,
       Actividad,
       Subactividad,

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { Proceso } from '../actividades/entities/proceso.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -22,6 +23,8 @@ export class PlantillasFormularioService {
     private readonly dataSource: DataSource,
     @InjectRepository(PlantillaFormulario)
     private readonly plantillaRepository: Repository<PlantillaFormulario>,
+    @InjectRepository(Proceso)
+    private readonly procesoRepository: Repository<Proceso>,
     @InjectRepository(Subactividad)
     private readonly subactividadRepository: Repository<Subactividad>,
     @InjectRepository(Usuario)
@@ -31,6 +34,7 @@ export class PlantillasFormularioService {
   async crear(
     dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
+    const procesos = await this.resolverProcesos(dto.procesoIds);
     const subactividades = await this.resolverSubactividades(
       dto.subactividadIds,
     );
@@ -43,6 +47,7 @@ export class PlantillasFormularioService {
           descripcion: dto.descripcion,
           version: dto.version ?? 1,
           estaActivo: false,
+          procesos,
           subactividades,
           usuarios,
         });
@@ -72,7 +77,7 @@ export class PlantillasFormularioService {
 
   async listarTodas(): Promise<RespuestaPlantillaFormularioDto[]> {
     const plantillas = await this.plantillaRepository.find({
-      relations: { campos: true, subactividades: true, usuarios: true },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
       order: { nombre: 'ASC' },
     });
 
@@ -99,6 +104,9 @@ export class PlantillasFormularioService {
     const subactividades = dto.subactividadIds
       ? await this.resolverSubactividades(dto.subactividadIds)
       : undefined;
+    const procesos = dto.procesoIds
+      ? await this.resolverProcesos(dto.procesoIds)
+      : undefined;
     const usuarios = dto.usuarioIds
       ? await this.resolverUsuarios(dto.usuarioIds)
       : undefined;
@@ -108,6 +116,7 @@ export class PlantillasFormularioService {
         id,
         nombre: dto.nombre ?? plantilla.nombre,
         descripcion: dto.descripcion ?? plantilla.descripcion,
+        procesos,
         subactividades,
         usuarios,
       });
@@ -154,6 +163,33 @@ export class PlantillasFormularioService {
     });
 
     return this.obtenerPlantilla(id);
+  }
+
+  async asignarProcesos(
+    id: string,
+    procesoIds: string[],
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    const plantilla = await this.plantillaRepository.findOne({ where: { id } });
+
+    if (!plantilla) {
+      throw new NotFoundException(`Plantilla ${id} no encontrada`);
+    }
+
+    const procesos = await this.resolverProcesos(procesoIds);
+    await this.plantillaRepository.save({ id, procesos });
+    return this.obtenerPlantilla(id);
+  }
+
+  async listarPorProceso(
+    procesoId: string,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    const plantillas = await this.plantillaRepository.find({
+      where: { procesos: { id: procesoId } },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      order: { version: 'DESC' },
+    });
+
+    return plantillas.map((p) => aRespuestaPlantilla(p));
   }
 
   async asignarSubactividades(
@@ -300,6 +336,25 @@ export class PlantillasFormularioService {
     return this.obtenerPlantilla(clonada.id);
   }
 
+  private async resolverProcesos(procesoIds?: string[]): Promise<Proceso[]> {
+    if (!procesoIds?.length) return [];
+
+    const procesos = await this.procesoRepository.findBy(
+      procesoIds.map((id) => ({ id })),
+    );
+
+    const idsEncontrados = new Set(procesos.map((p) => p.id));
+    const idsFaltantes = procesoIds.filter((id) => !idsEncontrados.has(id));
+
+    if (idsFaltantes.length) {
+      throw new NotFoundException(
+        `Proceso(s) no encontrado(s): ${idsFaltantes.join(', ')}`,
+      );
+    }
+
+    return procesos;
+  }
+
   private async resolverSubactividades(
     subactividadIds?: string[],
   ): Promise<Subactividad[]> {
@@ -351,7 +406,7 @@ export class PlantillasFormularioService {
   ): Promise<RespuestaPlantillaFormularioDto> {
     const plantilla = await this.plantillaRepository.findOne({
       where: { id },
-      relations: { campos: true, subactividades: true, usuarios: true },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
     });
 
     if (!plantilla) {

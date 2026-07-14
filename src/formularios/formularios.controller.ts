@@ -18,6 +18,7 @@ import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decora
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarPlantillaFormularioDto,
+  AsignarProcesosDto,
   AsignarSubactividadesDto,
   AsignarUsuariosDto,
   CrearPlantillaFormularioDto,
@@ -56,6 +57,15 @@ export class FormulariosController {
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillas(): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarTodas();
+  }
+
+  @Get('plantillas/proceso/:procesoId')
+  @ApiOperation({ summary: 'Listar plantillas asignadas a un proceso' })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarPlantillasPorProceso(
+    @Param('procesoId', ParseUUIDPipe) procesoId: string,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarPorProceso(procesoId);
   }
 
   @Get('plantillas/subactividad/:subactividadId')
@@ -122,10 +132,23 @@ export class FormulariosController {
     return this.plantillasService.clonar(id);
   }
 
+  @Patch('plantillas/:id/procesos')
+  @Roles(RolEnum.ADMINISTRADOR)
+  @ApiOperation({
+    summary: 'Asignar procesos a una plantilla (reemplaza el conjunto)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
+  asignarProcesos(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarProcesosDto,
+  ): Promise<RespuestaPlantillaFormularioDto> {
+    return this.plantillasService.asignarProcesos(id, dto.procesoIds);
+  }
+
   @Patch('plantillas/:id/subactividades')
   @RequierePermisos('formularios.editar')
   @ApiOperation({
-    summary: 'Asignar subactividades a una plantilla (reemplaza el conjunto)',
+    summary: 'Asignar subactividades a una plantilla (legacy; usar /procesos)',
   })
   @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
   asignarSubactividades(

@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Actividad } from '../actividades/entities/actividad.entity';
+import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
@@ -57,6 +58,8 @@ export class JornadasService {
     private readonly jornadaRepository: Repository<Jornada>,
     @InjectRepository(JornadaActividad)
     private readonly jornadaActividadRepository: Repository<JornadaActividad>,
+    @InjectRepository(Meta)
+    private readonly metaRepository: Repository<Meta>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
     @InjectRepository(Actividad)
@@ -92,10 +95,30 @@ export class JornadasService {
     }
 
     const tecnicoId = dto.tecnicoResponsableId ?? usuarioActual.id;
-    const lineas = await this.validarActividadesJornada(
-      dto.proyectoId,
-      dto.actividades,
-    );
+
+    if (dto.metaId) {
+      const meta = await this.metaRepository.findOne({
+        where: { id: dto.metaId },
+        relations: {
+          proceso: { subactividad: { actividad: { proyecto: true } } },
+        },
+      });
+
+      if (!meta) {
+        throw new NotFoundException(`Meta ${dto.metaId} no encontrada`);
+      }
+
+      if (meta.proceso.subactividad.actividad.proyecto.id !== dto.proyectoId) {
+        throw new BadRequestException(
+          'La meta no pertenece al proyecto indicado',
+        );
+      }
+    }
+
+    const lineas =
+      dto.actividades && dto.actividades.length > 0
+        ? await this.validarActividadesJornada(dto.proyectoId, dto.actividades)
+        : [];
 
     const jornada = this.jornadaRepository.create({
       fecha: new Date(dto.fecha),
@@ -103,6 +126,7 @@ export class JornadasService {
       latitud: dto.latitud,
       longitud: dto.longitud,
       proyecto: { id: dto.proyectoId },
+      meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
       vereda: { id: dto.veredaId },
       tecnicoResponsable: { id: tecnicoId },
       equipo: [{ id: tecnicoId }],
@@ -176,6 +200,9 @@ export class JornadasService {
       where: { id },
       relations: {
         proyecto: true,
+        meta: {
+          proceso: { subactividad: { actividad: true } },
+        },
         jornadaActividades: { actividad: true, subactividad: true },
         vereda: true,
         tecnicoResponsable: true,

@@ -9,6 +9,72 @@ export class RespuestaCompletadaPorDto {
   nombreCompleto: string;
 }
 
+export class RespuestaMetaPeriodoPlanDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  anio: number;
+
+  @ApiProperty()
+  mes: number;
+
+  @ApiProperty()
+  cantidadPlaneada: number;
+}
+
+export class RespuestaMetaPlanDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  nombre: string;
+
+  @ApiProperty()
+  unidadMedida: string;
+
+  @ApiProperty()
+  cantidadTotal: number;
+
+  @ApiProperty()
+  orden: number;
+
+  @ApiProperty()
+  estaActivo: boolean;
+
+  @ApiProperty({ description: 'Jornadas completadas acumuladas' })
+  ejecutadoTotal: number;
+
+  @ApiProperty({ description: 'Porcentaje de avance (0-100)' })
+  progresoPorcentaje: number;
+
+  @ApiPropertyOptional({ type: [RespuestaMetaPeriodoPlanDto] })
+  periodos?: RespuestaMetaPeriodoPlanDto[];
+}
+
+export class RespuestaProcesoPlanDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  nombre: string;
+
+  @ApiPropertyOptional()
+  descripcion?: string;
+
+  @ApiProperty()
+  orden: number;
+
+  @ApiProperty()
+  estaActivo: boolean;
+
+  @ApiProperty({ description: 'Porcentaje de avance agregado (0-100)' })
+  progresoPorcentaje: number;
+
+  @ApiPropertyOptional({ type: [RespuestaMetaPlanDto] })
+  metas?: RespuestaMetaPlanDto[];
+}
+
 export class RespuestaSubactividadDto {
   @ApiProperty()
   id: string;
@@ -42,6 +108,9 @@ export class RespuestaSubactividadDto {
 
   @ApiProperty({ description: 'Progreso de la subactividad (0-100)' })
   progresoPorcentaje: number;
+
+  @ApiPropertyOptional({ type: [RespuestaProcesoPlanDto] })
+  procesos?: RespuestaProcesoPlanDto[];
 }
 
 export class RespuestaActividadDto {

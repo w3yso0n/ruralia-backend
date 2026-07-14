@@ -4,6 +4,7 @@ import {
   ResumenJornadaDto,
   RespuestaJornadaActividadDto,
   RespuestaJornadaDto,
+  RespuestaMetaResumenDto,
   RespuestaPaginadaJornadasDto,
   RespuestaResumenDto,
 } from '../dto/respuesta-jornada.dto';
@@ -42,6 +43,21 @@ export function aRespuestaJornada(
       actividades,
       proyecto: jornada.proyecto
         ? ({ id: jornada.proyecto.id, nombre: jornada.proyecto.nombre } as RespuestaResumenDto)
+        : undefined,
+      meta: jornada.meta
+        ? plainToInstance(
+            RespuestaMetaResumenDto,
+            {
+              id: jornada.meta.id,
+              nombre: jornada.meta.nombre,
+              unidadMedida: jornada.meta.unidadMedida,
+              procesoNombre: jornada.meta.proceso?.nombre,
+              subactividadNombre: jornada.meta.proceso?.subactividad?.nombre,
+              actividadNombre:
+                jornada.meta.proceso?.subactividad?.actividad?.nombre,
+            },
+            { excludeExtraneousValues: true },
+          )
         : undefined,
       vereda: jornada.vereda
         ? ({ id: jornada.vereda.id, nombre: jornada.vereda.nombre } as RespuestaResumenDto)

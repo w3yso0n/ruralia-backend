@@ -42,7 +42,9 @@ export const TAGS_MODULOS: TagModulo[] = [
   {
     name: 'Indicadores',
     description:
-      'Definición de KPIs del proyecto y registro de valores medidos durante las jornadas de campo.',
+      'KPIs transversales del proyecto (cobertura, impacto, eficiencia). ' +
+      'A diferencia de Meta, el Indicador no está anclado al árbol del plan operativo: ' +
+      'puede medir múltiples proyectos y se registra con frecuencia periódica independiente de las jornadas.',
   },
   {
     name: 'Reportes',
@@ -73,6 +75,14 @@ export const TAGS_MODULOS: TagModulo[] = [
     name: 'Actividades',
     description:
       'Estructura de planificación: actividades y subactividades dentro de cada proyecto.',
+  },
+  {
+    name: 'Procesos y Metas',
+    description:
+      'Jerarquía extendida del plan: Proceso (tipo de jornada dentro de una subactividad) y ' +
+      'Meta (objetivo cuantitativo: cantidad total y unidad de medida). ' +
+      'MetaPeriodo desglosa la meta mes a mes para calcular avance físico periódico y acumulado. ' +
+      'DISTINTO de Indicador: Meta mide avance operativo del plan; Indicador mide KPIs de gestión del proyecto.',
   },
   {
     name: 'Asociaciones',
@@ -113,8 +123,11 @@ Catálogo de tablas de PostgreSQL gestionadas por TypeORM. Los esquemas detallad
 | Tabla | Descripción |
 |-------|-------------|
 | \`proyectos\` | Proyectos de desarrollo rural (nombre, tipo, estado, fechas, creador). |
-| \`actividades\` | Actividades planificadas dentro de un proyecto (ordenadas y activables). |
-| \`subactividades\` | Subactividades con objetivo específico, vinculadas a una actividad. |
+| \`actividades\` | Actividades macro dentro de un proyecto (nivel 1 del plan). |
+| \`subactividades\` | Bloque de trabajo con objetivo específico dentro de una actividad (nivel 2). |
+| \`procesos\` | Tipo de jornada/visita: entrega de materiales, asistencia técnica, análisis de laboratorio (nivel 3). |
+| \`metas\` | Objetivo cuantitativo: cantidad total planeada y unidad de medida; mide avance operativo, distinto de Indicador (nivel 4). |
+| \`meta_periodos\` | Desglose mensual de una meta para calcular avance periódico y acumulado. |
 | \`proyecto_veredas\` | Veredas asignadas al ámbito territorial de un proyecto. |
 | \`proyecto_personal\` | Usuarios asignados al equipo de trabajo de un proyecto. |
 | \`proyecto_beneficiarios\` | Beneficiarios inscritos o atendidos por un proyecto. |
@@ -140,7 +153,8 @@ Catálogo de tablas de PostgreSQL gestionadas por TypeORM. Los esquemas detallad
 
 | Tabla | Descripción |
 |-------|-------------|
-| \`plantillas_formulario\` | Plantilla de formulario asociada a una subactividad (con versionado). |
+| \`plantillas_formulario\` | Plantilla de formulario asociada a procesos del plan (con versionado). Usar \`/procesos\` en lugar de \`/subactividades\`. |
+| \`plantilla_formulario_procesos\` | Relación plantilla → proceso (reemplaza \`plantilla_formulario_subactividades\`). |
 | \`campos_formulario\` | Campos dinámicos de una plantilla: tipo, validación JSON y orden de visualización. |
 | \`envios_formulario\` | Instancia de un formulario completado durante una jornada (soporta captura offline). |
 | \`respuestas_formulario\` | Valores tipados por campo de un envío (texto, número, fecha, booleano, JSON, archivo). |

@@ -10,6 +10,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import { Meta } from '../../actividades/entities/meta.entity';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
@@ -60,6 +61,10 @@ export class Jornada {
   @ManyToOne(() => Proyecto, { nullable: false })
   @JoinColumn({ name: 'proyecto_id' })
   proyecto: Proyecto;
+
+  @ManyToOne(() => Meta, { nullable: true })
+  @JoinColumn({ name: 'meta_id' })
+  meta: Meta | null;
 
   @OneToMany(() => JornadaActividad, (ja) => ja.jornada, { cascade: true })
   jornadaActividades: JornadaActividad[];
