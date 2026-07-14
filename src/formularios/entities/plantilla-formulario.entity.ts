@@ -6,6 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Proceso } from '../../actividades/entities/proceso.entity';
 import { Subactividad } from '../../actividades/entities/subactividad.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { CampoFormulario } from './campo-formulario.entity';
@@ -27,6 +28,14 @@ export class PlantillaFormulario {
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
+
+  @ManyToMany(() => Proceso, (proceso) => proceso.plantillasFormulario)
+  @JoinTable({
+    name: 'plantilla_formulario_procesos',
+    joinColumn: { name: 'plantilla_formulario_id' },
+    inverseJoinColumn: { name: 'proceso_id' },
+  })
+  procesos: Proceso[];
 
   @ManyToMany(() => Subactividad)
   @JoinTable({

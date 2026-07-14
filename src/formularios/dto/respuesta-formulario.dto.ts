@@ -58,7 +58,19 @@ export class RespuestaPlantillaFormularioDto {
   estaActivo: boolean;
 
   @ApiPropertyOptional({
-    description: 'IDs de las subactividades asignadas a la plantilla',
+    description: 'IDs de los procesos asignados a la plantilla',
+    type: [String],
+  })
+  @Expose()
+  @Transform(({ obj, value }) =>
+    Array.isArray(obj.procesos)
+      ? obj.procesos.map((p: { id: string }) => p.id)
+      : (value ?? []),
+  )
+  procesoIds: string[];
+
+  @ApiPropertyOptional({
+    description: 'IDs de las subactividades asignadas a la plantilla (legacy)',
     type: [String],
   })
   @Expose()

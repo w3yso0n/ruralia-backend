@@ -524,9 +524,96 @@ export class TablaRespuestasFormulario {
 }
 
 @ApiSchema({
+  name: 'procesos',
+  description:
+    'Tipo de jornada dentro de una subactividad (entrega de materiales, asistencia técnica, análisis de laboratorio, etc.). Nivel 3 de la jerarquía del plan. Las plantillas de formulario se asocian aquí en lugar de a subactividades.',
+})
+export class TablaProcesos {
+  @ApiProperty({ description: 'Identificador único (UUID)' })
+  id: string;
+
+  @ApiProperty({ description: 'Nombre del proceso (tipo de jornada/visita)' })
+  nombre: string;
+
+  @ApiPropertyOptional({ description: 'Descripción del proceso' })
+  descripcion?: string;
+
+  @ApiProperty({ description: 'Orden dentro de la subactividad' })
+  orden: number;
+
+  @ApiProperty({ description: 'ID de la subactividad padre' })
+  subactividadId: string;
+}
+
+@ApiSchema({
+  name: 'metas',
+  description:
+    'Objetivo cuantitativo de un proceso: cantidad total planeada y unidad de medida. ' +
+    'DISTINTO de Indicador: Meta mide avance físico del plan (visitas, entregas), ' +
+    'Indicador mide KPIs de gestión del proyecto (cobertura, impacto). ' +
+    'El avance se calcula como jornadas COMPLETADAS asociadas a esta meta.',
+})
+export class TablaMetas {
+  @ApiProperty({ description: 'Identificador único (UUID)' })
+  id: string;
+
+  @ApiProperty({ description: 'Nombre de la meta (ej: "Visitas de asistencia técnica")' })
+  nombre: string;
+
+  @ApiProperty({ description: 'Unidad de medida (visitas, entregas, muestras, etc.)' })
+  unidadMedida: string;
+
+  @ApiProperty({ description: 'Cantidad total planeada para toda la vida del proceso' })
+  cantidadTotal: number;
+
+  @ApiProperty({ description: 'ID del proceso padre' })
+  procesoId: string;
+}
+
+@ApiSchema({
+  name: 'meta_periodos',
+  description:
+    'Desglose mensual de la meta: cuántas unidades se planean ejecutar en cada mes/año. ' +
+    'Permite calcular el avance periódico: ejecutado_mes / cantidad_planeada y el avance acumulado.',
+})
+export class TablaMetaPeriodos {
+  @ApiProperty({ description: 'Identificador único (UUID)' })
+  id: string;
+
+  @ApiProperty({ description: 'ID de la meta' })
+  metaId: string;
+
+  @ApiProperty({ description: 'Año del período (ej: 2025)' })
+  anio: number;
+
+  @ApiProperty({ description: 'Mes del período (1-12)' })
+  mes: number;
+
+  @ApiProperty({ description: 'Cantidad planeada para este mes' })
+  cantidadPlaneada: number;
+}
+
+@ApiSchema({
+  name: 'plantilla_formulario_procesos',
+  description:
+    'Tabla de unión que asocia plantillas de formulario a procesos. ' +
+    'Reemplaza la tabla legacy plantilla_formulario_subactividades.',
+})
+export class TablaPlantillaFormularioProcesos {
+  @ApiProperty({ description: 'ID de la plantilla de formulario' })
+  plantillaFormularioId: string;
+
+  @ApiProperty({ description: 'ID del proceso' })
+  procesoId: string;
+}
+
+@ApiSchema({
   name: 'indicadores',
   description:
-    'Indicadores de gestión (KPIs) con meta, tipo cuantitativo/cualitativo y frecuencia de medición.',
+    'KPIs transversales del proyecto (cobertura, impacto, eficiencia). ' +
+    'DISTINTO de Meta: Indicador mide la gestión global del proyecto con frecuencia periódica; ' +
+    'Meta mide la cantidad de jornadas/entregas ejecutadas dentro del plan operativo. ' +
+    'Un indicador puede estar asociado a múltiples proyectos.',
 })
 export class TablaIndicadores {
   @ApiProperty({ description: 'Identificador único (UUID)' })
@@ -592,6 +679,9 @@ export const ESQUEMAS_TABLAS = [
   TablaProyectos,
   TablaActividades,
   TablaSubactividades,
+  TablaProcesos,
+  TablaMetas,
+  TablaMetaPeriodos,
   TablaProyectoVeredas,
   TablaProyectoPersonal,
   TablaProyectoBeneficiarios,
@@ -603,6 +693,7 @@ export const ESQUEMAS_TABLAS = [
   TablaJornadaEquipo,
   TablaEvidencias,
   TablaPlantillasFormulario,
+  TablaPlantillaFormularioProcesos,
   TablaCamposFormulario,
   TablaEnviosFormulario,
   TablaRespuestasFormulario,

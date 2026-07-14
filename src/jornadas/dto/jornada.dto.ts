@@ -49,15 +49,25 @@ export class CrearJornadaDto {
   @IsUUID('4')
   proyectoId: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    description:
+      'ID de la meta a la que aporta esta jornada (jerarquía correcta: Proyecto → Actividad → Subactividad → Proceso → Meta → Jornada)',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  metaId?: string;
+
+  @ApiPropertyOptional({
     type: [ActividadJornadaDto],
-    description: 'Actividades del plan incluidas en la jornada',
+    description:
+      'Actividades del plan incluidas en la jornada (modo legacy; usar metaId en lugar de esto)',
   })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ActividadJornadaDto)
-  actividades: ActividadJornadaDto[];
+  @IsOptional()
+  actividades?: ActividadJornadaDto[];
 
   @ApiProperty({ description: 'ID de la vereda' })
   @IsUUID('4')

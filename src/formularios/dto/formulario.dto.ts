@@ -72,7 +72,17 @@ export class CrearPlantillaFormularioDto {
 
   @ApiPropertyOptional({
     description:
-      'IDs de subactividades a las que se asigna la plantilla (opcional, se puede asignar después)',
+      'IDs de procesos a los que se asigna la plantilla (jerarquía correcta: Proceso dentro de Subactividad)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  procesoIds?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de subactividades a las que se asigna la plantilla (modo legacy; usar procesoIds)',
     type: [String],
   })
   @IsArray()
@@ -156,7 +166,17 @@ export class ActualizarPlantillaFormularioDto {
 
   @ApiPropertyOptional({
     description:
-      'IDs de subactividades asignadas (reemplaza el conjunto completo)',
+      'IDs de procesos asignados (jerarquía correcta; reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  procesoIds?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'IDs de subactividades asignadas (modo legacy; usar procesoIds)',
     type: [String],
   })
   @IsArray()
@@ -184,9 +204,19 @@ export class ActualizarPlantillaFormularioDto {
   campos?: ActualizarCampoFormularioDto[];
 }
 
+export class AsignarProcesosDto {
+  @ApiProperty({
+    description: 'IDs de procesos a asignar (reemplaza el conjunto completo)',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  procesoIds: string[];
+}
+
 export class AsignarSubactividadesDto {
   @ApiProperty({
-    description: 'IDs de subactividades a asignar (reemplaza el conjunto completo)',
+    description: 'IDs de subactividades a asignar (modo legacy; usar procesoIds)',
     type: [String],
   })
   @IsArray()

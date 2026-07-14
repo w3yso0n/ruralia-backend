@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Proceso } from '../actividades/entities/proceso.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { JornadasModule } from '../jornadas/jornadas.module';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -19,6 +20,7 @@ import { PlantillasFormularioService } from './plantillas-formulario.service';
       CampoFormulario,
       EnvioFormulario,
       RespuestaFormulario,
+      Proceso,
       Subactividad,
       Usuario,
     ]),

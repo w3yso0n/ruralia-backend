@@ -3,11 +3,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoAvanceActividad } from '../enums/estado-avance-actividad.enum';
 import { Actividad } from './actividad.entity';
+import { Proceso } from './proceso.entity';
 
 @Entity('subactividades')
 export class Subactividad {
@@ -52,4 +54,7 @@ export class Subactividad {
   })
   @JoinColumn({ name: 'actividad_id' })
   actividad: Actividad;
+
+  @OneToMany(() => Proceso, (proceso) => proceso.subactividad)
+  procesos: Proceso[];
 }

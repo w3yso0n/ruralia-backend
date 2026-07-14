@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Jornada } from '../jornadas/entities/jornada.entity';
+import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import {
   usuarioEsCoordinacion,
@@ -43,6 +45,8 @@ export class ActividadesService {
     private readonly subactividadRepository: Repository<Subactividad>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    @InjectRepository(Jornada)
+    private readonly jornadaRepository: Repository<Jornada>,
   ) {}
 
   async crearActividad(
@@ -250,7 +254,8 @@ export class ActividadesService {
   async obtenerPlan(proyectoId: string): Promise<RespuestaPlanProyectoDto> {
     await this.verificarProyectoExiste(proyectoId);
     const actividades = await this.cargarActividadesProyecto(proyectoId);
-    return aRespuestaPlan(proyectoId, actividades);
+    const ejecutadoPorMeta = await this.contarJornadasPorMeta(proyectoId);
+    return aRespuestaPlan(proyectoId, actividades, ejecutadoPorMeta);
   }
 
   async obtenerProgreso(
@@ -258,7 +263,8 @@ export class ActividadesService {
   ): Promise<RespuestaProgresoProyectoDto> {
     await this.verificarProyectoExiste(proyectoId);
     const actividades = await this.cargarActividadesProyecto(proyectoId);
-    return aRespuestaProgreso(proyectoId, actividades);
+    const ejecutadoPorMeta = await this.contarJornadasPorMeta(proyectoId);
+    return aRespuestaProgreso(proyectoId, actividades, ejecutadoPorMeta);
   }
 
   private async obtenerActividadRespuesta(
@@ -318,11 +324,42 @@ export class ActividadesService {
     return this.actividadRepository.find({
       where: { proyecto: { id: proyectoId } },
       relations: {
-        subactividades: true,
+        subactividades: {
+          procesos: { metas: { periodos: true } },
+          completadaPor: true,
+        },
         completadaPor: true,
       },
-      order: { orden: 'ASC', subactividades: { orden: 'ASC' } },
+      order: {
+        orden: 'ASC',
+        subactividades: {
+          orden: 'ASC',
+          procesos: { orden: 'ASC', metas: { orden: 'ASC' } },
+        },
+      },
     });
+  }
+
+  private async contarJornadasPorMeta(
+    proyectoId: string,
+  ): Promise<Map<string, number>> {
+    const filas = await this.jornadaRepository
+      .createQueryBuilder('jornada')
+      .select('jornada.meta_id', 'metaId')
+      .addSelect('COUNT(*)', 'total')
+      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere('jornada.estado = :estado', {
+        estado: EstadoJornada.COMPLETADA,
+      })
+      .andWhere('jornada.meta_id IS NOT NULL')
+      .groupBy('jornada.meta_id')
+      .getRawMany<{ metaId: string; total: string }>();
+
+    const mapa = new Map<string, number>();
+    for (const fila of filas) {
+      mapa.set(fila.metaId, Number(fila.total));
+    }
+    return mapa;
   }
 
   private async verificarProyectoExiste(proyectoId: string): Promise<void> {

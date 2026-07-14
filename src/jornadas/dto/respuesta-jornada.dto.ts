@@ -47,6 +47,32 @@ export class RespuestaJornadaActividadDto {
   orden: number;
 }
 
+export class RespuestaMetaResumenDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  nombre: string;
+
+  @ApiProperty()
+  @Expose()
+  unidadMedida: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  procesoNombre?: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  subactividadNombre?: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  actividadNombre?: string;
+}
+
 export class RespuestaJornadaDto {
   @ApiProperty({ description: 'ID de la jornada' })
   @Expose()
@@ -88,6 +114,14 @@ export class RespuestaJornadaDto {
   @Expose()
   @Type(() => RespuestaResumenDto)
   proyecto?: RespuestaResumenDto;
+
+  @ApiPropertyOptional({
+    type: RespuestaMetaResumenDto,
+    description: 'Meta a la que aporta esta jornada',
+  })
+  @Expose()
+  @Type(() => RespuestaMetaResumenDto)
+  meta?: RespuestaMetaResumenDto;
 
   @ApiPropertyOptional({
     type: [RespuestaJornadaActividadDto],
