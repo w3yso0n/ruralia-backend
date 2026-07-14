@@ -16,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { ArchivosService } from './archivos.service';
 import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto';
 import { SubirEvidenciaDto } from './dto/subir-evidencia.dto';
@@ -53,6 +54,7 @@ export class ArchivosController {
   constructor(private readonly archivosService: ArchivosService) {}
 
   @Post('evidencia')
+  @RequierePermisos('archivos.subir')
   @UseInterceptors(
     FileInterceptor('archivo', {
       storage: memoryStorage(),

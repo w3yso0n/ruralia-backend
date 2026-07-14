@@ -17,6 +17,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -41,6 +42,7 @@ export class JornadasController {
   constructor(private readonly jornadasService: JornadasService) {}
 
   @Post()
+  @RequierePermisos('jornadas.crear')
   @ApiOperation({ summary: 'Crear una nueva jornada' })
   @ApiResponse({ status: 201, type: RespuestaJornadaDto })
   crear(
@@ -51,6 +53,7 @@ export class JornadasController {
   }
 
   @Get()
+  @RequierePermisos('jornadas.ver')
   @ApiOperation({ summary: 'Listar jornadas con filtros y paginación' })
   @ApiResponse({ status: 200, type: RespuestaPaginadaJornadasDto })
   listar(
@@ -60,6 +63,7 @@ export class JornadasController {
   }
 
   @Get(':id/resumen')
+  @RequierePermisos('jornadas.ver')
   @ApiOperation({ summary: 'Obtener resumen de una jornada' })
   @ApiResponse({ status: 200, type: ResumenJornadaDto })
   obtenerResumen(
@@ -69,6 +73,7 @@ export class JornadasController {
   }
 
   @Get(':id')
+  @RequierePermisos('jornadas.ver')
   @ApiOperation({ summary: 'Obtener una jornada por ID' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   obtenerUna(
@@ -78,6 +83,7 @@ export class JornadasController {
   }
 
   @Patch(':id')
+  @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Actualizar datos de una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   actualizar(
@@ -88,6 +94,7 @@ export class JornadasController {
   }
 
   @Patch(':id/estado')
+  @RequierePermisos('jornadas.cambiar_estado')
   @ApiOperation({ summary: 'Cambiar el estado de una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   cambiarEstado(
@@ -99,6 +106,7 @@ export class JornadasController {
   }
 
   @Post(':id/beneficiarios')
+  @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Agregar beneficiarios a una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   agregarBeneficiarios(
@@ -109,6 +117,7 @@ export class JornadasController {
   }
 
   @Post(':id/equipo')
+  @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Agregar un miembro al equipo de la jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   agregarMiembroEquipo(
@@ -120,6 +129,7 @@ export class JornadasController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @RequierePermisos('jornadas.eliminar')
   @ApiOperation({ summary: 'Cancelar una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   cancelar(

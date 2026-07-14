@@ -14,8 +14,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { responderFormato } from '../common/utils/responder-formato';
 import {
   FiltrosReporteBeneficiariosDto,
@@ -25,7 +24,7 @@ import { ReportesService } from './reportes.service';
 
 @ApiTags('Reportes')
 @ApiBearerAuth('bearer')
-@Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+@RequierePermisos('reportes.ver')
 @Controller('reportes')
 export class ReportesController {
   constructor(private readonly reportesService: ReportesService) {}

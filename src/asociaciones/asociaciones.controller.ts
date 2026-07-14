@@ -17,8 +17,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { AsociacionesService } from './asociaciones.service';
 import {
   ActualizarAsociacionDto,
@@ -37,6 +36,7 @@ export class AsociacionesController {
   constructor(private readonly asociacionesService: AsociacionesService) {}
 
   @Get()
+  @RequierePermisos('contrapartes.ver')
   @ApiOperation({ summary: 'Listar asociaciones' })
   @ApiResponse({ status: 200, type: RespuestaPaginadaAsociacionesDto })
   listar(
@@ -46,6 +46,7 @@ export class AsociacionesController {
   }
 
   @Get(':id')
+  @RequierePermisos('contrapartes.ver')
   @ApiOperation({ summary: 'Obtener una asociación por ID' })
   @ApiResponse({ status: 200, type: RespuestaAsociacionDto })
   obtenerUno(
@@ -55,7 +56,7 @@ export class AsociacionesController {
   }
 
   @Post()
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.crear')
   @ApiOperation({ summary: 'Crear una asociación' })
   @ApiResponse({ status: 201, type: RespuestaAsociacionDto })
   crear(@Body() dto: CrearAsociacionDto): Promise<RespuestaAsociacionDto> {
@@ -63,7 +64,7 @@ export class AsociacionesController {
   }
 
   @Patch(':id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.editar')
   @ApiOperation({ summary: 'Actualizar una asociación' })
   @ApiResponse({ status: 200, type: RespuestaAsociacionDto })
   actualizar(
@@ -75,7 +76,7 @@ export class AsociacionesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.eliminar')
   @ApiOperation({ summary: 'Desactivar una asociación' })
   eliminar(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.asociacionesService.eliminar(id);

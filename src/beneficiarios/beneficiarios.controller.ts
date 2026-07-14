@@ -17,8 +17,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { BeneficiariosService } from './beneficiarios.service';
 import {
   ActualizarBeneficiarioDto,
@@ -37,6 +36,7 @@ export class BeneficiariosController {
   constructor(private readonly beneficiariosService: BeneficiariosService) {}
 
   @Get()
+  @RequierePermisos('contrapartes.ver')
   @ApiOperation({ summary: 'Listar beneficiarios' })
   @ApiResponse({ status: 200, type: RespuestaPaginadaBeneficiariosDto })
   listar(
@@ -46,6 +46,7 @@ export class BeneficiariosController {
   }
 
   @Get(':id')
+  @RequierePermisos('contrapartes.ver')
   @ApiOperation({ summary: 'Obtener un beneficiario por ID' })
   @ApiResponse({ status: 200, type: RespuestaBeneficiarioDto })
   obtenerUno(
@@ -55,7 +56,7 @@ export class BeneficiariosController {
   }
 
   @Post()
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.crear')
   @ApiOperation({ summary: 'Crear un beneficiario' })
   @ApiResponse({ status: 201, type: RespuestaBeneficiarioDto })
   crear(@Body() dto: CrearBeneficiarioDto): Promise<RespuestaBeneficiarioDto> {
@@ -63,7 +64,7 @@ export class BeneficiariosController {
   }
 
   @Patch(':id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.editar')
   @ApiOperation({ summary: 'Actualizar un beneficiario' })
   @ApiResponse({ status: 200, type: RespuestaBeneficiarioDto })
   actualizar(
@@ -75,7 +76,7 @@ export class BeneficiariosController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('contrapartes.eliminar')
   @ApiOperation({ summary: 'Desactivar un beneficiario' })
   eliminar(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.beneficiariosService.eliminar(id);

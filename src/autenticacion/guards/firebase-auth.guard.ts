@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -39,10 +40,22 @@ export class FirebaseAuthGuard implements CanActivate {
 
     try {
       const decoded = await this.firebaseAdminService.verificarToken(token);
-      request.usuario =
+      const usuario =
         await this.autenticacionService.obtenerOCrearUsuario(decoded);
+
+      if (!usuario.estaActivo) {
+        throw new ForbiddenException('Usuario desactivado');
+      }
+
+      request.usuario = usuario;
       return true;
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
       throw new UnauthorizedException('Token inválido o expirado');
     }
   }

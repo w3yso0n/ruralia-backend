@@ -4,11 +4,19 @@ import {
   RespuestaPaginadaUsuariosDto,
   RespuestaUsuarioDto,
 } from '../dto/respuesta-usuario.dto';
+import { obtenerPermisosEfectivos } from './permisos-usuario';
 
 export function aRespuestaUsuario(usuario: Usuario): RespuestaUsuarioDto {
-  return plainToInstance(RespuestaUsuarioDto, usuario, {
-    excludeExtraneousValues: true,
-  });
+  return plainToInstance(
+    RespuestaUsuarioDto,
+    {
+      ...usuario,
+      permisos: obtenerPermisosEfectivos(usuario),
+    },
+    {
+      excludeExtraneousValues: true,
+    },
+  );
 }
 
 export function aRespuestaPaginadaUsuarios(

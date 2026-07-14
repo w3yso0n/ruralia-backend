@@ -7,7 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
-import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
+import {
+  usuarioEsCoordinacion,
+  usuarioTieneAccesoTotal,
+} from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarActividadDto,
@@ -386,18 +389,13 @@ export class ActividadesService {
     proyecto: Proyecto,
     usuarioActual: Usuario,
   ): void {
-    const esAdministrador = usuarioActual.roles?.some(
-      (rol) => rol.nombre === NombreRol.ADMINISTRADOR,
-    );
-
-    if (esAdministrador) {
+    if (usuarioTieneAccesoTotal(usuarioActual)) {
       return;
     }
 
     const esCoordinadorAsignado =
-      usuarioActual.roles?.some(
-        (rol) => rol.nombre === NombreRol.COORDINADOR,
-      ) && proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
+      usuarioEsCoordinacion(usuarioActual) &&
+      proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
 
     if (!esCoordinadorAsignado) {
       throw new ForbiddenException(

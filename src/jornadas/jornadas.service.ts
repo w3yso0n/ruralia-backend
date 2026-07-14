@@ -14,7 +14,10 @@ import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
-import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
+import {
+  usuarioEsCoordinacion,
+  usuarioTieneAccesoTotal,
+} from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActividadJornadaDto,
@@ -416,24 +419,20 @@ export class JornadasService {
     jornada: Jornada,
     usuarioActual: Usuario,
   ): void {
-    const esAdmin = usuarioActual.roles?.some(
-      (r) => r.nombre === NombreRol.ADMINISTRADOR,
-    );
-    const esCoord = usuarioActual.roles?.some(
-      (r) => r.nombre === NombreRol.COORDINADOR,
-    );
-
-    if (esAdmin || esCoord) {
+    if (
+      usuarioTieneAccesoTotal(usuarioActual) ||
+      usuarioEsCoordinacion(usuarioActual)
+    ) {
       return;
     }
 
-    const esTecnicoAsignado =
+    const esCampoAsignado =
       jornada.tecnicoResponsable?.id === usuarioActual.id ||
       jornada.equipo?.some((u) => u.id === usuarioActual.id);
 
-    if (!esTecnicoAsignado) {
+    if (!esCampoAsignado) {
       throw new ForbiddenException(
-        'Solo el técnico asignado o un coordinador/administrador puede cambiar el estado',
+        'Solo el personal de campo asignado, coordinador o administrador puede cambiar el estado',
       );
     }
   }

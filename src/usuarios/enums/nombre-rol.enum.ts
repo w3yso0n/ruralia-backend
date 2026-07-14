@@ -1,6 +1,4 @@
-export enum NombreRol {
-  ADMINISTRADOR = 'ADMINISTRADOR',
-  COORDINADOR = 'COORDINADOR',
-  TECNICO = 'TECNICO',
-  VISUALIZADOR = 'VISUALIZADOR',
-}
+export {
+  RolSistema as NombreRol,
+  RolSistema,
+} from '../catalogo-permisos';

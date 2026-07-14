@@ -1,19 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { NombreRol } from '../enums/nombre-rol.enum';
 
 export class RespuestaRolDto {
   @ApiProperty({ description: 'ID del rol' })
   @Expose()
   id: string;
 
-  @ApiProperty({ enum: NombreRol, description: 'Nombre del rol asignado' })
+  @ApiProperty({ description: 'Nombre del rol' })
   @Expose()
-  nombre: NombreRol;
+  nombre: string;
 
   @ApiPropertyOptional({ description: 'Descripción del rol' })
   @Expose()
   descripcion?: string;
+
+  @ApiPropertyOptional({ description: 'Indica si es un rol de sistema' })
+  @Expose()
+  esSistema?: boolean;
 }
 
 export class RespuestaUsuarioDto {
@@ -52,6 +55,13 @@ export class RespuestaUsuarioDto {
   @Expose()
   @Type(() => RespuestaRolDto)
   roles: RespuestaRolDto[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'Permisos efectivos (unión de roles)',
+  })
+  @Expose()
+  permisos: string[];
 }
 
 export class RespuestaPaginadaUsuariosDto {

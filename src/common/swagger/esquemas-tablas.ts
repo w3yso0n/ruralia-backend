@@ -31,20 +31,23 @@ export class TablaUsuarios {
 @ApiSchema({
   name: 'roles',
   description:
-    'Roles del sistema para control de acceso: ADMINISTRADOR, COORDINADOR, TECNICO y VISUALIZADOR.',
+    'Roles personalizados con matriz de permisos. Roles de sistema: CUANTIVA, ADMINISTRADOR, COORDINADOR_DEPARTAMENTAL, COORDINADOR_ZONA, CAMPO, VISUALIZADOR.'
 })
 export class TablaRoles {
   @ApiProperty({ description: 'Identificador único (UUID)' })
   id: string;
 
   @ApiProperty({
-    description: 'Nombre del rol',
-    enum: ['ADMINISTRADOR', 'COORDINADOR', 'TECNICO', 'VISUALIZADOR'],
+    description: 'Nombre único del rol',
+    example: 'CUANTIVA',
   })
   nombre: string;
 
   @ApiPropertyOptional({ description: 'Descripción del rol y sus permisos' })
   descripcion?: string;
+
+  @ApiProperty({ description: 'Indica si es un rol de sistema (no eliminable)' })
+  esSistema: boolean;
 }
 
 @ApiSchema({

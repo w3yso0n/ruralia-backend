@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -35,6 +36,7 @@ export class IndicadoresController {
   constructor(private readonly indicadoresService: IndicadoresService) {}
 
   @Post()
+  @RequierePermisos('indicadores.crear')
   @ApiOperation({ summary: 'Crear indicador y asociarlo a proyectos' })
   @ApiResponse({ status: 201, type: RespuestaIndicadorDto })
   crear(@Body() dto: CrearIndicadorDto): Promise<RespuestaIndicadorDto> {
@@ -42,6 +44,7 @@ export class IndicadoresController {
   }
 
   @Get()
+  @RequierePermisos('indicadores.ver')
   @ApiOperation({ summary: 'Listar todos los indicadores' })
   @ApiResponse({ status: 200, type: [RespuestaIndicadorDto] })
   listar(): Promise<RespuestaIndicadorDto[]> {
@@ -49,6 +52,7 @@ export class IndicadoresController {
   }
 
   @Get('proyecto/:proyectoId/avance')
+  @RequierePermisos('indicadores.ver')
   @ApiOperation({ summary: 'Obtener avance de indicadores por proyecto' })
   @ApiResponse({ status: 200, type: [AvanceIndicadorDto] })
   obtenerAvance(
@@ -58,6 +62,7 @@ export class IndicadoresController {
   }
 
   @Get(':id/linea-tiempo')
+  @RequierePermisos('indicadores.ver')
   @ApiOperation({ summary: 'Serie temporal de registros de un indicador' })
   @ApiResponse({ status: 200, type: [PuntoLineaTiempoDto] })
   obtenerLineaTiempo(
@@ -68,6 +73,7 @@ export class IndicadoresController {
   }
 
   @Get(':id')
+  @RequierePermisos('indicadores.ver')
   @ApiOperation({ summary: 'Obtener un indicador por ID' })
   @ApiResponse({ status: 200, type: RespuestaIndicadorDto })
   obtenerUno(
@@ -77,6 +83,7 @@ export class IndicadoresController {
   }
 
   @Post(':id/registros')
+  @RequierePermisos('indicadores.crear')
   @ApiOperation({ summary: 'Registrar valor de un indicador en una jornada' })
   @ApiResponse({ status: 201, type: RespuestaRegistroIndicadorDto })
   registrarValor(

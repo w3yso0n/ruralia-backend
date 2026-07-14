@@ -16,9 +16,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ActividadesService } from './actividades.service';
 import {
@@ -42,6 +41,7 @@ export class ActividadesController {
   constructor(private readonly actividadesService: ActividadesService) {}
 
   @Get('proyectos/:proyectoId/plan')
+  @RequierePermisos('actividades.ver')
   @ApiOperation({ summary: 'Obtener el plan de trabajo del proyecto' })
   @ApiResponse({ status: 200, type: RespuestaPlanProyectoDto })
   obtenerPlan(
@@ -51,6 +51,7 @@ export class ActividadesController {
   }
 
   @Get('proyectos/:proyectoId/progreso')
+  @RequierePermisos('actividades.ver')
   @ApiOperation({ summary: 'Obtener el progreso agregado del plan' })
   @ApiResponse({ status: 200, type: RespuestaProgresoProyectoDto })
   obtenerProgreso(
@@ -60,7 +61,7 @@ export class ActividadesController {
   }
 
   @Post('proyectos/:proyectoId/actividades')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.crear')
   @ApiOperation({ summary: 'Crear una actividad en el plan del proyecto' })
   @ApiResponse({ status: 201, type: RespuestaActividadDto })
   crearActividad(
@@ -72,7 +73,7 @@ export class ActividadesController {
   }
 
   @Patch('actividades/:id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.editar')
   @ApiOperation({ summary: 'Actualizar una actividad del plan' })
   @ApiResponse({ status: 200, type: RespuestaActividadDto })
   actualizarActividad(
@@ -85,7 +86,7 @@ export class ActividadesController {
 
   @Delete('actividades/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.eliminar')
   @ApiOperation({ summary: 'Desactivar una actividad del plan' })
   eliminarActividad(
     @Param('id', ParseUUIDPipe) id: string,
@@ -95,7 +96,7 @@ export class ActividadesController {
   }
 
   @Patch('actividades/:id/completar')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.marcar_avance')
   @ApiOperation({ summary: 'Marcar una actividad hoja como completada' })
   @ApiResponse({ status: 200, type: RespuestaActividadDto })
   completarActividad(
@@ -107,7 +108,7 @@ export class ActividadesController {
   }
 
   @Patch('actividades/:id/reabrir')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.marcar_avance')
   @ApiOperation({ summary: 'Reabrir una actividad completada' })
   @ApiResponse({ status: 200, type: RespuestaActividadDto })
   reabrirActividad(
@@ -118,7 +119,7 @@ export class ActividadesController {
   }
 
   @Post('actividades/:actividadId/subactividades')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.crear')
   @ApiOperation({ summary: 'Crear una subactividad' })
   @ApiResponse({ status: 201, type: RespuestaSubactividadDto })
   crearSubactividad(
@@ -130,7 +131,7 @@ export class ActividadesController {
   }
 
   @Patch('subactividades/:id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.editar')
   @ApiOperation({ summary: 'Actualizar una subactividad' })
   @ApiResponse({ status: 200, type: RespuestaSubactividadDto })
   actualizarSubactividad(
@@ -143,7 +144,7 @@ export class ActividadesController {
 
   @Delete('subactividades/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.eliminar')
   @ApiOperation({ summary: 'Desactivar una subactividad' })
   eliminarSubactividad(
     @Param('id', ParseUUIDPipe) id: string,
@@ -153,7 +154,7 @@ export class ActividadesController {
   }
 
   @Patch('subactividades/:id/completar')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.marcar_avance')
   @ApiOperation({ summary: 'Marcar una subactividad como completada' })
   @ApiResponse({ status: 200, type: RespuestaSubactividadDto })
   completarSubactividad(
@@ -165,7 +166,7 @@ export class ActividadesController {
   }
 
   @Patch('subactividades/:id/reabrir')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.marcar_avance')
   @ApiOperation({ summary: 'Reabrir una subactividad completada' })
   @ApiResponse({ status: 200, type: RespuestaSubactividadDto })
   reabrirSubactividad(

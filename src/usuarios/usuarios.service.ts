@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -12,17 +13,16 @@ import { CrearUsuarioDto } from './dto/crear-usuario.dto';
 import { FiltrosUsuarioDto } from './dto/filtros-usuario.dto';
 import {
   RespuestaPaginadaUsuariosDto,
-  RespuestaRolDto,
   RespuestaUsuarioDto,
 } from './dto/respuesta-usuario.dto';
 import { Rol } from './entities/rol.entity';
 import { Usuario } from './entities/usuario.entity';
-import { NombreRol } from './enums/nombre-rol.enum';
+import { PermisosSeedService } from './permisos-seed.service';
 import {
   aRespuestaPaginadaUsuarios,
   aRespuestaUsuario,
 } from './utils/serializar-usuario';
-import { plainToInstance } from 'class-transformer';
+import { usuarioTienePermisos } from './utils/permisos-usuario';
 
 @Injectable()
 export class UsuariosService {
@@ -32,15 +32,8 @@ export class UsuariosService {
     @InjectRepository(Rol)
     private readonly rolRepository: Repository<Rol>,
     private readonly firebaseAdmin: FirebaseAdminService,
+    private readonly permisosSeed: PermisosSeedService,
   ) {}
-
-  async listarRoles(): Promise<RespuestaRolDto[]> {
-    await this.asegurarRolesBase();
-    const roles = await this.rolRepository.find({ order: { nombre: 'ASC' } });
-    return plainToInstance(RespuestaRolDto, roles, {
-      excludeExtraneousValues: true,
-    });
-  }
 
   async listar(
     filtros: FiltrosUsuarioDto,
@@ -52,6 +45,7 @@ export class UsuariosService {
     const query = this.usuarioRepository
       .createQueryBuilder('usuario')
       .leftJoinAndSelect('usuario.roles', 'roles')
+      .leftJoinAndSelect('roles.permisos', 'permisos')
       .orderBy('usuario.creadoEn', 'DESC');
 
     if (filtros.busqueda) {
@@ -93,7 +87,7 @@ export class UsuariosService {
     );
 
     try {
-      const roles = await this.obtenerRolesPorNombre(dto.roles);
+      const roles = await this.obtenerRolesPorIds(dto.rolIds);
       const usuario = this.usuarioRepository.create({
         firebaseUid: firebaseUser.uid,
         correo: dto.correo,
@@ -128,6 +122,17 @@ export class UsuariosService {
       }
     }
 
+    const rolesNuevos =
+      dto.rolIds !== undefined
+        ? await this.obtenerRolesPorIds(dto.rolIds)
+        : undefined;
+
+    await this.validarNoOrfandadAdmin(
+      usuario,
+      dto.estaActivo,
+      rolesNuevos,
+    );
+
     await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
       correo: dto.correo,
       contrasena: dto.contrasena,
@@ -142,10 +147,7 @@ export class UsuariosService {
     if (dto.correo !== undefined) usuario.correo = dto.correo;
     if (dto.urlFoto !== undefined) usuario.urlFoto = dto.urlFoto;
     if (dto.estaActivo !== undefined) usuario.estaActivo = dto.estaActivo;
-
-    if (dto.roles !== undefined) {
-      usuario.roles = await this.obtenerRolesPorNombre(dto.roles);
-    }
+    if (rolesNuevos !== undefined) usuario.roles = rolesNuevos;
 
     await this.usuarioRepository.save(usuario);
     return this.obtenerUno(id);
@@ -157,6 +159,8 @@ export class UsuariosService {
     }
 
     const usuario = await this.buscarUsuario(id);
+    await this.validarNoOrfandadAdmin(usuario, false, undefined);
+
     usuario.estaActivo = false;
     await this.usuarioRepository.save(usuario);
     await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
@@ -167,7 +171,7 @@ export class UsuariosService {
   private async buscarUsuario(id: string): Promise<Usuario> {
     const usuario = await this.usuarioRepository.findOne({
       where: { id },
-      relations: { roles: true },
+      relations: { roles: { permisos: true } },
     });
 
     if (!usuario) {
@@ -177,25 +181,54 @@ export class UsuariosService {
     return usuario;
   }
 
-  private async obtenerRolesPorNombre(nombres: NombreRol[]): Promise<Rol[]> {
-    await this.asegurarRolesBase();
+  private async obtenerRolesPorIds(rolIds: string[]): Promise<Rol[]> {
+    await this.permisosSeed.asegurarCatalogoYRoles();
+    const unicos = [...new Set(rolIds)];
     const roles = await this.rolRepository.find({
-      where: { nombre: In(nombres) },
+      where: { id: In(unicos) },
+      relations: { permisos: true },
     });
 
-    if (roles.length !== nombres.length) {
-      throw new NotFoundException('Uno o más roles no existen');
+    if (roles.length !== unicos.length) {
+      throw new BadRequestException('Uno o más roles no existen');
     }
 
     return roles;
   }
 
-  private async asegurarRolesBase(): Promise<void> {
-    for (const nombre of Object.values(NombreRol)) {
-      const existe = await this.rolRepository.findOne({ where: { nombre } });
-      if (!existe) {
-        await this.rolRepository.save(this.rolRepository.create({ nombre }));
-      }
+  /**
+   * Evita dejar el sistema sin ningún usuario activo con permiso roles.editar.
+   */
+  private async validarNoOrfandadAdmin(
+    usuario: Usuario,
+    estaActivoNuevo: boolean | undefined,
+    rolesNuevos: Rol[] | undefined,
+  ): Promise<void> {
+    const quedaraActivo =
+      estaActivoNuevo !== undefined ? estaActivoNuevo : usuario.estaActivo;
+    const rolesFinales = rolesNuevos ?? usuario.roles ?? [];
+    const teniaGestion = usuarioTienePermisos(usuario, ['roles.editar']);
+    const tendraGestion = usuarioTienePermisos(
+      { ...usuario, roles: rolesFinales } as Usuario,
+      ['roles.editar'],
+    );
+
+    const pierdeGestion =
+      teniaGestion && (!quedaraActivo || !tendraGestion);
+    if (!pierdeGestion) return;
+
+    const otros = await this.usuarioRepository.find({
+      where: { estaActivo: true },
+      relations: { roles: { permisos: true } },
+    });
+    const quedaAlguien = otros.some(
+      (u) =>
+        u.id !== usuario.id && usuarioTienePermisos(u, ['roles.editar']),
+    );
+    if (!quedaAlguien) {
+      throw new BadRequestException(
+        'Debe existir al menos un usuario activo con permiso para editar roles',
+      );
     }
   }
 

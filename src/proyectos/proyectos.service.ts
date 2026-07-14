@@ -15,7 +15,10 @@ import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
-import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
+import {
+  usuarioEsCoordinacion,
+  usuarioTieneAccesoTotal,
+} from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import {
@@ -601,18 +604,13 @@ export class ProyectosService {
     proyecto: Proyecto,
     usuarioActual: Usuario,
   ): void {
-    const esAdministrador = usuarioActual.roles?.some(
-      (rol) => rol.nombre === NombreRol.ADMINISTRADOR,
-    );
-
-    if (esAdministrador) {
+    if (usuarioTieneAccesoTotal(usuarioActual)) {
       return;
     }
 
     const esCoordinadorAsignado =
-      usuarioActual.roles?.some(
-        (rol) => rol.nombre === NombreRol.COORDINADOR,
-      ) && proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
+      usuarioEsCoordinacion(usuarioActual) &&
+      proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
 
     if (!esCoordinadorAsignado) {
       throw new ForbiddenException(

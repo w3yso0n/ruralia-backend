@@ -96,7 +96,7 @@ Catálogo de tablas de PostgreSQL gestionadas por TypeORM. Los esquemas detallad
 | Tabla | Descripción |
 |-------|-------------|
 | \`usuarios\` | Usuarios del sistema autenticados con Firebase (UID, correo, nombre, foto, estado activo). |
-| \`roles\` | Roles del sistema: ADMINISTRADOR, COORDINADOR, TECNICO y VISUALIZADOR. |
+| \`roles\` | Roles de sistema: CUANTIVA, ADMINISTRADOR, COORDINADOR_DEPARTAMENTAL, COORDINADOR_ZONA, CAMPO y VISUALIZADOR. |
 | \`usuario_roles\` | Relación muchos a muchos entre usuarios y roles (control de acceso RBAC). |
 
 ### Territorio

@@ -5,7 +5,7 @@ import { AutenticacionController } from './autenticacion.controller';
 import { AutenticacionService } from './autenticacion.service';
 import { FirebaseAdminService } from './firebase-admin.service';
 import { FirebaseAuthGuard } from './guards/firebase-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 
 @Module({
   imports: [forwardRef(() => UsuariosModule)],
@@ -19,7 +19,7 @@ import { RolesGuard } from './guards/roles.guard';
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useClass: PermissionsGuard,
     },
   ],
   exports: [FirebaseAdminService, AutenticacionService],

@@ -6,6 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { ThrottlerPorUsuarioGuard } from '../common/guards/throttler-por-usuario.guard';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -20,6 +21,7 @@ export class SincronizacionController {
   constructor(private readonly sincronizacionService: SincronizacionService) {}
 
   @Post('subir')
+  @RequierePermisos('sincronizacion.usar')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(ThrottlerPorUsuarioGuard)
   @ApiOperation({ summary: 'Subir datos offline para sincronización' })

@@ -1,15 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEmail,
-  IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   MinLength,
 } from 'class-validator';
-import { NombreRol } from '../enums/nombre-rol.enum';
 
 export class ActualizarUsuarioDto {
   @ApiPropertyOptional({ description: 'Correo electrónico del usuario' })
@@ -39,13 +39,13 @@ export class ActualizarUsuarioDto {
   estaActivo?: boolean;
 
   @ApiPropertyOptional({
-    enum: NombreRol,
-    isArray: true,
-    description: 'Roles asignados al usuario',
+    type: [String],
+    description: 'IDs de roles asignados al usuario',
   })
   @IsArray()
   @ArrayNotEmpty()
-  @IsEnum(NombreRol, { each: true })
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
   @IsOptional()
-  roles?: NombreRol[];
+  rolIds?: string[];
 }

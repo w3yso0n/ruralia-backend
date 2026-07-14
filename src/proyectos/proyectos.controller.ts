@@ -15,9 +15,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import { AsignarPersonalDto } from './dto/asignar-personal.dto';
@@ -42,7 +41,7 @@ export class ProyectosController {
   constructor(private readonly proyectosService: ProyectosService) {}
 
   @Post()
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.crear')
   @ApiOperation({ summary: 'Crear un nuevo proyecto' })
   @ApiResponse({ status: 201, type: RespuestaProyectoDto })
   crear(
@@ -53,6 +52,7 @@ export class ProyectosController {
   }
 
   @Get()
+  @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Listar proyectos con filtros y paginación' })
   @ApiResponse({ status: 200, type: RespuestaPaginadaProyectosDto })
   listar(
@@ -62,6 +62,7 @@ export class ProyectosController {
   }
 
   @Get(':id/estadisticas')
+  @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Obtener estadísticas de un proyecto' })
   @ApiResponse({ status: 200, type: EstadisticasProyectoDto })
   obtenerEstadisticas(
@@ -71,6 +72,7 @@ export class ProyectosController {
   }
 
   @Get(':id')
+  @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Obtener un proyecto por ID' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   obtenerUno(
@@ -80,7 +82,7 @@ export class ProyectosController {
   }
 
   @Patch(':id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.editar')
   @ApiOperation({ summary: 'Actualizar datos de un proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   actualizar(
@@ -92,7 +94,7 @@ export class ProyectosController {
   }
 
   @Delete(':id')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('proyectos.eliminar')
   @ApiOperation({ summary: 'Suspender un proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   suspender(
@@ -102,7 +104,7 @@ export class ProyectosController {
   }
 
   @Post(':id/activar')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.editar')
   @ApiOperation({ summary: 'Activar un proyecto en borrador' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   activar(
@@ -113,7 +115,7 @@ export class ProyectosController {
   }
 
   @Post(':id/territorios')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.gestionar_vinculos')
   @ApiOperation({ summary: 'Asignar veredas al proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarTerritorios(
@@ -125,7 +127,7 @@ export class ProyectosController {
   }
 
   @Post(':id/personal')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.asignar_personal')
   @ApiOperation({ summary: 'Asignar personal al proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarPersonal(
@@ -137,7 +139,7 @@ export class ProyectosController {
   }
 
   @Post(':id/beneficiarios')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.gestionar_vinculos')
   @ApiOperation({ summary: 'Asignar beneficiarios al proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarBeneficiarios(
@@ -149,7 +151,7 @@ export class ProyectosController {
   }
 
   @Post(':id/asociaciones')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('proyectos.gestionar_vinculos')
   @ApiOperation({ summary: 'Asignar asociaciones al proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarAsociaciones(

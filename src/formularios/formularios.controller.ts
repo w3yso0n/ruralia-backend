@@ -13,8 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -42,7 +41,7 @@ export class FormulariosController {
   ) {}
 
   @Post('plantillas')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.crear')
   @ApiOperation({ summary: 'Crear una plantilla de formulario' })
   @ApiResponse({ status: 201, type: RespuestaPlantillaFormularioDto })
   crearPlantilla(
@@ -52,6 +51,7 @@ export class FormulariosController {
   }
 
   @Get('plantillas')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar todas las plantillas de formulario' })
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillas(): Promise<RespuestaPlantillaFormularioDto[]> {
@@ -59,6 +59,7 @@ export class FormulariosController {
   }
 
   @Get('plantillas/subactividad/:subactividadId')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar plantillas por subactividad' })
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillasPorSubactividad(
@@ -68,6 +69,7 @@ export class FormulariosController {
   }
 
   @Get('plantillas/asignadas')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({
     summary:
       'Listar plantillas publicadas asignadas al usuario autenticado (directamente o vía proyectos donde participa)',
@@ -80,6 +82,7 @@ export class FormulariosController {
   }
 
   @Get('plantillas/:id')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Obtener una plantilla de formulario por ID' })
   @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
   obtenerPlantilla(
@@ -89,7 +92,7 @@ export class FormulariosController {
   }
 
   @Patch('plantillas/:id')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.editar')
   @ApiOperation({ summary: 'Actualizar una plantilla de formulario' })
   @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
   actualizarPlantilla(
@@ -100,7 +103,7 @@ export class FormulariosController {
   }
 
   @Post('plantillas/:id/publicar')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.publicar')
   @ApiOperation({ summary: 'Publicar una plantilla de formulario' })
   @ApiResponse({ status: 200, type: RespuestaPlantillaFormularioDto })
   publicarPlantilla(
@@ -110,7 +113,7 @@ export class FormulariosController {
   }
 
   @Post('plantillas/:id/clonar')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.crear')
   @ApiOperation({ summary: 'Clonar una plantilla (sin subactividades asignadas)' })
   @ApiResponse({ status: 201, type: RespuestaPlantillaFormularioDto })
   clonarPlantilla(
@@ -120,7 +123,7 @@ export class FormulariosController {
   }
 
   @Patch('plantillas/:id/subactividades')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.editar')
   @ApiOperation({
     summary: 'Asignar subactividades a una plantilla (reemplaza el conjunto)',
   })
@@ -136,7 +139,7 @@ export class FormulariosController {
   }
 
   @Patch('plantillas/:id/usuarios')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('formularios.asignar_usuarios')
   @ApiOperation({
     summary:
       'Asignar usuarios directamente a una plantilla (reemplaza el conjunto)',
@@ -150,6 +153,7 @@ export class FormulariosController {
   }
 
   @Post('envios')
+  @RequierePermisos('formularios.enviar')
   @ApiOperation({ summary: 'Enviar un formulario completado' })
   @ApiResponse({ status: 201, type: RespuestaEnvioFormularioDto })
   enviarFormulario(
@@ -160,6 +164,7 @@ export class FormulariosController {
   }
 
   @Get('envios/jornada/:jornadaId')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar envíos de formulario por jornada' })
   @ApiResponse({ status: 200, type: [RespuestaEnvioFormularioDto] })
   listarEnviosPorJornada(
@@ -169,6 +174,7 @@ export class FormulariosController {
   }
 
   @Get('envios/:id/respuestas')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Obtener respuestas de un envío de formulario' })
   @ApiResponse({ status: 200, type: [RespuestaDetalleRespuestaDto] })
   obtenerRespuestas(

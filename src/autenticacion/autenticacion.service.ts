@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { Repository } from 'typeorm';
-import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
+import { RolSistema } from '../usuarios/catalogo-permisos';
 import { Rol } from '../usuarios/entities/rol.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { PermisosSeedService } from '../usuarios/permisos-seed.service';
 
 @Injectable()
 export class AutenticacionService {
@@ -13,19 +14,20 @@ export class AutenticacionService {
     private readonly usuarioRepository: Repository<Usuario>,
     @InjectRepository(Rol)
     private readonly rolRepository: Repository<Rol>,
+    private readonly permisosSeed: PermisosSeedService,
   ) {}
 
   async obtenerOCrearUsuario(decoded: DecodedIdToken): Promise<Usuario> {
-    const existente = await this.usuarioRepository.findOne({
-      where: { firebaseUid: decoded.uid },
-      relations: { roles: true },
-    });
+    const existente = await this.cargarUsuarioPorFirebaseUid(decoded.uid);
 
     if (existente) {
       return existente;
     }
 
-    const rolVisualizador = await this.obtenerRol(NombreRol.VISUALIZADOR);
+    await this.permisosSeed.asegurarCatalogoYRoles();
+    const rolVisualizador = await this.obtenerRolSistema(
+      RolSistema.VISUALIZADOR,
+    );
 
     const nuevoUsuario = this.usuarioRepository.create({
       firebaseUid: decoded.uid,
@@ -38,20 +40,33 @@ export class AutenticacionService {
 
     await this.usuarioRepository.save(nuevoUsuario);
 
+    return this.cargarUsuarioPorId(nuevoUsuario.id);
+  }
+
+  async cargarUsuarioPorId(id: string): Promise<Usuario> {
     return this.usuarioRepository.findOneOrFail({
-      where: { id: nuevoUsuario.id },
-      relations: { roles: true },
+      where: { id },
+      relations: { roles: { permisos: true } },
     });
   }
 
-  private async obtenerRol(nombre: NombreRol): Promise<Rol> {
-    let rol = await this.rolRepository.findOne({ where: { nombre } });
+  private async cargarUsuarioPorFirebaseUid(
+    firebaseUid: string,
+  ): Promise<Usuario | null> {
+    return this.usuarioRepository.findOne({
+      where: { firebaseUid },
+      relations: { roles: { permisos: true } },
+    });
+  }
 
+  private async obtenerRolSistema(nombre: RolSistema): Promise<Rol> {
+    const rol = await this.rolRepository.findOne({
+      where: { nombre },
+      relations: { permisos: true },
+    });
     if (!rol) {
-      rol = this.rolRepository.create({ nombre });
-      await this.rolRepository.save(rol);
+      throw new Error(`Rol de sistema ${nombre} no encontrado`);
     }
-
     return rol;
   }
 }
