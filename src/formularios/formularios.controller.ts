@@ -60,12 +60,27 @@ export class FormulariosController {
   }
 
   @Get('plantillas/proceso/:procesoId')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar plantillas asignadas a un proceso' })
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillasPorProceso(
     @Param('procesoId', ParseUUIDPipe) procesoId: string,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarPorProceso(procesoId);
+  }
+
+  @Get('plantillas/jornada/:jornadaId')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Listar plantillas activas de la jornada (vía meta → proceso + asignadas directamente al usuario)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarPlantillasPorJornada(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarPorJornada(jornadaId, usuario);
   }
 
   @Get('plantillas/subactividad/:subactividadId')
@@ -89,6 +104,18 @@ export class FormulariosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarAsignadasAUsuario(usuario);
+  }
+
+  @Get('plantillas/documentos-generales')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary: 'Listar plantillas asignadas directamente al usuario (documentos generales)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarDocumentosGenerales(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarDocumentosGeneralesAUsuario(usuario);
   }
 
   @Get('plantillas/:id')

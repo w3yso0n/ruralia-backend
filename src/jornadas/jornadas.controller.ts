@@ -28,6 +28,7 @@ import {
   CrearJornadaDto,
 } from './dto/jornada.dto';
 import { FiltrosJornadaDto } from './dto/filtros-jornada.dto';
+import { FiltrosJornadaAsignadaDto } from './dto/filtros-jornada-asignada.dto';
 import {
   ResumenJornadaDto,
   RespuestaJornadaDto,
@@ -60,6 +61,19 @@ export class JornadasController {
     @Query() filtros: FiltrosJornadaDto,
   ): Promise<RespuestaPaginadaJornadasDto> {
     return this.jornadasService.listar(filtros);
+  }
+
+  @Get('asignadas')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({
+    summary: 'Listar jornadas asignadas al usuario autenticado (responsable o equipo)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaPaginadaJornadasDto })
+  listarAsignadas(
+    @Query() filtros: FiltrosJornadaAsignadaDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPaginadaJornadasDto> {
+    return this.jornadasService.listarAsignadasAUsuario(usuario, filtros);
   }
 
   @Get(':id/resumen')

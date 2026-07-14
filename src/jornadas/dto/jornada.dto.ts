@@ -115,6 +115,14 @@ export class ActualizarJornadaDto {
   @IsUUID('4')
   @IsOptional()
   veredaId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de la meta a la que aporta esta jornada (necesaria para formularios en campo)',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  metaId?: string;
 }
 
 export class CambiarEstadoJornadaDto {

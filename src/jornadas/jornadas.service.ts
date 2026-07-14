@@ -94,6 +94,12 @@ export class JornadasService {
       );
     }
 
+    if (!dto.metaId && (!dto.actividades || dto.actividades.length === 0)) {
+      throw new BadRequestException(
+        'Debe seleccionar una meta del plan para vincular formularios en campo',
+      );
+    }
+
     const tecnicoId = dto.tecnicoResponsableId ?? usuarioActual.id;
 
     if (dto.metaId) {
@@ -195,6 +201,42 @@ export class JornadasService {
     return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
   }
 
+  async listarAsignadasAUsuario(
+    usuario: Usuario,
+    filtros?: { estado?: EstadoJornada; proyectoId?: string; pagina?: number; limite?: number },
+  ): Promise<RespuestaPaginadaJornadasDto> {
+    const pagina = filtros?.pagina ?? 1;
+    const limite = filtros?.limite ?? 50;
+    const skip = (pagina - 1) * limite;
+
+    const query = this.jornadaRepository
+      .createQueryBuilder('jornada')
+      .leftJoinAndSelect('jornada.proyecto', 'proyecto')
+      .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.meta', 'meta')
+      .leftJoinAndSelect('meta.proceso', 'proceso')
+      .leftJoinAndSelect('proceso.subactividad', 'subactividad')
+      .leftJoinAndSelect('subactividad.actividad', 'actividad')
+      .where(
+        '(jornada.tecnico_responsable_id = :usuarioId OR EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = jornada.id AND je.usuario_id = :usuarioId))',
+        { usuarioId: usuario.id },
+      )
+      .andWhere('jornada.estado != :cancelada', { cancelada: EstadoJornada.CANCELADA })
+      .orderBy('jornada.fecha', 'ASC');
+
+    if (filtros?.estado) {
+      query.andWhere('jornada.estado = :estado', { estado: filtros.estado });
+    }
+
+    if (filtros?.proyectoId) {
+      query.andWhere('jornada.proyecto_id = :proyectoId', { proyectoId: filtros.proyectoId });
+    }
+
+    const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    const datos = jornadas.map((j) => aRespuestaJornada(j));
+    return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
+  }
+
   async obtenerUna(id: string): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
@@ -250,6 +292,27 @@ export class JornadasService {
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
     if (dto.veredaId !== undefined) {
       jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
+    }
+
+    if (dto.metaId !== undefined) {
+      const meta = await this.metaRepository.findOne({
+        where: { id: dto.metaId },
+        relations: {
+          proceso: { subactividad: { actividad: { proyecto: true } } },
+        },
+      });
+
+      if (!meta) {
+        throw new NotFoundException(`Meta ${dto.metaId} no encontrada`);
+      }
+
+      if (meta.proceso.subactividad.actividad.proyecto.id !== jornada.proyecto.id) {
+        throw new BadRequestException(
+          'La meta no pertenece al proyecto de la jornada',
+        );
+      }
+
+      jornada.meta = { id: dto.metaId } as Meta;
     }
 
     if (dto.actividades !== undefined) {
