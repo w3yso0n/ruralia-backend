@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Corregimiento } from './corregimiento.entity';
+import { Municipio } from './municipio.entity';
 
 @Entity('veredas')
 export class Vereda {
@@ -21,9 +22,16 @@ export class Vereda {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
-  @ManyToOne(() => Corregimiento, (corregimiento) => corregimiento.veredas, {
+  @ManyToOne(() => Municipio, (municipio) => municipio.veredas, {
     nullable: false,
   })
+  @JoinColumn({ name: 'municipio_id' })
+  municipio: Municipio;
+
+  /** Opcional: subdivisiones locales o resoluciones de mapa. */
+  @ManyToOne(() => Corregimiento, (corregimiento) => corregimiento.veredas, {
+    nullable: true,
+  })
   @JoinColumn({ name: 'corregimiento_id' })
-  corregimiento: Corregimiento;
+  corregimiento: Corregimiento | null;
 }

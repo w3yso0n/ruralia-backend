@@ -29,6 +29,10 @@ export class RespuestaVeredaDto {
   @ApiPropertyOptional()
   @Expose()
   departamentoNombre?: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  regionNombre?: string;
 }
 
 export class RespuestaPaginadaVeredasDto {

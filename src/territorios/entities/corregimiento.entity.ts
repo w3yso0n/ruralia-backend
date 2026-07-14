@@ -9,6 +9,10 @@ import {
 import { Municipio } from './municipio.entity';
 import { Vereda } from './vereda.entity';
 
+/**
+ * Nivel opcional (histórico / Places).
+ * El catálogo DANE enlaza vereda directamente con municipio.
+ */
 @Entity('corregimientos')
 export class Corregimiento {
   @PrimaryGeneratedColumn('uuid')

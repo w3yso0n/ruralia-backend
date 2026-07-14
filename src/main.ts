@@ -4,10 +4,12 @@ import { ColaModule } from './cola/cola.module';
 import { configurarSwagger } from './common/swagger/configurar-swagger';
 import { AppModule } from './app.module';
 import { migrarRolesNombreAntesDeSync } from './usuarios/migrar-roles-nombre';
+import { migrarTerritoriosAntesDeSync } from './territorios/migrar-territorios-esquema';
 
 async function bootstrap() {
-  // Debe correr antes de TypeORM synchronize (enum → varchar).
+  // Debe correr antes de TypeORM synchronize.
   await migrarRolesNombreAntesDeSync();
+  await migrarTerritoriosAntesDeSync();
 
   const colaModule = await ColaModule.forRoot();
   const app = await NestFactory.create(AppModule.register(colaModule));

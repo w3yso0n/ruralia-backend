@@ -216,7 +216,21 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
   ),
   ...defs(
     'territorios',
-    [{ accion: 'ver', descripcion: 'Consultar jerarquía territorial' }],
+    [
+      { accion: 'ver', descripcion: 'Consultar jerarquía territorial' },
+      {
+        accion: 'crear',
+        descripcion: 'Crear regiones, departamentos, municipios y veredas',
+      },
+      {
+        accion: 'editar',
+        descripcion: 'Editar nodos de la jerarquía territorial',
+      },
+      {
+        accion: 'eliminar',
+        descripcion: 'Desactivar nodos de la jerarquía territorial',
+      },
+    ],
     1300,
   ),
 ];
@@ -255,6 +269,9 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'archivos.subir',
   'archivos.ver',
   'territorios.ver',
+  'territorios.crear',
+  'territorios.editar',
+  'territorios.eliminar',
 ];
 
 const PERMISOS_COORDINADOR_ZONA: string[] = [

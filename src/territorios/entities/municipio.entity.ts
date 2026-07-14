@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Corregimiento } from './corregimiento.entity';
 import { Departamento } from './departamento.entity';
+import { Vereda } from './vereda.entity';
 
 @Entity('municipios')
 export class Municipio {
@@ -31,4 +32,7 @@ export class Municipio {
 
   @OneToMany(() => Corregimiento, (corregimiento) => corregimiento.municipio)
   corregimientos: Corregimiento[];
+
+  @OneToMany(() => Vereda, (vereda) => vereda.municipio)
+  veredas: Vereda[];
 }

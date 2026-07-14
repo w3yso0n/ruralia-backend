@@ -64,6 +64,28 @@ export class TablaUsuarioRoles {
 }
 
 @ApiSchema({
+  name: 'regiones',
+  description:
+    'Regiones naturales de Colombia (Caribe, Andina, Pacífica, Orinoquía, Amazonía, Insular).',
+})
+export class TablaRegiones {
+  @ApiProperty({ description: 'Identificador único (UUID)' })
+  id: string;
+
+  @ApiProperty({ description: 'Nombre de la región' })
+  nombre: string;
+
+  @ApiProperty({ description: 'Código único (ej. ANDINA, CARIBE)' })
+  codigo: string;
+
+  @ApiPropertyOptional({ description: 'Descripción de la región' })
+  descripcion?: string;
+
+  @ApiProperty({ description: 'Indica si la región está activa' })
+  estaActivo: boolean;
+}
+
+@ApiSchema({
   name: 'departamentos',
   description:
     'División territorial de primer nivel en Colombia. Contiene el nombre y código DANE del departamento.',
@@ -80,6 +102,9 @@ export class TablaDepartamentos {
 
   @ApiProperty({ description: 'Indica si el departamento está activo' })
   estaActivo: boolean;
+
+  @ApiProperty({ description: 'ID de la región natural a la que pertenece' })
+  regionId: string;
 }
 
 @ApiSchema({
@@ -131,11 +156,16 @@ export class TablaVeredas {
   @ApiProperty({ description: 'Nombre de la vereda' })
   nombre: string;
 
-  @ApiProperty({ description: 'Código único de la vereda' })
+  @ApiProperty({ description: 'Código único de la vereda (DANE)' })
   codigo: string;
 
-  @ApiProperty({ description: 'ID del corregimiento al que pertenece' })
-  corregimientoId: string;
+  @ApiProperty({ description: 'ID del municipio al que pertenece' })
+  municipioId: string;
+
+  @ApiPropertyOptional({
+    description: 'ID del corregimiento (opcional / legado)',
+  })
+  corregimientoId?: string;
 }
 
 @ApiSchema({
@@ -554,6 +584,7 @@ export const ESQUEMAS_TABLAS = [
   TablaUsuarios,
   TablaRoles,
   TablaUsuarioRoles,
+  TablaRegiones,
   TablaDepartamentos,
   TablaMunicipios,
   TablaCorregimientos,

@@ -62,7 +62,7 @@ export const TAGS_MODULOS: TagModulo[] = [
   {
     name: 'Territorios',
     description:
-      'Jerarquía territorial colombiana: departamento → municipio → corregimiento → vereda.',
+      'Jerarquía territorial colombiana: región → departamento → municipio → vereda.',
   },
   {
     name: 'Beneficiarios',
@@ -103,10 +103,11 @@ Catálogo de tablas de PostgreSQL gestionadas por TypeORM. Los esquemas detallad
 
 | Tabla | Descripción |
 |-------|-------------|
-| \`departamentos\` | División territorial nivel 1 de Colombia (nombre y código DANE). |
+| \`regiones\` | Regiones naturales (Caribe, Andina, Pacífica, Orinoquía, Amazonía, Insular). |
+| \`departamentos\` | División territorial nivel 1 (código DANE) perteneciente a una región. |
 | \`municipios\` | Municipios pertenecientes a un departamento. |
-| \`corregimientos\` | Corregimientos o subdivisiones dentro de un municipio. |
-| \`veredas\` | Veredas rurales; unidad territorial mínima donde se ejecutan los proyectos. |
+| \`corregimientos\` | Subdivisiones opcionales / legado dentro de un municipio. |
+| \`veredas\` | Veredas rurales (código DANE); unidad mínima vinculada al municipio. |
 
 ### Proyecto y planificación
 
