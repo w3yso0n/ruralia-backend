@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Expose, Type } from 'class-transformer';
+import { Expose, Transform, Type } from 'class-transformer';
 import { EstadoEjecucionJornada } from '../enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 
@@ -71,6 +71,16 @@ export class RespuestaMetaResumenDto {
   @ApiPropertyOptional()
   @Expose()
   actividadNombre?: string;
+
+  @ApiPropertyOptional({ description: 'Cantidad total planeada de la meta' })
+  @Expose()
+  cantidadTotal?: number;
+
+  @ApiPropertyOptional({
+    description: 'Unidades ya ejecutadas (suma de cantidad_ejecutada en jornadas no canceladas)',
+  })
+  @Expose()
+  ejecutadoTotal?: number;
 }
 
 export class RespuestaJornadaDto {
@@ -89,6 +99,13 @@ export class RespuestaJornadaDto {
   @ApiPropertyOptional({ description: 'Observaciones de la jornada' })
   @Expose()
   observaciones?: string;
+
+  @ApiPropertyOptional({
+    description: 'Unidades ejecutadas en esta jornada hacia la meta',
+  })
+  @Expose()
+  @Transform(({ value }) => (value != null ? Number(value) : undefined))
+  cantidadEjecutada?: number;
 
   @ApiPropertyOptional({ description: 'Latitud de ubicación' })
   @Expose()

@@ -43,6 +43,7 @@ import {
   aRespuestaJornada,
   aRespuestaPaginadaJornadas,
 } from './utils/serializar-jornada';
+import { sumarEjecutadoPorMeta } from './utils/calcular-ejecutado-meta';
 
 const TRANSICIONES_VALIDAS: Partial<
   Record<EstadoJornada, EstadoJornada[]>
@@ -272,9 +273,18 @@ export class JornadasService {
       where: { jornada: { id } },
     });
 
+    let metaEjecutadoTotal: number | undefined;
+    if (jornada.meta?.id) {
+      metaEjecutadoTotal = await sumarEjecutadoPorMeta(
+        this.jornadaRepository,
+        jornada.meta.id,
+      );
+    }
+
     return aRespuestaJornada(jornada, {
       enviosFormulario: envios,
       evidencias,
+      metaEjecutadoTotal,
     });
   }
 
@@ -295,6 +305,9 @@ export class JornadasService {
     if (dto.observaciones !== undefined) jornada.observaciones = dto.observaciones;
     if (dto.latitud !== undefined) jornada.latitud = dto.latitud;
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
+    if (dto.cantidadEjecutada !== undefined) {
+      jornada.cantidadEjecutada = dto.cantidadEjecutada;
+    }
     if (dto.veredaId !== undefined) {
       jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
     }

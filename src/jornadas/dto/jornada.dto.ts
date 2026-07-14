@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
@@ -123,6 +124,16 @@ export class ActualizarJornadaDto {
   @IsUUID('4')
   @IsOptional()
   metaId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Unidades ejecutadas en esta jornada hacia la meta (visitas, entregas, etc.)',
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  cantidadEjecutada?: number;
 }
 
 export class CambiarEstadoJornadaDto {

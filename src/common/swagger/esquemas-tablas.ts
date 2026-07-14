@@ -368,6 +368,12 @@ export class TablaJornadas {
   @ApiPropertyOptional({ description: 'Longitud GPS de la jornada' })
   longitud?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Unidades ejecutadas en esta jornada hacia la meta (visitas, entregas, etc.)',
+  })
+  cantidadEjecutada?: number;
+
   @ApiProperty({ description: 'Indica si fue creada en modo offline' })
   esOffline: boolean;
 
@@ -551,7 +557,7 @@ export class TablaProcesos {
     'Objetivo cuantitativo de un proceso: cantidad total planeada y unidad de medida. ' +
     'DISTINTO de Indicador: Meta mide avance físico del plan (visitas, entregas), ' +
     'Indicador mide KPIs de gestión del proyecto (cobertura, impacto). ' +
-    'El avance se calcula como jornadas COMPLETADAS asociadas a esta meta.',
+    'El avance se calcula sumando cantidad_ejecutada de jornadas no canceladas (default 1 solo si la jornada está COMPLETADA sin cantidad registrada).',
 })
 export class TablaMetas {
   @ApiProperty({ description: 'Identificador único (UUID)' })

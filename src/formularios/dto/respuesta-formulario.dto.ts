@@ -130,6 +130,11 @@ export class RespuestaEnvioFormularioDto {
   @Expose()
   @Transform(({ obj, value }) => obj.usuario?.id ?? value)
   usuarioId: string;
+
+  @ApiPropertyOptional({ description: 'ID de la plantilla del formulario' })
+  @Expose()
+  @Transform(({ obj, value }) => obj.plantillaFormulario?.id ?? value)
+  plantillaFormularioId?: string;
 }
 
 export class RespuestaDetalleRespuestaDto {
@@ -141,9 +146,13 @@ export class RespuestaDetalleRespuestaDto {
   @Expose()
   claveCampo: string;
 
-  @ApiProperty({ description: 'Etiqueta del campo' })
+  @ApiPropertyOptional({ description: 'Etiqueta del campo' })
   @Expose()
   etiquetaCampo: string;
+
+  @ApiPropertyOptional({ enum: TipoCampo, description: 'Tipo de campo' })
+  @Expose()
+  tipoCampo?: TipoCampo;
 
   @ApiPropertyOptional({ description: 'Valor en texto' })
   @Expose()
@@ -153,9 +162,9 @@ export class RespuestaDetalleRespuestaDto {
   @Expose()
   valorNumero?: number;
 
-  @ApiPropertyOptional({ description: 'Valor de fecha' })
+  @ApiPropertyOptional({ description: 'Valor de fecha (YYYY-MM-DD)' })
   @Expose()
-  valorFecha?: Date;
+  valorFecha?: string;
 
   @ApiPropertyOptional({ description: 'Valor booleano' })
   @Expose()
@@ -168,4 +177,22 @@ export class RespuestaDetalleRespuestaDto {
   @ApiPropertyOptional({ description: 'URL del archivo adjunto' })
   @Expose()
   urlArchivo?: string;
+}
+
+export class RespuestaEnvioPrevioDto {
+  @ApiPropertyOptional({
+    type: RespuestaEnvioFormularioDto,
+    description: 'Último envío encontrado, o null si no hay respuestas previas',
+  })
+  @Expose()
+  @Type(() => RespuestaEnvioFormularioDto)
+  envio: RespuestaEnvioFormularioDto | null;
+
+  @ApiProperty({
+    type: [RespuestaDetalleRespuestaDto],
+    description: 'Respuestas del último envío',
+  })
+  @Expose()
+  @Type(() => RespuestaDetalleRespuestaDto)
+  respuestas: RespuestaDetalleRespuestaDto[];
 }

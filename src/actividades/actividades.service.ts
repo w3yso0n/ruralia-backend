@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
-import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
+import { sumarEjecutadoPorProyecto } from '../jornadas/utils/calcular-ejecutado-meta';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import {
   usuarioEsCoordinacion,
@@ -401,23 +401,7 @@ export class ActividadesService {
   private async contarJornadasPorMeta(
     proyectoId: string,
   ): Promise<Map<string, number>> {
-    const filas = await this.jornadaRepository
-      .createQueryBuilder('jornada')
-      .select('jornada.meta_id', 'metaId')
-      .addSelect('COUNT(*)', 'total')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .andWhere('jornada.estado = :estado', {
-        estado: EstadoJornada.COMPLETADA,
-      })
-      .andWhere('jornada.meta_id IS NOT NULL')
-      .groupBy('jornada.meta_id')
-      .getRawMany<{ metaId: string; total: string }>();
-
-    const mapa = new Map<string, number>();
-    for (const fila of filas) {
-      mapa.set(fila.metaId, Number(fila.total));
-    }
-    return mapa;
+    return sumarEjecutadoPorProyecto(this.jornadaRepository, proyectoId);
   }
 
   private async verificarProyectoExiste(proyectoId: string): Promise<void> {

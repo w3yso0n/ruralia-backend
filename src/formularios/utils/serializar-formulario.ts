@@ -5,6 +5,7 @@ import {
   RespuestaDetalleRespuestaDto,
   RespuestaEnvioFormularioDto,
   RespuestaPlantillaFormularioDto,
+  RespuestaEnvioPrevioDto,
 } from '../dto/respuesta-formulario.dto';
 
 export function aRespuestaPlantilla(
@@ -29,4 +30,15 @@ export function aRespuestaDetalle(
   return plainToInstance(RespuestaDetalleRespuestaDto, datos, {
     excludeExtraneousValues: true,
   });
+}
+
+export function aRespuestaEnvioPrevio(
+  envio: RespuestaEnvioFormularioDto | null,
+  respuestas: RespuestaDetalleRespuestaDto[],
+): RespuestaEnvioPrevioDto {
+  return plainToInstance(
+    RespuestaEnvioPrevioDto,
+    { envio, respuestas },
+    { excludeExtraneousValues: true },
+  );
 }
