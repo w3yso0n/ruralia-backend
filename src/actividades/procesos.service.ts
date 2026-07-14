@@ -9,8 +9,11 @@ import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
-import { NombreRol } from '../usuarios/enums/nombre-rol.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import {
+  usuarioEsCoordinacion,
+  usuarioTieneAccesoTotal,
+} from '../usuarios/utils/permisos-usuario';
 import {
   ActualizarMetaDto,
   ActualizarMetaPeriodoDto,
@@ -473,10 +476,7 @@ export class ProcesosService {
     proyectoId: string,
     usuarioActual: Usuario,
   ): Promise<void> {
-    const esAdmin = usuarioActual.roles?.some(
-      (r) => r.nombre === NombreRol.ADMINISTRADOR,
-    );
-    if (esAdmin) return;
+    if (usuarioTieneAccesoTotal(usuarioActual)) return;
 
     const proyecto = await this.proyectoRepository.findOne({
       where: { id: proyectoId },
@@ -486,7 +486,7 @@ export class ProcesosService {
     if (!proyecto) throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
 
     const esCoordinadorAsignado =
-      usuarioActual.roles?.some((r) => r.nombre === NombreRol.COORDINADOR) &&
+      usuarioEsCoordinacion(usuarioActual) &&
       proyecto.personal?.some((u) => u.id === usuarioActual.id);
 
     if (!esCoordinadorAsignado) {

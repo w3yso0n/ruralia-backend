@@ -133,7 +133,7 @@ export class FormulariosController {
   }
 
   @Patch('plantillas/:id/procesos')
-  @Roles(RolEnum.ADMINISTRADOR)
+  @RequierePermisos('formularios.editar')
   @ApiOperation({
     summary: 'Asignar procesos a una plantilla (reemplaza el conjunto)',
   })

@@ -19,9 +19,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../autenticacion/decorators/roles.decorator';
+import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
-import { RolEnum } from '../autenticacion/enums/rol.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarMetaDto,
@@ -46,6 +45,7 @@ export class ProcesosController {
   constructor(private readonly procesosService: ProcesosService) {}
 
   @Get('subactividades/:subactividadId/procesos')
+  @RequierePermisos('actividades.ver')
   @ApiOperation({ summary: 'Listar procesos de una subactividad' })
   @ApiResponse({ status: 200, type: [RespuestaProcesoDto] })
   listarProcesos(
@@ -55,7 +55,7 @@ export class ProcesosController {
   }
 
   @Post('subactividades/:subactividadId/procesos')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.crear')
   @ApiOperation({ summary: 'Crear un proceso en una subactividad' })
   @ApiResponse({ status: 201, type: RespuestaProcesoDto })
   crearProceso(
@@ -67,7 +67,7 @@ export class ProcesosController {
   }
 
   @Patch('procesos/:id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.editar')
   @ApiOperation({ summary: 'Actualizar un proceso' })
   @ApiResponse({ status: 200, type: RespuestaProcesoDto })
   actualizarProceso(
@@ -80,7 +80,7 @@ export class ProcesosController {
 
   @Delete('procesos/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.eliminar')
   @ApiOperation({ summary: 'Desactivar un proceso' })
   eliminarProceso(
     @Param('id', ParseUUIDPipe) id: string,
@@ -90,7 +90,7 @@ export class ProcesosController {
   }
 
   @Post('procesos/:procesoId/metas')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.crear')
   @ApiOperation({ summary: 'Crear una meta en un proceso' })
   @ApiResponse({ status: 201, type: RespuestaMetaDto })
   crearMeta(
@@ -102,7 +102,7 @@ export class ProcesosController {
   }
 
   @Patch('metas/:id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.editar')
   @ApiOperation({ summary: 'Actualizar una meta' })
   @ApiResponse({ status: 200, type: RespuestaMetaDto })
   actualizarMeta(
@@ -115,7 +115,7 @@ export class ProcesosController {
 
   @Delete('metas/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.eliminar')
   @ApiOperation({ summary: 'Desactivar una meta' })
   eliminarMeta(
     @Param('id', ParseUUIDPipe) id: string,
@@ -125,7 +125,7 @@ export class ProcesosController {
   }
 
   @Post('metas/:metaId/periodos')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.crear')
   @ApiOperation({ summary: 'Crear un período planeado para una meta' })
   @ApiResponse({ status: 201, type: RespuestaMetaPeriodoDto })
   crearMetaPeriodo(
@@ -137,7 +137,7 @@ export class ProcesosController {
   }
 
   @Patch('meta-periodos/:id')
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.editar')
   @ApiOperation({ summary: 'Actualizar un período de meta' })
   @ApiResponse({ status: 200, type: RespuestaMetaPeriodoDto })
   actualizarMetaPeriodo(
@@ -150,7 +150,7 @@ export class ProcesosController {
 
   @Delete('meta-periodos/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(RolEnum.ADMINISTRADOR, RolEnum.COORDINADOR)
+  @RequierePermisos('actividades.eliminar')
   @ApiOperation({ summary: 'Eliminar un período de meta' })
   eliminarMetaPeriodo(
     @Param('id', ParseUUIDPipe) id: string,
@@ -160,6 +160,7 @@ export class ProcesosController {
   }
 
   @Get('proyectos/:proyectoId/avance-periodo')
+  @RequierePermisos('actividades.ver')
   @ApiOperation({
     summary:
       'Avance físico mensual y acumulado de todas las metas de un proyecto',
