@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -21,12 +22,14 @@ import {
   AsignarProcesosDto,
   AsignarSubactividadesDto,
   AsignarUsuariosDto,
+  ActualizarEnvioFormularioDto,
   CrearPlantillaFormularioDto,
   EnviarFormularioDto,
 } from './dto/formulario.dto';
 import {
   RespuestaDetalleRespuestaDto,
   RespuestaEnvioFormularioDto,
+  RespuestaEnvioPrevioDto,
   RespuestaPlantillaFormularioDto,
 } from './dto/respuesta-formulario.dto';
 import { EnviosFormularioService } from './envios-formulario.service';
@@ -60,12 +63,27 @@ export class FormulariosController {
   }
 
   @Get('plantillas/proceso/:procesoId')
+  @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar plantillas asignadas a un proceso' })
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillasPorProceso(
     @Param('procesoId', ParseUUIDPipe) procesoId: string,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarPorProceso(procesoId);
+  }
+
+  @Get('plantillas/jornada/:jornadaId')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Listar plantillas activas de la jornada (vía meta → proceso + asignadas directamente al usuario)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarPlantillasPorJornada(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarPorJornada(jornadaId, usuario);
   }
 
   @Get('plantillas/subactividad/:subactividadId')
@@ -89,6 +107,33 @@ export class FormulariosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarAsignadasAUsuario(usuario);
+  }
+
+  @Get('plantillas/documentos-generales')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary: 'Listar plantillas asignadas directamente al usuario (documentos generales)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
+  listarDocumentosGenerales(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    return this.plantillasService.listarDocumentosGeneralesAUsuario(usuario);
+  }
+
+  @Get('plantillas/:id/envio-previo')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Obtener el último envío previo de una plantilla (por jornada o por usuario sin jornada)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaEnvioPrevioDto })
+  obtenerEnvioPrevio(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('jornadaId') jornadaId: string | undefined,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaEnvioPrevioDto> {
+    return this.enviosService.obtenerEnvioPrevio(id, usuario, jornadaId);
   }
 
   @Get('plantillas/:id')
@@ -184,6 +229,18 @@ export class FormulariosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaEnvioFormularioDto> {
     return this.enviosService.enviar(dto, usuario);
+  }
+
+  @Patch('envios/:id')
+  @RequierePermisos('formularios.enviar')
+  @ApiOperation({ summary: 'Actualizar las respuestas de un envío existente' })
+  @ApiResponse({ status: 200, type: RespuestaEnvioFormularioDto })
+  actualizarEnvio(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarEnvioFormularioDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaEnvioFormularioDto> {
+    return this.enviosService.actualizar(id, dto, usuario);
   }
 
   @Get('envios/jornada/:jornadaId')

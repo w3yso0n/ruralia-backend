@@ -267,3 +267,14 @@ export class EnviarFormularioDto {
   @Type(() => RespuestaEnviarDto)
   respuestas: RespuestaEnviarDto[];
 }
+
+export class ActualizarEnvioFormularioDto {
+  @ApiProperty({
+    type: [RespuestaEnviarDto],
+    description: 'Respuestas actualizadas del formulario',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RespuestaEnviarDto)
+  respuestas: RespuestaEnviarDto[];
+}

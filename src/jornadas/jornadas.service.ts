@@ -43,6 +43,7 @@ import {
   aRespuestaJornada,
   aRespuestaPaginadaJornadas,
 } from './utils/serializar-jornada';
+import { sumarEjecutadoPorMeta } from './utils/calcular-ejecutado-meta';
 
 const TRANSICIONES_VALIDAS: Partial<
   Record<EstadoJornada, EstadoJornada[]>
@@ -91,6 +92,12 @@ export class JornadasService {
     if (proyecto.estado !== EstadoProyecto.ACTIVO) {
       throw new BadRequestException(
         'Solo se pueden crear jornadas en proyectos ACTIVOS',
+      );
+    }
+
+    if (!dto.metaId && (!dto.actividades || dto.actividades.length === 0)) {
+      throw new BadRequestException(
+        'Debe seleccionar una meta del plan para vincular formularios en campo',
       );
     }
 
@@ -154,9 +161,14 @@ export class JornadasService {
     const query = this.jornadaRepository
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
+      .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.meta', 'meta')
+      .leftJoinAndSelect('meta.proceso', 'proceso')
+      .leftJoinAndSelect('proceso.subactividad', 'subactividad')
+      .leftJoinAndSelect('subactividad.actividad', 'actividad')
       .leftJoinAndSelect('jornada.jornadaActividades', 'ja')
-      .leftJoinAndSelect('ja.actividad', 'actividad')
-      .leftJoinAndSelect('ja.subactividad', 'subactividad')
+      .leftJoinAndSelect('ja.actividad', 'actividadJa')
+      .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
       .leftJoinAndSelect('jornada.vereda', 'vereda')
       .orderBy('jornada.fecha', 'DESC')
@@ -203,6 +215,42 @@ export class JornadasService {
     return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
   }
 
+  async listarAsignadasAUsuario(
+    usuario: Usuario,
+    filtros?: { estado?: EstadoJornada; proyectoId?: string; pagina?: number; limite?: number },
+  ): Promise<RespuestaPaginadaJornadasDto> {
+    const pagina = filtros?.pagina ?? 1;
+    const limite = filtros?.limite ?? 50;
+    const skip = (pagina - 1) * limite;
+
+    const query = this.jornadaRepository
+      .createQueryBuilder('jornada')
+      .leftJoinAndSelect('jornada.proyecto', 'proyecto')
+      .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.meta', 'meta')
+      .leftJoinAndSelect('meta.proceso', 'proceso')
+      .leftJoinAndSelect('proceso.subactividad', 'subactividad')
+      .leftJoinAndSelect('subactividad.actividad', 'actividad')
+      .where(
+        '(jornada.tecnico_responsable_id = :usuarioId OR EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = jornada.id AND je.usuario_id = :usuarioId))',
+        { usuarioId: usuario.id },
+      )
+      .andWhere('jornada.estado != :cancelada', { cancelada: EstadoJornada.CANCELADA })
+      .orderBy('jornada.fecha', 'ASC');
+
+    if (filtros?.estado) {
+      query.andWhere('jornada.estado = :estado', { estado: filtros.estado });
+    }
+
+    if (filtros?.proyectoId) {
+      query.andWhere('jornada.proyecto_id = :proyectoId', { proyectoId: filtros.proyectoId });
+    }
+
+    const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    const datos = jornadas.map((j) => aRespuestaJornada(j));
+    return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
+  }
+
   async obtenerUna(id: string): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
@@ -233,9 +281,18 @@ export class JornadasService {
       where: { jornada: { id } },
     });
 
+    let metaEjecutadoTotal: number | undefined;
+    if (jornada.meta?.id) {
+      metaEjecutadoTotal = await sumarEjecutadoPorMeta(
+        this.jornadaRepository,
+        jornada.meta.id,
+      );
+    }
+
     return aRespuestaJornada(jornada, {
       enviosFormulario: envios,
       evidencias,
+      metaEjecutadoTotal,
     });
   }
 
@@ -256,8 +313,32 @@ export class JornadasService {
     if (dto.observaciones !== undefined) jornada.observaciones = dto.observaciones;
     if (dto.latitud !== undefined) jornada.latitud = dto.latitud;
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
+    if (dto.cantidadEjecutada !== undefined) {
+      jornada.cantidadEjecutada = dto.cantidadEjecutada;
+    }
     if (dto.veredaId !== undefined) {
       jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
+    }
+
+    if (dto.metaId !== undefined) {
+      const meta = await this.metaRepository.findOne({
+        where: { id: dto.metaId },
+        relations: {
+          proceso: { subactividad: { actividad: { proyecto: true } } },
+        },
+      });
+
+      if (!meta) {
+        throw new NotFoundException(`Meta ${dto.metaId} no encontrada`);
+      }
+
+      if (meta.proceso.subactividad.actividad.proyecto.id !== jornada.proyecto.id) {
+        throw new BadRequestException(
+          'La meta no pertenece al proyecto de la jornada',
+        );
+      }
+
+      jornada.meta = { id: dto.metaId } as Meta;
     }
 
     if (dto.actividades !== undefined) {
@@ -285,6 +366,28 @@ export class JornadasService {
     jornada.estado = EstadoJornada.CANCELADA;
     await this.jornadaRepository.save(jornada);
     return this.obtenerUna(id);
+  }
+
+  async eliminar(id: string): Promise<void> {
+    const jornada = await this.jornadaRepository.findOne({ where: { id } });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
+
+    const [envios, evidencias] = await Promise.all([
+      this.envioRepository.count({ where: { jornada: { id } } }),
+      this.evidenciaRepository.count({ where: { jornada: { id } } }),
+    ]);
+
+    if (envios > 0 || evidencias > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar una jornada con formularios enviados o evidencias registradas',
+      );
+    }
+
+    await this.jornadaActividadRepository.delete({ jornada: { id } });
+    await this.jornadaRepository.remove(jornada);
   }
 
   async cambiarEstado(

@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
-import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
+import { sumarEjecutadoPorProyecto } from '../jornadas/utils/calcular-ejecutado-meta';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import {
   usuarioEsCoordinacion,
@@ -28,6 +28,9 @@ import {
   RespuestaSubactividadDto,
 } from './dto/respuesta-actividad.dto';
 import { Actividad } from './entities/actividad.entity';
+import { Meta } from './entities/meta.entity';
+import { MetaPeriodo } from './entities/meta-periodo.entity';
+import { Proceso } from './entities/proceso.entity';
 import { Subactividad } from './entities/subactividad.entity';
 import { EstadoAvanceActividad } from './enums/estado-avance-actividad.enum';
 import {
@@ -43,6 +46,12 @@ export class ActividadesService {
     private readonly actividadRepository: Repository<Actividad>,
     @InjectRepository(Subactividad)
     private readonly subactividadRepository: Repository<Subactividad>,
+    @InjectRepository(Proceso)
+    private readonly procesoRepository: Repository<Proceso>,
+    @InjectRepository(Meta)
+    private readonly metaRepository: Repository<Meta>,
+    @InjectRepository(MetaPeriodo)
+    private readonly metaPeriodoRepository: Repository<MetaPeriodo>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
     @InjectRepository(Jornada)
@@ -267,6 +276,55 @@ export class ActividadesService {
     return aRespuestaProgreso(proyectoId, actividades, ejecutadoPorMeta);
   }
 
+  async eliminarPlanPorProyecto(proyectoId: string): Promise<void> {
+    const actividades = await this.actividadRepository.find({
+      where: { proyecto: { id: proyectoId } },
+      select: { id: true },
+    });
+
+    for (const actividad of actividades) {
+      const subactividades = await this.subactividadRepository.find({
+        where: { actividad: { id: actividad.id } },
+        select: { id: true },
+      });
+
+      for (const subactividad of subactividades) {
+        const procesos = await this.procesoRepository.find({
+          where: { subactividad: { id: subactividad.id } },
+          select: { id: true },
+        });
+
+        for (const proceso of procesos) {
+          await this.procesoRepository.manager.query(
+            'DELETE FROM plantilla_formulario_procesos WHERE proceso_id = $1',
+            [proceso.id],
+          );
+
+          const metas = await this.metaRepository.find({
+            where: { proceso: { id: proceso.id } },
+            select: { id: true },
+          });
+
+          for (const meta of metas) {
+            await this.metaPeriodoRepository.delete({ meta: { id: meta.id } });
+          }
+
+          await this.metaRepository.delete({ proceso: { id: proceso.id } });
+        }
+
+        await this.procesoRepository.delete({
+          subactividad: { id: subactividad.id },
+        });
+      }
+
+      await this.subactividadRepository.delete({
+        actividad: { id: actividad.id },
+      });
+    }
+
+    await this.actividadRepository.delete({ proyecto: { id: proyectoId } });
+  }
+
   private async obtenerActividadRespuesta(
     id: string,
   ): Promise<RespuestaActividadDto> {
@@ -343,23 +401,7 @@ export class ActividadesService {
   private async contarJornadasPorMeta(
     proyectoId: string,
   ): Promise<Map<string, number>> {
-    const filas = await this.jornadaRepository
-      .createQueryBuilder('jornada')
-      .select('jornada.meta_id', 'metaId')
-      .addSelect('COUNT(*)', 'total')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .andWhere('jornada.estado = :estado', {
-        estado: EstadoJornada.COMPLETADA,
-      })
-      .andWhere('jornada.meta_id IS NOT NULL')
-      .groupBy('jornada.meta_id')
-      .getRawMany<{ metaId: string; total: string }>();
-
-    const mapa = new Map<string, number>();
-    for (const fila of filas) {
-      mapa.set(fila.metaId, Number(fila.total));
-    }
-    return mapa;
+    return sumarEjecutadoPorProyecto(this.jornadaRepository, proyectoId);
   }
 
   private async verificarProyectoExiste(proyectoId: string): Promise<void> {

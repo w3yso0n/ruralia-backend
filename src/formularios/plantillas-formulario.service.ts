@@ -1,12 +1,18 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Proceso } from '../actividades/entities/proceso.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
+import { Jornada } from '../jornadas/entities/jornada.entity';
+import {
+  usuarioTieneAccesoTotal,
+  usuarioEsCoordinacion,
+} from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarPlantillaFormularioDto,
@@ -29,6 +35,8 @@ export class PlantillasFormularioService {
     private readonly subactividadRepository: Repository<Subactividad>,
     @InjectRepository(Usuario)
     private readonly usuarioRepository: Repository<Usuario>,
+    @InjectRepository(Jornada)
+    private readonly jornadaRepository: Repository<Jornada>,
   ) {}
 
   async crear(
@@ -242,18 +250,47 @@ export class PlantillasFormularioService {
     return plantillas.map((p) => aRespuestaPlantilla(p));
   }
 
+  async listarActivasPorProcesoId(
+    procesoId: string,
+  ): Promise<PlantillaFormulario[]> {
+    return this.plantillaRepository.find({
+      where: { procesos: { id: procesoId }, estaActivo: true },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      order: { nombre: 'ASC' },
+    });
+  }
+
+  async listarActivasPorProcesoIds(
+    procesoIds: string[],
+  ): Promise<PlantillaFormulario[]> {
+    if (!procesoIds.length) return [];
+    return this.plantillaRepository.find({
+      where: { procesos: { id: In(procesoIds) }, estaActivo: true },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      order: { nombre: 'ASC' },
+    });
+  }
+
   async listarAsignadasAUsuario(
     usuario: Usuario,
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     const plantillas = await this.plantillaRepository
       .createQueryBuilder('plantilla')
       .leftJoinAndSelect('plantilla.campos', 'campos')
+      .leftJoinAndSelect('plantilla.procesos', 'procesos')
       .leftJoinAndSelect('plantilla.subactividades', 'subactividades')
       .leftJoinAndSelect('plantilla.usuarios', 'usuarios')
       .where('plantilla.esta_activo = true')
       .andWhere(
         `(
           usuarios.id = :usuarioId
+          OR procesos.id IN (
+            SELECT proc.id FROM procesos proc
+            INNER JOIN subactividades sub ON sub.id = proc.subactividad_id
+            INNER JOIN actividades act ON act.id = sub.actividad_id
+            INNER JOIN proyecto_personal pp ON pp.proyecto_id = act.proyecto_id
+            WHERE pp.usuario_id = :usuarioId
+          )
           OR subactividades.id IN (
             SELECT sub.id
             FROM subactividades sub
@@ -265,6 +302,69 @@ export class PlantillasFormularioService {
         { usuarioId: usuario.id },
       )
       .orderBy('plantilla.nombre', 'ASC')
+      .getMany();
+
+    const ids = [...new Set(plantillas.map((p) => p.id))];
+    const deduplicadas = ids.map(
+      (id) => plantillas.find((p) => p.id === id)!,
+    );
+
+    return deduplicadas.map((p) => aRespuestaPlantilla(p));
+  }
+
+  async listarPorJornada(
+    jornadaId: string,
+    usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id: jornadaId },
+      relations: { meta: { proceso: true }, proyecto: true, tecnicoResponsable: true },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+
+    const tieneAcceso =
+      usuarioTieneAccesoTotal(usuario) ||
+      usuarioEsCoordinacion(usuario) ||
+      jornada.tecnicoResponsable?.id === usuario.id;
+
+    if (!tieneAcceso) {
+      const esMiembro = await this.jornadaRepository
+        .createQueryBuilder('j')
+        .where('j.id = :jornadaId', { jornadaId })
+        .andWhere(
+          '(EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = j.id AND je.usuario_id = :usuarioId)' +
+          ' OR EXISTS (SELECT 1 FROM proyecto_personal pp WHERE pp.proyecto_id = j.proyecto_id AND pp.usuario_id = :usuarioId))',
+          { usuarioId: usuario.id },
+        )
+        .getCount();
+
+      if (!esMiembro) {
+        throw new ForbiddenException('No tiene acceso a esta jornada');
+      }
+    }
+
+    if (!jornada.meta?.proceso) {
+      return [];
+    }
+
+    const plantillas = await this.listarActivasPorProcesoId(jornada.meta.proceso.id);
+    return plantillas.map((p) => aRespuestaPlantilla(p));
+  }
+
+  async listarDocumentosGeneralesAUsuario(
+    usuario: Usuario,
+  ): Promise<RespuestaPlantillaFormularioDto[]> {
+    const plantillas = await this.plantillaRepository
+      .createQueryBuilder('plantilla')
+      .leftJoinAndSelect('plantilla.campos', 'campos')
+      .leftJoinAndSelect('plantilla.procesos', 'procesos')
+      .leftJoinAndSelect('plantilla.subactividades', 'subactividades')
+      .leftJoinAndSelect('plantilla.usuarios', 'usuarios')
+      .where('plantilla.esta_activo = true')
+      .andWhere('usuarios.id = :usuarioId', { usuarioId: usuario.id })
       .getMany();
 
     return plantillas.map((p) => aRespuestaPlantilla(p));

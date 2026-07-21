@@ -7,7 +7,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
-import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -32,6 +31,7 @@ import { Meta } from './entities/meta.entity';
 import { MetaPeriodo } from './entities/meta-periodo.entity';
 import { Proceso } from './entities/proceso.entity';
 import { Subactividad } from './entities/subactividad.entity';
+import { sumarEjecutadoPorMeta } from '../jornadas/utils/calcular-ejecutado-meta';
 
 @Injectable()
 export class ProcesosService {
@@ -302,22 +302,11 @@ export class ProcesosService {
     anio: number,
     mes: number,
   ): Promise<number> {
-    const inicio = new Date(anio, mes - 1, 1);
-    const fin = new Date(anio, mes, 0);
-
-    return this.jornadaRepository
-      .createQueryBuilder('jornada')
-      .where('jornada.meta_id = :metaId', { metaId })
-      .andWhere('jornada.estado = :estado', { estado: EstadoJornada.COMPLETADA })
-      .andWhere('jornada.fecha >= :inicio', { inicio })
-      .andWhere('jornada.fecha <= :fin', { fin })
-      .getCount();
+    return sumarEjecutadoPorMeta(this.jornadaRepository, metaId, { anio, mes });
   }
 
   private async contarJornadasTotal(metaId: string): Promise<number> {
-    return this.jornadaRepository.count({
-      where: { meta: { id: metaId }, estado: EstadoJornada.COMPLETADA },
-    });
+    return sumarEjecutadoPorMeta(this.jornadaRepository, metaId);
   }
 
   private async obtenerProcesoRespuesta(id: string): Promise<RespuestaProcesoDto> {

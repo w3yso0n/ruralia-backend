@@ -37,6 +37,15 @@ export class Jornada {
   @Column({ type: 'text', nullable: true })
   observaciones: string;
 
+  @Column({
+    name: 'cantidad_ejecutada',
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
+  cantidadEjecutada: number | null;
+
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   latitud: number;
 

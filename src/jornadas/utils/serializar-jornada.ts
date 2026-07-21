@@ -32,7 +32,7 @@ function mapearActividades(jornada: Jornada): RespuestaJornadaActividadDto[] {
 
 export function aRespuestaJornada(
   jornada: Jornada,
-  extras?: Partial<RespuestaJornadaDto>,
+  extras?: Partial<RespuestaJornadaDto> & { metaEjecutadoTotal?: number },
 ): RespuestaJornadaDto {
   const actividades = mapearActividades(jornada);
 
@@ -54,6 +54,11 @@ export function aRespuestaJornada(
               id: jornada.meta.id,
               nombre: jornada.meta.nombre,
               unidadMedida: jornada.meta.unidadMedida,
+              cantidadTotal:
+                jornada.meta.cantidadTotal != null
+                  ? Number(jornada.meta.cantidadTotal)
+                  : undefined,
+              ejecutadoTotal: extras?.metaEjecutadoTotal,
               procesoNombre: jornada.meta.proceso?.nombre,
               subactividadNombre: jornada.meta.proceso?.subactividad?.nombre,
               actividadNombre:
