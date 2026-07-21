@@ -10,6 +10,10 @@ import { Actividad } from '../actividades/entities/actividad.entity';
 import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import {
+  CronologiaService,
+  detalleConOrigen,
+} from '../cronologia/cronologia.service';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
@@ -75,6 +79,7 @@ export class JornadasService {
     private readonly envioRepository: Repository<EnvioFormulario>,
     @InjectRepository(Evidencia)
     private readonly evidenciaRepository: Repository<Evidencia>,
+    private readonly cronologiaService: CronologiaService,
   ) {}
 
   async crear(
@@ -148,7 +153,21 @@ export class JornadasService {
     });
 
     const guardada = await this.jornadaRepository.save(jornada);
-    return this.obtenerUna(guardada.id);
+    const respuesta = await this.obtenerUna(guardada.id);
+
+    await this.cronologiaService.registrar({
+      actorId: tecnicoId,
+      proyectoId: dto.proyectoId,
+      accion: 'JORNADA_CREADA',
+      entidadTipo: 'jornada',
+      entidadId: guardada.id,
+      contextoTitulo: {
+        nombreJornadaFecha: this.formatoFechaTitulo(dto.fecha),
+      },
+      detalle: detalleConOrigen('api'),
+    });
+
+    return respuesta;
   }
 
   async listar(
@@ -170,7 +189,6 @@ export class JornadasService {
       .leftJoinAndSelect('ja.actividad', 'actividadJa')
       .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
-      .leftJoinAndSelect('jornada.vereda', 'vereda')
       .orderBy('jornada.fecha', 'DESC')
       .addOrderBy('ja.orden', 'ASC');
 
@@ -356,8 +374,18 @@ export class JornadasService {
     return this.obtenerUna(id);
   }
 
-  async cancelar(id: string): Promise<RespuestaJornadaDto> {
-    const jornada = await this.buscarJornada(id);
+  async cancelar(
+    id: string,
+    usuarioActual: Usuario,
+  ): Promise<RespuestaJornadaDto> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id },
+      relations: { proyecto: true },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
 
     if (jornada.estado === EstadoJornada.CANCELADA) {
       return this.obtenerUna(id);
@@ -365,6 +393,24 @@ export class JornadasService {
 
     jornada.estado = EstadoJornada.CANCELADA;
     await this.jornadaRepository.save(jornada);
+
+    const fechaStr =
+      jornada.fecha instanceof Date
+        ? jornada.fecha.toISOString().slice(0, 10)
+        : String(jornada.fecha).slice(0, 10);
+
+    await this.cronologiaService.registrar({
+      actorId: usuarioActual.id,
+      proyectoId: jornada.proyecto.id,
+      accion: 'JORNADA_CANCELADA',
+      entidadTipo: 'jornada',
+      entidadId: id,
+      contextoTitulo: {
+        nombreJornadaFecha: this.formatoFechaTitulo(fechaStr),
+      },
+      detalle: detalleConOrigen('api'),
+    });
+
     return this.obtenerUna(id);
   }
 
@@ -414,8 +460,44 @@ export class JornadasService {
       );
     }
 
+    const estadoAnterior = jornada.estado;
     jornada.estado = dto.estado;
     await this.jornadaRepository.save(jornada);
+
+    const jornadaConProyecto = await this.jornadaRepository.findOne({
+      where: { id },
+      relations: { proyecto: true },
+    });
+
+    if (jornadaConProyecto?.proyecto?.id) {
+      const accion =
+        dto.estado === EstadoJornada.CANCELADA
+          ? 'JORNADA_CANCELADA'
+          : 'JORNADA_ESTADO_CAMBIADO';
+
+      const fechaStr =
+        jornadaConProyecto.fecha instanceof Date
+          ? jornadaConProyecto.fecha.toISOString().slice(0, 10)
+          : String(jornadaConProyecto.fecha).slice(0, 10);
+
+      await this.cronologiaService.registrar({
+        actorId: usuarioActual.id,
+        proyectoId: jornadaConProyecto.proyecto.id,
+        accion,
+        entidadTipo: 'jornada',
+        entidadId: id,
+        contextoTitulo: {
+          estadoAnterior,
+          estadoNuevo: dto.estado,
+          nombreJornadaFecha: this.formatoFechaTitulo(fechaStr),
+        },
+        detalle: detalleConOrigen('api', {
+          estadoAnterior,
+          estadoNuevo: dto.estado,
+        }),
+      });
+    }
+
     return this.obtenerUna(id);
   }
 
@@ -583,5 +665,11 @@ export class JornadasService {
     }
 
     return jornada;
+  }
+
+  private formatoFechaTitulo(fechaIso: string): string {
+    const [anio, mes, dia] = fechaIso.slice(0, 10).split('-');
+    if (!anio || !mes || !dia) return fechaIso;
+    return `${dia}/${mes}/${anio}`;
   }
 }

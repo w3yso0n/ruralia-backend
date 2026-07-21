@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CronologiaModule } from '../cronologia/cronologia.module';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { ActividadesController } from './actividades.controller';
@@ -14,6 +15,7 @@ import { ProcesosService } from './procesos.service';
 
 @Module({
   imports: [
+    CronologiaModule,
     TypeOrmModule.forFeature([
       Actividad,
       Subactividad,

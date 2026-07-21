@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Proceso } from '../actividades/entities/proceso.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
+import { CronologiaModule } from '../cronologia/cronologia.module';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { JornadasModule } from '../jornadas/jornadas.module';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -16,6 +17,7 @@ import { PlantillasFormularioService } from './plantillas-formulario.service';
 @Module({
   imports: [
     JornadasModule,
+    CronologiaModule,
     TypeOrmModule.forFeature([
       PlantillaFormulario,
       CampoFormulario,

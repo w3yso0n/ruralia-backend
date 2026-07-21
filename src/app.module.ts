@@ -10,6 +10,7 @@ import { ArchivosModule } from './archivos/archivos.module';
 import { AsociacionesModule } from './asociaciones/asociaciones.module';
 import { AutenticacionModule } from './autenticacion/autenticacion.module';
 import { BeneficiariosModule } from './beneficiarios/beneficiarios.module';
+import { CronologiaModule } from './cronologia/cronologia.module';
 import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
 import { IndicadoresModule } from './indicadores/indicadores.module';
@@ -54,6 +55,7 @@ const modulosBase = [
   ArchivosModule,
   ReportesModule,
   SaludModule,
+  CronologiaModule,
 ];
 
 @Module({})

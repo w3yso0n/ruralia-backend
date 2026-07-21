@@ -8,6 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { sumarEjecutadoPorProyecto } from '../jornadas/utils/calcular-ejecutado-meta';
+import {
+  CronologiaService,
+  detalleConOrigen,
+} from '../cronologia/cronologia.service';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import {
   usuarioEsCoordinacion,
@@ -56,6 +60,7 @@ export class ActividadesService {
     private readonly proyectoRepository: Repository<Proyecto>,
     @InjectRepository(Jornada)
     private readonly jornadaRepository: Repository<Jornada>,
+    private readonly cronologiaService: CronologiaService,
   ) {}
 
   async crearActividad(
@@ -133,6 +138,17 @@ export class ActividadesService {
     actividad.completadaPor = usuarioActual;
 
     await this.actividadRepository.save(actividad);
+
+    await this.cronologiaService.registrar({
+      actorId: usuarioActual.id,
+      proyectoId: actividad.proyecto.id,
+      accion: 'ACTIVIDAD_COMPLETADA',
+      entidadTipo: 'actividad',
+      entidadId: id,
+      contextoTitulo: { nombreActividad: actividad.nombre },
+      detalle: detalleConOrigen('api'),
+    });
+
     return this.obtenerActividadRespuesta(id);
   }
 
@@ -238,6 +254,17 @@ export class ActividadesService {
     subactividad.completadaPor = usuarioActual;
 
     await this.subactividadRepository.save(subactividad);
+
+    await this.cronologiaService.registrar({
+      actorId: usuarioActual.id,
+      proyectoId: subactividad.actividad.proyecto.id,
+      accion: 'SUBACTIVIDAD_COMPLETADA',
+      entidadTipo: 'subactividad',
+      entidadId: id,
+      contextoTitulo: { nombreSubactividad: subactividad.nombre },
+      detalle: detalleConOrigen('api'),
+    });
+
     return this.obtenerSubactividadRespuesta(id);
   }
 

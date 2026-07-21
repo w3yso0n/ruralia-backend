@@ -8,6 +8,7 @@ import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { CronologiaModule } from '../cronologia/cronologia.module';
 import { JornadaActividad } from './entities/jornada-actividad.entity';
 import { Jornada } from './entities/jornada.entity';
 import { JornadasController } from './jornadas.controller';
@@ -15,6 +16,7 @@ import { JornadasService } from './jornadas.service';
 
 @Module({
   imports: [
+    CronologiaModule,
     TypeOrmModule.forFeature([
       Jornada,
       JornadaActividad,

@@ -6,6 +6,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { ColaEnviosService } from '../cola/cola-envios.service';
+import {
+  CronologiaService,
+  detalleConOrigen,
+} from '../cronologia/cronologia.service';
 import { JornadasService } from '../jornadas/jornadas.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { EnviarFormularioDto, ActualizarEnvioFormularioDto } from './dto/formulario.dto';
@@ -24,6 +28,7 @@ import {
   aRespuestaEnvio,
   aRespuestaEnvioPrevio,
 } from './utils/serializar-formulario';
+import { Jornada } from '../jornadas/entities/jornada.entity';
 
 interface RespuestaEntrada {
   claveCampo: string;
@@ -40,8 +45,11 @@ export class EnviosFormularioService {
     private readonly envioRepository: Repository<EnvioFormulario>,
     @InjectRepository(RespuestaFormulario)
     private readonly respuestaRepository: Repository<RespuestaFormulario>,
+    @InjectRepository(Jornada)
+    private readonly jornadaRepository: Repository<Jornada>,
     private readonly jornadasService: JornadasService,
     private readonly colaEnviosService: ColaEnviosService,
+    private readonly cronologiaService: CronologiaService,
   ) {}
 
   async enviar(
@@ -114,6 +122,26 @@ export class EnviosFormularioService {
         envioId: envioGuardado.id,
         jornadaId: dto.jornadaId,
       });
+
+      const jornada = await this.jornadaRepository.findOne({
+        where: { id: dto.jornadaId },
+        relations: { proyecto: true },
+      });
+
+      if (jornada?.proyecto?.id) {
+        await this.cronologiaService.registrar({
+          actorId: usuarioActual.id,
+          proyectoId: jornada.proyecto.id,
+          accion: 'FORMULARIO_ENVIADO',
+          entidadTipo: 'envio_formulario',
+          entidadId: envioGuardado.id,
+          contextoTitulo: { nombrePlantilla: plantilla.nombre },
+          detalle: detalleConOrigen('api', {
+            jornadaId: dto.jornadaId,
+            plantillaId: plantilla.id,
+          }),
+        });
+      }
     }
 
     return aRespuestaEnvio(envioGuardado);

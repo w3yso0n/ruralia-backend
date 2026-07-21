@@ -157,7 +157,8 @@ export class JornadasController {
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   cancelar(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaJornadaDto> {
-    return this.jornadasService.cancelar(id);
+    return this.jornadasService.cancelar(id, usuario);
   }
 }

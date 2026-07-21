@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import { CronologiaModule } from '../cronologia/cronologia.module';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { CampoFormulario } from '../formularios/entities/campo-formulario.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
@@ -13,6 +14,7 @@ import { SincronizacionService } from './sincronizacion.service';
 
 @Module({
   imports: [
+    CronologiaModule,
     TypeOrmModule.forFeature([
       Jornada,
       EnvioFormulario,

@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import {
+  CronologiaService,
+  detalleConOrigen,
+} from '../cronologia/cronologia.service';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EstadoEvidencia } from '../evidencias/enums/estado-evidencia.enum';
 import { CampoFormulario } from '../formularios/entities/campo-formulario.entity';
@@ -24,7 +28,10 @@ import {
 
 @Injectable()
 export class SincronizacionService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly cronologiaService: CronologiaService,
+  ) {}
 
   async subir(dto: SubirSincronizacionDto): Promise<ResultadoSincronizacionDto> {
     let aceptados = 0;
@@ -32,6 +39,12 @@ export class SincronizacionService {
     const errores: ErrorSincronizacionDto[] = [];
     const mapaJornadas = new Map<string, string>();
     const ahora = new Date();
+    const jornadasCreadas: Array<{
+      id: string;
+      actorId: string;
+      proyectoId: string;
+      fecha: string;
+    }> = [];
 
     await this.dataSource.transaction(async (manager) => {
       for (const jornadaDto of dto.jornadas) {
@@ -55,6 +68,14 @@ export class SincronizacionService {
 
         aceptados++;
         mapaJornadas.set(jornadaDto.idLocal, resultado.id!);
+        if (resultado.id) {
+          jornadasCreadas.push({
+            id: resultado.id,
+            actorId: jornadaDto.tecnicoResponsableId,
+            proyectoId: jornadaDto.proyectoId,
+            fecha: jornadaDto.fecha,
+          });
+        }
       }
 
       for (const envioDto of dto.enviosFormulario) {
@@ -133,6 +154,22 @@ export class SincronizacionService {
         aceptados++;
       }
     });
+
+    for (const jornada of jornadasCreadas) {
+      const [anio, mes, dia] = jornada.fecha.slice(0, 10).split('-');
+      const nombreJornadaFecha =
+        anio && mes && dia ? `${dia}/${mes}/${anio}` : jornada.fecha;
+
+      await this.cronologiaService.registrar({
+        actorId: jornada.actorId,
+        proyectoId: jornada.proyectoId,
+        accion: 'JORNADA_CREADA',
+        entidadTipo: 'jornada',
+        entidadId: jornada.id,
+        contextoTitulo: { nombreJornadaFecha },
+        detalle: detalleConOrigen('sync'),
+      });
+    }
 
     return { aceptados, omitidos, errores };
   }
