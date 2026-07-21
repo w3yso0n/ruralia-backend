@@ -143,7 +143,7 @@ export class RespuestaJornadaDto {
 
   @ApiPropertyOptional({
     type: [RespuestaResumenDto],
-    description: 'Beneficiarios de la jornada',
+    description: 'Beneficiarios asociados a la jornada (si aplica)',
   })
   @Expose()
   @Type(() => RespuestaResumenDto)

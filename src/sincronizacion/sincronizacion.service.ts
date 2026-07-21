@@ -167,6 +167,10 @@ export class SincronizacionService {
         }),
       );
 
+      const tecnico = await manager.findOne(Usuario, {
+        where: { id: dto.tecnicoResponsableId },
+      });
+
       const jornada = manager.create(Jornada, {
         fecha: new Date(dto.fecha),
         estado: dto.estado,
@@ -176,6 +180,7 @@ export class SincronizacionService {
         proyecto: { id: dto.proyectoId },
         vereda: { id: dto.veredaId },
         tecnicoResponsable: { id: dto.tecnicoResponsableId },
+        tecnicoResponsableNombre: tecnico?.nombreCompleto ?? '(sin nombre)',
         jornadaActividades,
         esOffline: true,
         sincronizadoEn,
@@ -183,19 +188,20 @@ export class SincronizacionService {
         dispositivoId,
       });
 
-      if (dto.beneficiarioIds?.length) {
-        jornada.beneficiarios = dto.beneficiarioIds.map((id) =>
-          manager.create(Beneficiario, { id }),
-        );
-      }
-
       if (dto.equipoIds?.length) {
         jornada.equipo = dto.equipoIds.map((id) =>
           manager.create(Usuario, { id }),
         );
       }
 
+      if (dto.beneficiarioIds?.length) {
+        jornada.beneficiarios = dto.beneficiarioIds.map((id) =>
+          manager.create(Beneficiario, { id }),
+        );
+      }
+
       const guardada = await manager.save(Jornada, jornada);
+
       return { id: guardada.id };
     } catch (error) {
       return {

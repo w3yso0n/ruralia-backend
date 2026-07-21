@@ -42,7 +42,10 @@ export function aRespuestaJornada(
       ...jornada,
       actividades,
       proyecto: jornada.proyecto
-        ? ({ id: jornada.proyecto.id, nombre: jornada.proyecto.nombre } as RespuestaResumenDto)
+        ? ({
+            id: jornada.proyecto.id,
+            nombre: jornada.proyecto.nombre,
+          } as RespuestaResumenDto)
         : undefined,
       meta: jornada.meta
         ? plainToInstance(
@@ -60,14 +63,18 @@ export function aRespuestaJornada(
           )
         : undefined,
       vereda: jornada.vereda
-        ? ({ id: jornada.vereda.id, nombre: jornada.vereda.nombre } as RespuestaResumenDto)
-        : undefined,
-      tecnicoResponsable: jornada.tecnicoResponsable
         ? ({
-            id: jornada.tecnicoResponsable.id,
-            nombre: jornada.tecnicoResponsable.nombreCompleto,
+            id: jornada.vereda.id,
+            nombre: jornada.vereda.nombre,
           } as RespuestaResumenDto)
         : undefined,
+      tecnicoResponsable: {
+        id: jornada.tecnicoResponsable?.id ?? '',
+        nombre:
+          jornada.tecnicoResponsableNombre ||
+          jornada.tecnicoResponsable?.nombreCompleto ||
+          '',
+      } as RespuestaResumenDto,
       beneficiarios: jornada.beneficiarios?.map((b) => ({
         id: b.id,
         nombre: `${b.nombres} ${b.apellidos}`,

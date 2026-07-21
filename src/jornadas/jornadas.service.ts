@@ -95,6 +95,12 @@ export class JornadasService {
     }
 
     const tecnicoId = dto.tecnicoResponsableId ?? usuarioActual.id;
+    const tecnico = await this.usuarioRepository.findOne({
+      where: { id: tecnicoId },
+    });
+    if (!tecnico) {
+      throw new NotFoundException(`Usuario técnico ${tecnicoId} no encontrado`);
+    }
 
     if (dto.metaId) {
       const meta = await this.metaRepository.findOne({
@@ -129,6 +135,7 @@ export class JornadasService {
       meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
       vereda: { id: dto.veredaId },
       tecnicoResponsable: { id: tecnicoId },
+      tecnicoResponsableNombre: tecnico.nombreCompleto,
       equipo: [{ id: tecnicoId }],
       jornadaActividades: lineas,
     });
@@ -151,6 +158,7 @@ export class JornadasService {
       .leftJoinAndSelect('ja.actividad', 'actividad')
       .leftJoinAndSelect('ja.subactividad', 'subactividad')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
+      .leftJoinAndSelect('jornada.vereda', 'vereda')
       .orderBy('jornada.fecha', 'DESC')
       .addOrderBy('ja.orden', 'ASC');
 

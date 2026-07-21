@@ -77,6 +77,10 @@ export class Jornada {
   @JoinColumn({ name: 'tecnico_responsable_id' })
   tecnicoResponsable: Usuario;
 
+  /** Snapshot del nombre del técnico al crear la jornada. */
+  @Column({ name: 'tecnico_responsable_nombre' })
+  tecnicoResponsableNombre: string;
+
   @ManyToMany(() => Beneficiario)
   @JoinTable({
     name: 'jornada_beneficiarios',

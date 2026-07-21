@@ -107,9 +107,12 @@ export class ReportesService {
 
     const query = this.beneficiarioRepository
       .createQueryBuilder('beneficiario')
-      .innerJoin('beneficiario.proyectos', 'proyecto', 'proyecto.id = :proyectoId', {
-        proyectoId,
-      })
+      .innerJoin(
+        'beneficiario.proyectoBeneficiarios',
+        'pb',
+        'pb.proyecto_id = :proyectoId',
+        { proyectoId },
+      )
       .leftJoinAndSelect('beneficiario.vereda', 'vereda');
 
     if (filtros.veredaId) {

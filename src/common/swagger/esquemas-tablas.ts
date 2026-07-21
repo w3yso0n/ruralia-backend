@@ -381,13 +381,13 @@ export class TablaJornadas {
 @ApiSchema({
   name: 'jornada_beneficiarios',
   description:
-    'Tabla de unión que registra qué beneficiarios fueron atendidos en cada jornada.',
+    'Tabla de unión opcional: beneficiarios ligados a una jornada (API legacy/sync).',
 })
 export class TablaJornadaBeneficiarios {
   @ApiProperty({ description: 'ID de la jornada' })
   jornadaId: string;
 
-  @ApiProperty({ description: 'ID del beneficiario atendido' })
+  @ApiProperty({ description: 'ID del beneficiario' })
   beneficiarioId: string;
 }
 
