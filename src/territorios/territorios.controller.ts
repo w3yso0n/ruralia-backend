@@ -19,6 +19,8 @@ import {
 } from '@nestjs/swagger';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { FiltrosVeredaDto } from './dto/filtros-vereda.dto';
+import { FiltrosBusquedaTerritorioDto } from './dto/filtros-busqueda-territorio.dto';
+import { RespuestaBusquedaTerritorialDto } from './dto/respuesta-busqueda-territorio.dto';
 import { RespuestaNodoTerritorialDto } from './dto/respuesta-nodo-territorial.dto';
 import { ResolverVeredaDto } from './dto/resolver-vereda.dto';
 import {
@@ -39,6 +41,19 @@ import { TerritoriosService } from './territorios.service';
 @Controller('territorios')
 export class TerritoriosController {
   constructor(private readonly territoriosService: TerritoriosService) {}
+
+  @Get('buscar')
+  @RequierePermisos('territorios.ver')
+  @ApiOperation({
+    summary:
+      'Buscar territorios por nombre o código en todos los niveles de la jerarquía',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaBusquedaTerritorialDto] })
+  buscarTerritorios(
+    @Query() filtros: FiltrosBusquedaTerritorioDto,
+  ): Promise<RespuestaBusquedaTerritorialDto[]> {
+    return this.territoriosService.buscarTerritorios(filtros);
+  }
 
   @Get('regiones')
   @RequierePermisos('territorios.ver')

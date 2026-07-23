@@ -8,6 +8,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { FiltrosVeredaDto } from './dto/filtros-vereda.dto';
+import { FiltrosBusquedaTerritorioDto } from './dto/filtros-busqueda-territorio.dto';
+import { RespuestaBusquedaTerritorialDto } from './dto/respuesta-busqueda-territorio.dto';
 import { RespuestaNodoTerritorialDto } from './dto/respuesta-nodo-territorial.dto';
 import { ResolverVeredaDto } from './dto/resolver-vereda.dto';
 import {
@@ -687,5 +689,146 @@ export class TerritoriosService implements OnModuleInit {
     if (existente && (existente as { id: string }).id !== exceptoId) {
       throw new ConflictException(`Ya existe un código "${codigo}"`);
     }
+  }
+
+  async buscarTerritorios(
+    filtros: FiltrosBusquedaTerritorioDto,
+  ): Promise<RespuestaBusquedaTerritorialDto[]> {
+    const termino = filtros.q?.trim() ?? '';
+    if (termino.length < 2) {
+      return [];
+    }
+
+    const limite = Math.min(filtros.limite ?? 30, 50);
+    const incluirInactivos = filtros.incluirInactivos ?? true;
+    const porNivel = Math.max(5, Math.ceil(limite / 4));
+    const patron = `%${termino}%`;
+    const resultados: RespuestaBusquedaTerritorialDto[] = [];
+
+    const regiones = await this.regionRepository
+      .createQueryBuilder('region')
+      .where('(region.nombre ILIKE :patron OR region.codigo ILIKE :patron)', {
+        patron,
+      })
+      .andWhere(incluirInactivos ? '1=1' : 'region.estaActivo = true')
+      .orderBy('region.nombre', 'ASC')
+      .take(porNivel)
+      .getMany();
+
+    for (const region of regiones) {
+      resultados.push({
+        nivel: 'region',
+        id: region.id,
+        nombre: region.nombre,
+        codigo: region.codigo,
+        estaActivo: region.estaActivo,
+        ruta: region.nombre,
+        regionId: region.id,
+      });
+    }
+
+    const departamentos = await this.departamentoRepository
+      .createQueryBuilder('departamento')
+      .innerJoinAndSelect('departamento.region', 'region')
+      .where(
+        '(departamento.nombre ILIKE :patron OR departamento.codigo ILIKE :patron)',
+        { patron },
+      )
+      .andWhere(incluirInactivos ? '1=1' : 'departamento.estaActivo = true')
+      .orderBy('departamento.nombre', 'ASC')
+      .take(porNivel)
+      .getMany();
+
+    for (const departamento of departamentos) {
+      const region = departamento.region;
+      resultados.push({
+        nivel: 'departamento',
+        id: departamento.id,
+        nombre: departamento.nombre,
+        codigo: departamento.codigo,
+        estaActivo: departamento.estaActivo,
+        ruta: region ? `${region.nombre} › ${departamento.nombre}` : departamento.nombre,
+        regionId: region?.id,
+        departamentoId: departamento.id,
+      });
+    }
+
+    const municipios = await this.municipioRepository
+      .createQueryBuilder('municipio')
+      .innerJoinAndSelect('municipio.departamento', 'departamento')
+      .leftJoinAndSelect('departamento.region', 'region')
+      .where(
+        '(municipio.nombre ILIKE :patron OR municipio.codigo ILIKE :patron)',
+        { patron },
+      )
+      .andWhere(incluirInactivos ? '1=1' : 'municipio.estaActivo = true')
+      .orderBy('municipio.nombre', 'ASC')
+      .take(porNivel)
+      .getMany();
+
+    for (const municipio of municipios) {
+      const departamento = municipio.departamento;
+      const region = departamento?.region;
+      const partes = [region?.nombre, departamento?.nombre, municipio.nombre].filter(
+        Boolean,
+      );
+      resultados.push({
+        nivel: 'municipio',
+        id: municipio.id,
+        nombre: municipio.nombre,
+        codigo: municipio.codigo,
+        estaActivo: municipio.estaActivo,
+        ruta: partes.join(' › '),
+        regionId: region?.id,
+        departamentoId: departamento?.id,
+        municipioId: municipio.id,
+      });
+    }
+
+    const veredas = await this.veredaRepository
+      .createQueryBuilder('vereda')
+      .innerJoinAndSelect('vereda.municipio', 'municipio')
+      .innerJoinAndSelect('municipio.departamento', 'departamento')
+      .leftJoinAndSelect('departamento.region', 'region')
+      .where('(vereda.nombre ILIKE :patron OR vereda.codigo ILIKE :patron)', {
+        patron,
+      })
+      .andWhere(incluirInactivos ? '1=1' : 'vereda.estaActivo = true')
+      .orderBy('vereda.nombre', 'ASC')
+      .take(porNivel)
+      .getMany();
+
+    for (const vereda of veredas) {
+      const municipio = vereda.municipio;
+      const departamento = municipio?.departamento;
+      const region = departamento?.region;
+      const partes = [
+        region?.nombre,
+        departamento?.nombre,
+        municipio?.nombre,
+        vereda.nombre,
+      ].filter(Boolean);
+      resultados.push({
+        nivel: 'vereda',
+        id: vereda.id,
+        nombre: vereda.nombre,
+        codigo: vereda.codigo,
+        estaActivo: vereda.estaActivo,
+        ruta: partes.join(' › '),
+        regionId: region?.id,
+        departamentoId: departamento?.id,
+        municipioId: municipio?.id,
+        veredaId: vereda.id,
+      });
+    }
+
+    return resultados
+      .sort((a, b) => {
+        const exactoA = a.nombre.toLowerCase() === termino.toLowerCase();
+        const exactoB = b.nombre.toLowerCase() === termino.toLowerCase();
+        if (exactoA !== exactoB) return exactoA ? -1 : 1;
+        return a.nombre.localeCompare(b.nombre, 'es');
+      })
+      .slice(0, limite);
   }
 }
