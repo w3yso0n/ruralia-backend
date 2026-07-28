@@ -37,6 +37,10 @@ export class EnvioFormulario {
   @Column({ name: 'dispositivo_id', nullable: true })
   dispositivoId: string;
 
+  /** Índice de fila para formularios grupales (0 = envío único individual). */
+  @Column({ name: 'indice_fila', type: 'int', default: 0 })
+  indiceFila: number;
+
   @ManyToOne(() => Jornada, { nullable: true })
   @JoinColumn({ name: 'jornada_id' })
   jornada: Jornada | null;

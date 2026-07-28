@@ -9,17 +9,28 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import {
+  ActualizarAsistenteJornadaDto,
+  CrearAsistenteJornadaDto,
+  GuardarAsistenciaJornadaDto,
+  RespuestaAsistenteJornadaDto,
+} from './dto/asistencia-jornada.dto';
 import {
   ActualizarJornadaDto,
   AgregarBeneficiariosDto,
@@ -66,7 +77,8 @@ export class JornadasController {
   @Get('asignadas')
   @RequierePermisos('jornadas.ver')
   @ApiOperation({
-    summary: 'Listar jornadas asignadas al usuario autenticado (responsable o equipo)',
+    summary:
+      'Listar jornadas asignadas al usuario autenticado (responsable o equipo)',
   })
   @ApiResponse({ status: 200, type: RespuestaPaginadaJornadasDto })
   listarAsignadas(
@@ -84,6 +96,85 @@ export class JornadasController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ResumenJornadaDto> {
     return this.jornadasService.obtenerResumen(id);
+  }
+
+  @Get(':id/asistencia/pdf')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({
+    summary: 'Descargar PDF de lista de asistencia (jornada grupal)',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF de asistencia' })
+  async descargarPdfAsistencia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.jornadasService.generarPdfAsistencia(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="asistencia-jornada-${id.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(pdf);
+  }
+
+  @Get(':id/asistencia')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({ summary: 'Listar asistentes de una jornada grupal' })
+  @ApiResponse({ status: 200, type: [RespuestaAsistenteJornadaDto] })
+  listarAsistencia(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaAsistenteJornadaDto[]> {
+    return this.jornadasService.listarAsistencia(id);
+  }
+
+  @Put(':id/asistencia')
+  @RequierePermisos('jornadas.editar')
+  @ApiOperation({
+    summary: 'Reemplazar la lista completa de asistencia de una jornada grupal',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaAsistenteJornadaDto] })
+  guardarAsistencia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: GuardarAsistenciaJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto[]> {
+    return this.jornadasService.guardarAsistencia(id, dto);
+  }
+
+  @Post(':id/asistencia')
+  @RequierePermisos('jornadas.editar')
+  @ApiOperation({ summary: 'Agregar un asistente a la lista de asistencia' })
+  @ApiResponse({ status: 201, type: RespuestaAsistenteJornadaDto })
+  agregarAsistente(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CrearAsistenteJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto> {
+    return this.jornadasService.agregarAsistente(id, dto);
+  }
+
+  @Patch(':id/asistencia/:asistenteId')
+  @RequierePermisos('jornadas.editar')
+  @ApiOperation({
+    summary: 'Actualizar nombre, documento o firma de un asistente',
+  })
+  @ApiResponse({ status: 200, type: RespuestaAsistenteJornadaDto })
+  actualizarAsistente(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('asistenteId', ParseUUIDPipe) asistenteId: string,
+    @Body() dto: ActualizarAsistenteJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto> {
+    return this.jornadasService.actualizarAsistente(id, asistenteId, dto);
+  }
+
+  @Delete(':id/asistencia/:asistenteId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequierePermisos('jornadas.editar')
+  @ApiOperation({ summary: 'Eliminar un asistente de la lista' })
+  @ApiResponse({ status: 204 })
+  eliminarAsistente(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('asistenteId', ParseUUIDPipe) asistenteId: string,
+  ): Promise<void> {
+    return this.jornadasService.eliminarAsistente(id, asistenteId);
   }
 
   @Get(':id')

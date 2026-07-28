@@ -9,6 +9,7 @@ import {
 import { Proceso } from '../../actividades/entities/proceso.entity';
 import { Subactividad } from '../../actividades/entities/subactividad.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
+import { TipoPlantilla } from '../enums/tipo-plantilla.enum';
 import { CampoFormulario } from './campo-formulario.entity';
 import { EnvioFormulario } from './envio-formulario.entity';
 
@@ -28,6 +29,14 @@ export class PlantillaFormulario {
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
+
+  @Column({
+    name: 'tipo_plantilla',
+    type: 'enum',
+    enum: TipoPlantilla,
+    default: TipoPlantilla.INDIVIDUAL,
+  })
+  tipoPlantilla: TipoPlantilla;
 
   @ManyToMany(() => Proceso, (proceso) => proceso.plantillasFormulario)
   @JoinTable({

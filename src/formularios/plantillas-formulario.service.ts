@@ -16,12 +16,18 @@ import {
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarPlantillaFormularioDto,
+  AsignacionPlantillasProcesoDto,
   CrearPlantillaFormularioDto,
 } from './dto/formulario.dto';
-import { RespuestaPlantillaFormularioDto } from './dto/respuesta-formulario.dto';
+import {
+  RespuestaAsignacionPlantillasProcesoDto,
+  RespuestaPlantillaFormularioDto,
+} from './dto/respuesta-formulario.dto';
 import { CampoFormulario } from './entities/campo-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
+import { TipoPlantilla } from './enums/tipo-plantilla.enum';
 import { aRespuestaPlantilla } from './utils/serializar-formulario';
+import { TipoJornada } from '../jornadas/enums/tipo-jornada.enum';
 
 @Injectable()
 export class PlantillasFormularioService {
@@ -55,6 +61,7 @@ export class PlantillasFormularioService {
           descripcion: dto.descripcion,
           version: dto.version ?? 1,
           estaActivo: false,
+          tipoPlantilla: dto.tipoPlantilla ?? TipoPlantilla.INDIVIDUAL,
           procesos,
           subactividades,
           usuarios,
@@ -124,6 +131,7 @@ export class PlantillasFormularioService {
         id,
         nombre: dto.nombre ?? plantilla.nombre,
         descripcion: dto.descripcion ?? plantilla.descripcion,
+        tipoPlantilla: dto.tipoPlantilla ?? plantilla.tipoPlantilla,
         procesos,
         subactividades,
         usuarios,
@@ -198,6 +206,53 @@ export class PlantillasFormularioService {
     });
 
     return plantillas.map((p) => aRespuestaPlantilla(p));
+  }
+
+  async obtenerAsignacionProceso(
+    procesoId: string,
+  ): Promise<RespuestaAsignacionPlantillasProcesoDto> {
+    await this.asegurarProceso(procesoId);
+    const plantillas = await this.plantillaRepository.find({
+      where: { procesos: { id: procesoId } },
+      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      order: { nombre: 'ASC' },
+    });
+
+    const individual =
+      plantillas.find((p) => p.tipoPlantilla === TipoPlantilla.INDIVIDUAL) ??
+      null;
+    const grupal =
+      plantillas.find((p) => p.tipoPlantilla === TipoPlantilla.GRUPAL) ?? null;
+
+    return {
+      plantillaIndividual: individual ? aRespuestaPlantilla(individual) : null,
+      plantillaGrupal: grupal ? aRespuestaPlantilla(grupal) : null,
+    };
+  }
+
+  async asignarPlantillasProceso(
+    procesoId: string,
+    dto: AsignacionPlantillasProcesoDto,
+  ): Promise<RespuestaAsignacionPlantillasProcesoDto> {
+    await this.asegurarProceso(procesoId);
+
+    if (dto.plantillaIndividualId !== undefined) {
+      await this.establecerPlantillaProceso(
+        procesoId,
+        dto.plantillaIndividualId,
+        TipoPlantilla.INDIVIDUAL,
+      );
+    }
+
+    if (dto.plantillaGrupalId !== undefined) {
+      await this.establecerPlantillaProceso(
+        procesoId,
+        dto.plantillaGrupalId,
+        TipoPlantilla.GRUPAL,
+      );
+    }
+
+    return this.obtenerAsignacionProceso(procesoId);
   }
 
   async asignarSubactividades(
@@ -325,6 +380,11 @@ export class PlantillasFormularioService {
       throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
     }
 
+    const tipoEsperado =
+      jornada.tipo === TipoJornada.GRUPAL
+        ? TipoPlantilla.GRUPAL
+        : TipoPlantilla.INDIVIDUAL;
+
     const tieneAcceso =
       usuarioTieneAccesoTotal(usuario) ||
       usuarioEsCoordinacion(usuario) ||
@@ -350,7 +410,9 @@ export class PlantillasFormularioService {
       return [];
     }
 
-    const plantillas = await this.listarActivasPorProcesoId(jornada.meta.proceso.id);
+    const plantillas = (
+      await this.listarActivasPorProcesoId(jornada.meta.proceso.id)
+    ).filter((p) => p.tipoPlantilla === tipoEsperado);
     return plantillas.map((p) => aRespuestaPlantilla(p));
   }
 
@@ -407,6 +469,7 @@ export class PlantillasFormularioService {
         descripcion: original.descripcion,
         version: 1,
         estaActivo: false,
+        tipoPlantilla: original.tipoPlantilla ?? TipoPlantilla.INDIVIDUAL,
         subactividades: [],
         usuarios: [],
       });
@@ -499,6 +562,56 @@ export class PlantillasFormularioService {
     }
 
     return usuarios;
+  }
+
+  private async asegurarProceso(procesoId: string): Promise<Proceso> {
+    const proceso = await this.procesoRepository.findOne({
+      where: { id: procesoId },
+    });
+    if (!proceso) {
+      throw new NotFoundException(`Proceso ${procesoId} no encontrado`);
+    }
+    return proceso;
+  }
+
+  private async establecerPlantillaProceso(
+    procesoId: string,
+    plantillaId: string | null,
+    tipo: TipoPlantilla,
+  ): Promise<void> {
+    const vinculadas = await this.plantillaRepository.find({
+      where: { procesos: { id: procesoId }, tipoPlantilla: tipo },
+      relations: { procesos: true },
+    });
+
+    for (const plantilla of vinculadas) {
+      const restantes = (plantilla.procesos ?? []).filter((p) => p.id !== procesoId);
+      await this.plantillaRepository.save({ id: plantilla.id, procesos: restantes });
+    }
+
+    if (!plantillaId) return;
+
+    const plantilla = await this.plantillaRepository.findOne({
+      where: { id: plantillaId },
+      relations: { procesos: true },
+    });
+
+    if (!plantilla) {
+      throw new NotFoundException(`Plantilla ${plantillaId} no encontrada`);
+    }
+
+    if (plantilla.tipoPlantilla !== tipo) {
+      throw new BadRequestException(
+        `La plantilla debe ser de tipo ${tipo} para asignarse en ese rol`,
+      );
+    }
+
+    const ids = new Set((plantilla.procesos ?? []).map((p) => p.id));
+    if (!ids.has(procesoId)) {
+      ids.add(procesoId);
+      const procesos = await this.resolverProcesos([...ids]);
+      await this.plantillaRepository.save({ id: plantilla.id, procesos });
+    }
   }
 
   private async obtenerPlantilla(

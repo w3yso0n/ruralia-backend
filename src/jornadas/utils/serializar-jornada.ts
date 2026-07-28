@@ -88,6 +88,17 @@ export function aRespuestaJornada(
         id: u.id,
         nombre: u.nombreCompleto,
       })),
+      asistentes: (jornada.asistentes ?? [])
+        .slice()
+        .sort((a, b) => a.orden - b.orden)
+        .map((a) => ({
+          id: a.id,
+          nombreCompleto: a.nombreCompleto,
+          documento: a.documento,
+          firmaDataUrl: a.firmaDataUrl,
+          firmadoEn: a.firmadoEn,
+          orden: a.orden,
+        })),
       ...extras,
     },
     { excludeExtraneousValues: true },

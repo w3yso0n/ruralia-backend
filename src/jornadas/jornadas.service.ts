@@ -17,6 +17,10 @@ import {
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
+import { PlantillaFormulario } from '../formularios/entities/plantilla-formulario.entity';
+import { RespuestaFormulario } from '../formularios/entities/respuesta-formulario.entity';
+import { TipoPlantilla } from '../formularios/enums/tipo-plantilla.enum';
+import { TipoCampo } from '../formularios/enums/tipo-campo.enum';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
 import {
@@ -32,6 +36,12 @@ import {
   CambiarEstadoJornadaDto,
   CrearJornadaDto,
 } from './dto/jornada.dto';
+import {
+  ActualizarAsistenteJornadaDto,
+  CrearAsistenteJornadaDto,
+  GuardarAsistenciaJornadaDto,
+  RespuestaAsistenteJornadaDto,
+} from './dto/asistencia-jornada.dto';
 import { FiltrosJornadaDto } from './dto/filtros-jornada.dto';
 import {
   ResumenJornadaDto,
@@ -39,15 +49,18 @@ import {
   RespuestaPaginadaJornadasDto,
 } from './dto/respuesta-jornada.dto';
 import { JornadaActividad } from './entities/jornada-actividad.entity';
+import { JornadaAsistente } from './entities/jornada-asistente.entity';
 import { Jornada } from './entities/jornada.entity';
 import { EstadoEjecucionJornada } from './enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from './enums/estado-jornada.enum';
+import { TipoJornada } from './enums/tipo-jornada.enum';
 import {
   aResumenJornada,
   aRespuestaJornada,
   aRespuestaPaginadaJornadas,
 } from './utils/serializar-jornada';
 import { sumarEjecutadoPorMeta } from './utils/calcular-ejecutado-meta';
+import { generarPdfAsistenciaJornada } from './utils/generar-pdf-asistencia';
 
 const TRANSICIONES_VALIDAS: Partial<
   Record<EstadoJornada, EstadoJornada[]>
@@ -63,6 +76,8 @@ export class JornadasService {
     private readonly jornadaRepository: Repository<Jornada>,
     @InjectRepository(JornadaActividad)
     private readonly jornadaActividadRepository: Repository<JornadaActividad>,
+    @InjectRepository(JornadaAsistente)
+    private readonly asistenteRepository: Repository<JornadaAsistente>,
     @InjectRepository(Meta)
     private readonly metaRepository: Repository<Meta>,
     @InjectRepository(Proyecto)
@@ -77,6 +92,10 @@ export class JornadasService {
     private readonly usuarioRepository: Repository<Usuario>,
     @InjectRepository(EnvioFormulario)
     private readonly envioRepository: Repository<EnvioFormulario>,
+    @InjectRepository(PlantillaFormulario)
+    private readonly plantillaRepository: Repository<PlantillaFormulario>,
+    @InjectRepository(RespuestaFormulario)
+    private readonly respuestaRepository: Repository<RespuestaFormulario>,
     @InjectRepository(Evidencia)
     private readonly evidenciaRepository: Repository<Evidencia>,
     private readonly cronologiaService: CronologiaService,
@@ -143,6 +162,7 @@ export class JornadasService {
       observaciones: dto.observaciones,
       latitud: dto.latitud,
       longitud: dto.longitud,
+      tipo: dto.tipo ?? TipoJornada.INDIVIDUAL,
       proyecto: { id: dto.proyectoId },
       meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
       vereda: { id: dto.veredaId },
@@ -282,8 +302,12 @@ export class JornadasService {
         tecnicoResponsable: true,
         beneficiarios: true,
         equipo: true,
+        asistentes: true,
       },
-      order: { jornadaActividades: { orden: 'ASC' } },
+      order: {
+        jornadaActividades: { orden: 'ASC' },
+        asistentes: { orden: 'ASC' },
+      },
     });
 
     if (!jornada) {
@@ -333,6 +357,9 @@ export class JornadasService {
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
     if (dto.cantidadEjecutada !== undefined) {
       jornada.cantidadEjecutada = dto.cantidadEjecutada;
+    }
+    if (dto.tipo !== undefined) {
+      jornada.tipo = dto.tipo;
     }
     if (dto.veredaId !== undefined) {
       jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
@@ -590,6 +617,251 @@ export class JornadasService {
       conteoFirmas,
       beneficiariosAtendidos: Number(resultado?.conteo ?? 0),
     });
+  }
+
+  async listarAsistencia(
+    jornadaId: string,
+  ): Promise<RespuestaAsistenteJornadaDto[]> {
+    await this.asegurarJornadaGrupal(jornadaId);
+    const asistentes = await this.asistenteRepository.find({
+      where: { jornada: { id: jornadaId } },
+      order: { orden: 'ASC' },
+    });
+    return asistentes.map((a) => this.mapearAsistente(a));
+  }
+
+  async guardarAsistencia(
+    jornadaId: string,
+    dto: GuardarAsistenciaJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto[]> {
+    await this.asegurarJornadaGrupal(jornadaId);
+
+    for (const item of dto.asistentes) {
+      this.validarFirmaDataUrl(item.firmaDataUrl);
+    }
+
+    await this.asistenteRepository.delete({ jornada: { id: jornadaId } });
+
+    const creados = dto.asistentes.map((item, index) =>
+      this.asistenteRepository.create({
+        jornada: { id: jornadaId } as Jornada,
+        nombreCompleto: item.nombreCompleto.trim(),
+        documento: item.documento?.trim() || null,
+        firmaDataUrl: item.firmaDataUrl?.trim() || null,
+        firmadoEn: item.firmaDataUrl?.trim() ? new Date() : null,
+        orden: index,
+      }),
+    );
+
+    const guardados = await this.asistenteRepository.save(creados);
+    return guardados
+      .sort((a, b) => a.orden - b.orden)
+      .map((a) => this.mapearAsistente(a));
+  }
+
+  async agregarAsistente(
+    jornadaId: string,
+    dto: CrearAsistenteJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto> {
+    await this.asegurarJornadaGrupal(jornadaId);
+
+    const ultimo = await this.asistenteRepository.findOne({
+      where: { jornada: { id: jornadaId } },
+      order: { orden: 'DESC' },
+    });
+
+    const asistente = await this.asistenteRepository.save(
+      this.asistenteRepository.create({
+        jornada: { id: jornadaId } as Jornada,
+        nombreCompleto: dto.nombreCompleto.trim(),
+        documento: dto.documento?.trim() || null,
+        firmaDataUrl: null,
+        firmadoEn: null,
+        orden: (ultimo?.orden ?? -1) + 1,
+      }),
+    );
+
+    return this.mapearAsistente(asistente);
+  }
+
+  async actualizarAsistente(
+    jornadaId: string,
+    asistenteId: string,
+    dto: ActualizarAsistenteJornadaDto,
+  ): Promise<RespuestaAsistenteJornadaDto> {
+    await this.asegurarJornadaGrupal(jornadaId);
+    this.validarFirmaDataUrl(dto.firmaDataUrl);
+
+    const asistente = await this.asistenteRepository.findOne({
+      where: { id: asistenteId, jornada: { id: jornadaId } },
+    });
+
+    if (!asistente) {
+      throw new NotFoundException(
+        `Asistente ${asistenteId} no encontrado en la jornada`,
+      );
+    }
+
+    if (dto.nombreCompleto !== undefined) {
+      asistente.nombreCompleto = dto.nombreCompleto.trim();
+    }
+    if (dto.documento !== undefined) {
+      asistente.documento = dto.documento?.trim() || null;
+    }
+    if (dto.firmaDataUrl !== undefined) {
+      const firma = dto.firmaDataUrl?.trim() || null;
+      asistente.firmaDataUrl = firma;
+      asistente.firmadoEn = firma ? new Date() : null;
+    }
+
+    const guardado = await this.asistenteRepository.save(asistente);
+    return this.mapearAsistente(guardado);
+  }
+
+  async eliminarAsistente(
+    jornadaId: string,
+    asistenteId: string,
+  ): Promise<void> {
+    await this.asegurarJornadaGrupal(jornadaId);
+    const resultado = await this.asistenteRepository.delete({
+      id: asistenteId,
+      jornada: { id: jornadaId },
+    });
+    if (!resultado.affected) {
+      throw new NotFoundException(
+        `Asistente ${asistenteId} no encontrado en la jornada`,
+      );
+    }
+  }
+
+  async generarPdfAsistencia(jornadaId: string): Promise<Buffer> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id: jornadaId },
+      relations: {
+        proyecto: true,
+        vereda: true,
+        meta: { proceso: true },
+      },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+
+    if (jornada.tipo !== TipoJornada.GRUPAL) {
+      throw new BadRequestException(
+        'Solo las jornadas grupales tienen lista de asistencia en PDF',
+      );
+    }
+
+    const procesoId = jornada.meta?.proceso?.id;
+    if (!procesoId) {
+      throw new BadRequestException(
+        'La jornada no tiene proceso vinculado para obtener el formulario grupal',
+      );
+    }
+
+    const plantilla = await this.plantillaRepository.findOne({
+      where: {
+        procesos: { id: procesoId },
+        estaActivo: true,
+        tipoPlantilla: TipoPlantilla.GRUPAL,
+      },
+      relations: { campos: true },
+    });
+
+    if (!plantilla) {
+      throw new BadRequestException(
+        'No hay formulario grupal publicado asignado al proceso',
+      );
+    }
+
+    const campos = (plantilla.campos ?? [])
+      .slice()
+      .sort((a, b) => a.orden - b.orden);
+
+    const envios = await this.envioRepository.find({
+      where: {
+        jornada: { id: jornadaId },
+        plantillaFormulario: { id: plantilla.id },
+      },
+      order: { indiceFila: 'ASC' },
+    });
+
+    const filas: Array<Record<string, string | null>> = [];
+    for (const envio of envios) {
+      const respuestas = await this.respuestaRepository.find({
+        where: { envioFormulario: { id: envio.id } },
+        relations: { campoFormulario: true },
+      });
+      const mapa: Record<string, string | null> = {};
+      for (const campo of campos) {
+        const resp = respuestas.find((r) => r.claveCampo === campo.clave);
+        mapa[campo.clave] = resp ? this.valorRespuestaTexto(resp) : null;
+      }
+      filas.push(mapa);
+    }
+
+    return generarPdfAsistenciaJornada({
+      proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
+      plantillaNombre: plantilla.nombre,
+      fecha: jornada.fecha,
+      veredaNombre: jornada.vereda?.nombre,
+      metaNombre: jornada.meta?.nombre,
+      observaciones: jornada.observaciones,
+      columnas: campos.map((c) => ({
+        clave: c.clave,
+        etiqueta: c.etiqueta,
+        esFirma: c.tipoCampo === TipoCampo.FIRMA,
+      })),
+      filas,
+    });
+  }
+
+  private valorRespuestaTexto(resp: RespuestaFormulario): string | null {
+    if (resp.valorTexto != null) return resp.valorTexto;
+    if (resp.urlArchivo != null) return resp.urlArchivo;
+    if (resp.valorNumero != null) return String(resp.valorNumero);
+    if (resp.valorFecha != null) return resp.valorFecha.toISOString().slice(0, 10);
+    if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
+    if (resp.valorJson != null) return JSON.stringify(resp.valorJson);
+    return null;
+  }
+
+  private mapearAsistente(
+    asistente: JornadaAsistente,
+  ): RespuestaAsistenteJornadaDto {
+    return {
+      id: asistente.id,
+      nombreCompleto: asistente.nombreCompleto,
+      documento: asistente.documento,
+      firmaDataUrl: asistente.firmaDataUrl,
+      firmadoEn: asistente.firmadoEn,
+      orden: asistente.orden,
+    };
+  }
+
+  private async asegurarJornadaGrupal(jornadaId: string): Promise<Jornada> {
+    const jornada = await this.buscarJornada(jornadaId);
+    if (jornada.tipo !== TipoJornada.GRUPAL) {
+      throw new BadRequestException(
+        'La lista de asistencia solo aplica a jornadas grupales',
+      );
+    }
+    return jornada;
+  }
+
+  private validarFirmaDataUrl(firma?: string | null): void {
+    if (firma == null || firma === '') return;
+    if (!firma.startsWith('data:image/')) {
+      throw new BadRequestException(
+        'La firma debe ser una imagen en formato data URL',
+      );
+    }
+    // ~1.5 MB en base64 como techo razonable para firmas
+    if (firma.length > 2_000_000) {
+      throw new BadRequestException('La firma es demasiado grande');
+    }
   }
 
   private async validarActividadesJornada(

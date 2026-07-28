@@ -15,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { TipoCampo } from '../enums/tipo-campo.enum';
+import { TipoPlantilla } from '../enums/tipo-plantilla.enum';
 
 export class CrearCampoFormularioDto {
   @ApiProperty({ description: 'Etiqueta visible del campo' })
@@ -99,6 +100,16 @@ export class CrearPlantillaFormularioDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   usuarioIds?: string[];
+
+  @ApiPropertyOptional({
+    enum: TipoPlantilla,
+    description:
+      'INDIVIDUAL (formulario de campo estándar) o GRUPAL (lista de asistencia repetible)',
+    default: TipoPlantilla.INDIVIDUAL,
+  })
+  @IsEnum(TipoPlantilla)
+  @IsOptional()
+  tipoPlantilla?: TipoPlantilla;
 
   @ApiProperty({
     type: [CrearCampoFormularioDto],
@@ -194,6 +205,14 @@ export class ActualizarPlantillaFormularioDto {
   usuarioIds?: string[];
 
   @ApiPropertyOptional({
+    enum: TipoPlantilla,
+    description: 'INDIVIDUAL o GRUPAL (lista de asistencia)',
+  })
+  @IsEnum(TipoPlantilla)
+  @IsOptional()
+  tipoPlantilla?: TipoPlantilla;
+
+  @ApiPropertyOptional({
     type: [ActualizarCampoFormularioDto],
     description: 'Campos de la plantilla (reemplaza el conjunto completo)',
   })
@@ -245,6 +264,24 @@ export class RespuestaEnviarDto {
   valor: unknown;
 }
 
+export class AsignacionPlantillasProcesoDto {
+  @ApiPropertyOptional({
+    description:
+      'Plantilla individual del proceso (null para quitar). Solo una por proceso.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  plantillaIndividualId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Plantilla grupal / lista de asistencia (null para quitar). Solo una por proceso.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  plantillaGrupalId?: string | null;
+}
+
 export class EnviarFormularioDto {
   @ApiPropertyOptional({
     description:
@@ -257,6 +294,16 @@ export class EnviarFormularioDto {
   @ApiProperty({ description: 'ID de la plantilla de formulario' })
   @IsUUID('4')
   plantillaFormularioId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Índice de fila para formularios grupales (0 por defecto). Cada asistente = una fila.',
+    minimum: 0,
+  })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  indiceFila?: number;
 
   @ApiProperty({
     type: [RespuestaEnviarDto],

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { TipoCampo } from '../enums/tipo-campo.enum';
+import { TipoPlantilla } from '../enums/tipo-plantilla.enum';
 
 export class RespuestaCampoFormularioDto {
   @ApiProperty({ description: 'ID del campo' })
@@ -57,6 +58,13 @@ export class RespuestaPlantillaFormularioDto {
   @Expose()
   estaActivo: boolean;
 
+  @ApiProperty({
+    enum: TipoPlantilla,
+    description: 'INDIVIDUAL o GRUPAL (lista de asistencia repetible)',
+  })
+  @Expose()
+  tipoPlantilla: TipoPlantilla;
+
   @ApiPropertyOptional({
     description: 'IDs de los procesos asignados a la plantilla',
     type: [String],
@@ -102,6 +110,24 @@ export class RespuestaPlantillaFormularioDto {
   campos?: RespuestaCampoFormularioDto[];
 }
 
+export class RespuestaAsignacionPlantillasProcesoDto {
+  @ApiPropertyOptional({
+    type: RespuestaPlantillaFormularioDto,
+    description: 'Formulario individual asignado al proceso',
+  })
+  @Expose()
+  @Type(() => RespuestaPlantillaFormularioDto)
+  plantillaIndividual?: RespuestaPlantillaFormularioDto | null;
+
+  @ApiPropertyOptional({
+    type: RespuestaPlantillaFormularioDto,
+    description: 'Formulario grupal (lista de asistencia) asignado al proceso',
+  })
+  @Expose()
+  @Type(() => RespuestaPlantillaFormularioDto)
+  plantillaGrupal?: RespuestaPlantillaFormularioDto | null;
+}
+
 export class RespuestaEnvioFormularioDto {
   @ApiProperty({ description: 'ID del envío' })
   @Expose()
@@ -135,6 +161,12 @@ export class RespuestaEnvioFormularioDto {
   @Expose()
   @Transform(({ obj, value }) => obj.plantillaFormulario?.id ?? value)
   plantillaFormularioId?: string;
+
+  @ApiProperty({
+    description: 'Índice de fila (formularios grupales; 0 = envío único)',
+  })
+  @Expose()
+  indiceFila: number;
 }
 
 export class RespuestaDetalleRespuestaDto {

@@ -7,6 +7,8 @@ import { RespuestaFormulario } from './entities/respuesta-formulario.entity';
 import { ProcesarEnvioJob } from '../cola/cola-envios.constants';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
+import { TipoJornada } from '../jornadas/enums/tipo-jornada.enum';
+import { TipoPlantilla } from './enums/tipo-plantilla.enum';
 
 @Injectable()
 export class EnvioProcesamientoService {
@@ -34,8 +36,17 @@ export class EnvioProcesamientoService {
       return;
     }
 
+    const tipoEsperado =
+      jornada.tipo === TipoJornada.GRUPAL
+        ? TipoPlantilla.GRUPAL
+        : TipoPlantilla.INDIVIDUAL;
+
     const plantillasActivas = await this.plantillaRepository.find({
-      where: { procesos: { id: jornada.meta.proceso.id }, estaActivo: true },
+      where: {
+        procesos: { id: jornada.meta.proceso.id },
+        estaActivo: true,
+        tipoPlantilla: tipoEsperado,
+      },
       relations: { campos: true },
     });
 

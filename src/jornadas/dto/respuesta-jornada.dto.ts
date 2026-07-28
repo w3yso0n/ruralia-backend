@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { EstadoEjecucionJornada } from '../enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+import { TipoJornada } from '../enums/tipo-jornada.enum';
 
 export class RespuestaResumenDto {
   @ApiProperty({ description: 'ID del recurso' })
@@ -96,6 +97,13 @@ export class RespuestaJornadaDto {
   @Expose()
   estado: EstadoJornada;
 
+  @ApiProperty({
+    enum: TipoJornada,
+    description: 'INDIVIDUAL (formularios) o GRUPAL (asistencia)',
+  })
+  @Expose()
+  tipo: TipoJornada;
+
   @ApiPropertyOptional({ description: 'Observaciones de la jornada' })
   @Expose()
   observaciones?: string;
@@ -173,6 +181,19 @@ export class RespuestaJornadaDto {
   @Expose()
   @Type(() => RespuestaResumenDto)
   equipo?: RespuestaResumenDto[];
+
+  @ApiPropertyOptional({
+    description: 'Asistentes de jornada grupal (lista de asistencia)',
+  })
+  @Expose()
+  asistentes?: {
+    id: string;
+    nombreCompleto: string;
+    documento?: string | null;
+    firmaDataUrl?: string | null;
+    firmadoEn?: Date | null;
+    orden: number;
+  }[];
 
   @ApiPropertyOptional({ description: 'Envíos de formulario asociados' })
   @Expose()

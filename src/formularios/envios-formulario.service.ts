@@ -23,12 +23,14 @@ import { EnvioFormulario } from './entities/envio-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
 import { RespuestaFormulario } from './entities/respuesta-formulario.entity';
 import { TipoCampo } from './enums/tipo-campo.enum';
+import { TipoPlantilla } from './enums/tipo-plantilla.enum';
 import {
   aRespuestaDetalle,
   aRespuestaEnvio,
   aRespuestaEnvioPrevio,
 } from './utils/serializar-formulario';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { TipoJornada } from '../jornadas/enums/tipo-jornada.enum';
 
 interface RespuestaEntrada {
   claveCampo: string;
@@ -80,6 +82,21 @@ export class EnviosFormularioService {
       dto.respuestas as RespuestaEntrada[],
     );
 
+    const indiceFila = dto.indiceFila ?? 0;
+
+    if (dto.jornadaId) {
+      const existente = await this.envioRepository.findOne({
+        where: {
+          jornada: { id: dto.jornadaId },
+          plantillaFormulario: { id: dto.plantillaFormularioId },
+          indiceFila,
+        },
+      });
+      if (existente) {
+        return this.actualizar(existente.id, { respuestas: dto.respuestas }, usuarioActual);
+      }
+    }
+
     const ahora = new Date();
 
     const envioGuardado = await this.dataSource.transaction(async (manager) => {
@@ -87,6 +104,7 @@ export class EnviosFormularioService {
         enviadoEn: ahora,
         sincronizadoEn: ahora,
         esOffline: false,
+        indiceFila,
         datosRaw: { respuestas: dto.respuestas, usuarioId: usuarioActual.id },
         jornada: dto.jornadaId ? { id: dto.jornadaId } : null,
         usuario: { id: usuarioActual.id },
@@ -154,10 +172,19 @@ export class EnviosFormularioService {
 
     const envios = await this.envioRepository.find({
       where: { jornada: { id: jornadaId } },
-      order: { enviadoEn: 'DESC' },
+      order: { indiceFila: 'ASC', enviadoEn: 'DESC' },
     });
 
     return envios.map((e) => aRespuestaEnvio(e));
+  }
+
+  async eliminar(envioId: string): Promise<void> {
+    const envio = await this.envioRepository.findOne({ where: { id: envioId } });
+    if (!envio) {
+      throw new NotFoundException(`Envío ${envioId} no encontrado`);
+    }
+    await this.respuestaRepository.delete({ envioFormulario: { id: envioId } });
+    await this.envioRepository.delete(envioId);
   }
 
   async obtenerRespuestas(

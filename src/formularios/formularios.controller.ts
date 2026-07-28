@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -19,6 +22,7 @@ import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decora
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarPlantillaFormularioDto,
+  AsignacionPlantillasProcesoDto,
   AsignarProcesosDto,
   AsignarSubactividadesDto,
   AsignarUsuariosDto,
@@ -27,6 +31,7 @@ import {
   EnviarFormularioDto,
 } from './dto/formulario.dto';
 import {
+  RespuestaAsignacionPlantillasProcesoDto,
   RespuestaDetalleRespuestaDto,
   RespuestaEnvioFormularioDto,
   RespuestaEnvioPrevioDto,
@@ -60,6 +65,32 @@ export class FormulariosController {
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarPlantillas(): Promise<RespuestaPlantillaFormularioDto[]> {
     return this.plantillasService.listarTodas();
+  }
+
+  @Get('plantillas/proceso/:procesoId/asignacion')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Obtener formulario individual y grupal asignados a un proceso',
+  })
+  @ApiResponse({ status: 200, type: RespuestaAsignacionPlantillasProcesoDto })
+  obtenerAsignacionProceso(
+    @Param('procesoId', ParseUUIDPipe) procesoId: string,
+  ): Promise<RespuestaAsignacionPlantillasProcesoDto> {
+    return this.plantillasService.obtenerAsignacionProceso(procesoId);
+  }
+
+  @Patch('plantillas/proceso/:procesoId/asignacion')
+  @RequierePermisos('formularios.editar')
+  @ApiOperation({
+    summary: 'Asignar formulario individual y/o grupal a un proceso',
+  })
+  @ApiResponse({ status: 200, type: RespuestaAsignacionPlantillasProcesoDto })
+  asignarPlantillasProceso(
+    @Param('procesoId', ParseUUIDPipe) procesoId: string,
+    @Body() dto: AsignacionPlantillasProcesoDto,
+  ): Promise<RespuestaAsignacionPlantillasProcesoDto> {
+    return this.plantillasService.asignarPlantillasProceso(procesoId, dto);
   }
 
   @Get('plantillas/proceso/:procesoId')
@@ -261,5 +292,14 @@ export class FormulariosController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<RespuestaDetalleRespuestaDto[]> {
     return this.enviosService.obtenerRespuestas(id);
+  }
+
+  @Delete('envios/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequierePermisos('formularios.enviar')
+  @ApiOperation({ summary: 'Eliminar un envío (p. ej. quitar asistente de lista grupal)' })
+  @ApiResponse({ status: 204 })
+  eliminarEnvio(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.enviosService.eliminar(id);
   }
 }

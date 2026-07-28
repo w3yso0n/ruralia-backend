@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+import { TipoJornada } from '../enums/tipo-jornada.enum';
 
 export class ActividadJornadaDto {
   @ApiProperty({ description: 'ID de la actividad del plan' })
@@ -73,6 +74,16 @@ export class CrearJornadaDto {
   @ApiProperty({ description: 'ID de la vereda' })
   @IsUUID('4')
   veredaId: string;
+
+  @ApiPropertyOptional({
+    enum: TipoJornada,
+    description:
+      'INDIVIDUAL (formularios de campo) o GRUPAL (lista de asistencia). Por defecto INDIVIDUAL.',
+    default: TipoJornada.INDIVIDUAL,
+  })
+  @IsEnum(TipoJornada)
+  @IsOptional()
+  tipo?: TipoJornada;
 
   @ApiPropertyOptional({ description: 'ID del técnico responsable' })
   @IsUUID('4')
@@ -134,6 +145,14 @@ export class ActualizarJornadaDto {
   @Min(0)
   @IsOptional()
   cantidadEjecutada?: number;
+
+  @ApiPropertyOptional({
+    enum: TipoJornada,
+    description: 'INDIVIDUAL o GRUPAL',
+  })
+  @IsEnum(TipoJornada)
+  @IsOptional()
+  tipo?: TipoJornada;
 }
 
 export class CambiarEstadoJornadaDto {

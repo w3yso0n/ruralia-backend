@@ -16,7 +16,9 @@ import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+import { TipoJornada } from '../enums/tipo-jornada.enum';
 import { JornadaActividad } from './jornada-actividad.entity';
+import { JornadaAsistente } from './jornada-asistente.entity';
 
 @Entity('jornadas')
 @Unique('UQ_jornada_dispositivo_id_local', ['dispositivoId', 'idLocal'])
@@ -33,6 +35,13 @@ export class Jornada {
     default: EstadoJornada.PLANIFICADA,
   })
   estado: EstadoJornada;
+
+  @Column({
+    type: 'enum',
+    enum: TipoJornada,
+    default: TipoJornada.INDIVIDUAL,
+  })
+  tipo: TipoJornada;
 
   @Column({ type: 'text', nullable: true })
   observaciones: string;
@@ -77,6 +86,11 @@ export class Jornada {
 
   @OneToMany(() => JornadaActividad, (ja) => ja.jornada, { cascade: true })
   jornadaActividades: JornadaActividad[];
+
+  @OneToMany(() => JornadaAsistente, (asistente) => asistente.jornada, {
+    cascade: true,
+  })
+  asistentes: JornadaAsistente[];
 
   @ManyToOne(() => Vereda, { nullable: false })
   @JoinColumn({ name: 'vereda_id' })
