@@ -18,6 +18,7 @@ import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.
 import { responderFormato } from '../common/utils/responder-formato';
 import {
   FiltrosReporteBeneficiariosDto,
+  FiltrosSeguimientoDiarioDto,
   FormatoReporteDto,
 } from './dto/reportes.dto';
 import { ReportesService } from './reportes.service';
@@ -110,5 +111,66 @@ export class ReportesController {
       `mapa-calor-${proyectoId}`,
     );
     if (formato !== 'csv') return resultado;
+  }
+
+  @Get('proyecto/:proyectoId/seguimiento-excel')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary:
+      'Excel de seguimiento Plan/Ejec mensual (metas, periodos y jornadas)',
+  })
+  @ApiResponse({ status: 200, description: 'Archivo .xlsx' })
+  async excelSeguimiento(
+    @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, nombreArchivo } =
+      await this.reportesService.excelSeguimientoProyecto(proyectoId);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${nombreArchivo}"`,
+    );
+    res.send(buffer);
+  }
+
+  @Get('proyecto/:proyectoId/seguimiento-diario-excel')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary:
+      'Excel de seguimiento Plan/Ejec diario de un mes (jornadas por día)',
+  })
+  @ApiQuery({ name: 'anio', required: false, type: Number })
+  @ApiQuery({ name: 'mes', required: false, type: Number, description: '1–12' })
+  @ApiResponse({ status: 200, description: 'Archivo .xlsx' })
+  async excelSeguimientoDiario(
+    @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
+    @Query() query: FiltrosSeguimientoDiarioDto,
+    @Res() res: Response,
+  ) {
+    const ahora = new Date();
+    const anio = query.anio ?? ahora.getFullYear();
+    const mes = query.mes ?? ahora.getMonth() + 1;
+
+    const { buffer, nombreArchivo } =
+      await this.reportesService.excelSeguimientoDiarioProyecto(
+        proyectoId,
+        anio,
+        mes,
+      );
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${nombreArchivo}"`,
+    );
+    res.send(buffer);
   }
 }
