@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseBoolPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -42,6 +43,7 @@ import { FiltrosJornadaDto } from './dto/filtros-jornada.dto';
 import { FiltrosJornadaAsignadaDto } from './dto/filtros-jornada-asignada.dto';
 import {
   ResumenJornadaDto,
+  RespuestaCrearJornadasDto,
   RespuestaJornadaDto,
   RespuestaPaginadaJornadasDto,
 } from './dto/respuesta-jornada.dto';
@@ -55,12 +57,12 @@ export class JornadasController {
 
   @Post()
   @RequierePermisos('jornadas.crear')
-  @ApiOperation({ summary: 'Crear una nueva jornada' })
-  @ApiResponse({ status: 201, type: RespuestaJornadaDto })
+  @ApiOperation({ summary: 'Crear una o más jornadas (una por agente)' })
+  @ApiResponse({ status: 201, type: RespuestaCrearJornadasDto })
   crear(
     @Body() dto: CrearJornadaDto,
     @UsuarioActual() usuario: Usuario,
-  ): Promise<RespuestaJornadaDto> {
+  ): Promise<RespuestaCrearJornadasDto> {
     return this.jornadasService.crear(dto, usuario);
   }
 
@@ -113,6 +115,26 @@ export class JornadasController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="asistencia-jornada-${id.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(pdf);
+  }
+
+  @Get(':id/formulario/pdf')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({
+    summary:
+      'Descargar PDF con respuestas del formulario (jornada individual)',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF de formulario' })
+  async descargarPdfFormulario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.jornadasService.generarPdfFormulario(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="formulario-jornada-${id.slice(0, 8)}.pdf"`,
     });
     return new StreamableFile(pdf);
   }
@@ -237,8 +259,11 @@ export class JornadasController {
   @RequierePermisos('jornadas.eliminar')
   @ApiOperation({ summary: 'Eliminar permanentemente una jornada' })
   @ApiResponse({ status: 204 })
-  eliminar(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.jornadasService.eliminar(id);
+  eliminar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('force', new ParseBoolPipe({ optional: true })) force?: boolean,
+  ): Promise<void> {
+    return this.jornadasService.eliminar(id, force ?? false);
   }
 
   @Delete(':id')

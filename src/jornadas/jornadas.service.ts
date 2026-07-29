@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { Actividad } from '../actividades/entities/actividad.entity';
 import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
@@ -46,6 +47,8 @@ import {
 import { FiltrosJornadaDto } from './dto/filtros-jornada.dto';
 import {
   ResumenJornadaDto,
+  RespuestaCrearJornadasDto,
+  RespuestaHermanoGrupoDto,
   RespuestaJornadaDto,
   RespuestaPaginadaJornadasDto,
 } from './dto/respuesta-jornada.dto';
@@ -56,6 +59,7 @@ import { EstadoEjecucionJornada } from './enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from './enums/estado-jornada.enum';
 import { TipoJornada } from './enums/tipo-jornada.enum';
 import {
+  aHermanoGrupo,
   aResumenJornada,
   aRespuestaJornada,
   aRespuestaPaginadaJornadas,
@@ -100,14 +104,16 @@ export class JornadasService {
     @InjectRepository(Evidencia)
     private readonly evidenciaRepository: Repository<Evidencia>,
     private readonly cronologiaService: CronologiaService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async crear(
     dto: CrearJornadaDto,
     usuarioActual: Usuario,
-  ): Promise<RespuestaJornadaDto> {
+  ): Promise<RespuestaCrearJornadasDto> {
     const proyecto = await this.proyectoRepository.findOne({
       where: { id: dto.proyectoId },
+      relations: { personal: true },
     });
 
     if (!proyecto) {
@@ -126,12 +132,24 @@ export class JornadasService {
       );
     }
 
-    const tecnicoId = dto.tecnicoResponsableId ?? usuarioActual.id;
-    const tecnico = await this.usuarioRepository.findOne({
-      where: { id: tecnicoId },
+    const tecnicoIds = this.resolverTecnicoIds(dto, usuarioActual);
+    const tecnicos = await this.usuarioRepository.find({
+      where: { id: In(tecnicoIds) },
     });
-    if (!tecnico) {
-      throw new NotFoundException(`Usuario técnico ${tecnicoId} no encontrado`);
+    if (tecnicos.length !== tecnicoIds.length) {
+      throw new NotFoundException(
+        'Uno o más usuarios técnicos no fueron encontrados',
+      );
+    }
+
+    const personalIds = new Set((proyecto.personal ?? []).map((u) => u.id));
+    if (dto.tecnicoResponsableIds?.length) {
+      const fueraDePersonal = tecnicoIds.filter((id) => !personalIds.has(id));
+      if (fueraDePersonal.length > 0) {
+        throw new BadRequestException(
+          'Solo se pueden asignar agentes que pertenezcan al personal del proyecto',
+        );
+      }
     }
 
     if (dto.metaId) {
@@ -158,38 +176,96 @@ export class JornadasService {
         ? await this.validarActividadesJornada(dto.proyectoId, dto.actividades)
         : [];
 
-    const jornada = this.jornadaRepository.create({
-      fecha: new Date(dto.fecha),
-      nombre: dto.nombre?.trim() ? dto.nombre.trim() : null,
-      observaciones: dto.observaciones,
-      latitud: dto.latitud,
-      longitud: dto.longitud,
-      tipo: dto.tipo ?? TipoJornada.INDIVIDUAL,
-      proyecto: { id: dto.proyectoId },
-      meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
-      vereda: { id: dto.veredaId },
-      tecnicoResponsable: { id: tecnicoId },
-      tecnicoResponsableNombre: tecnico.nombreCompleto,
-      equipo: [{ id: tecnicoId }],
-      jornadaActividades: lineas,
+    const grupoJornadaId = tecnicoIds.length > 1 ? randomUUID() : null;
+    const tecnicosPorId = new Map(tecnicos.map((t) => [t.id, t]));
+
+    const idsGuardados = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Jornada);
+      const creadas: string[] = [];
+
+      for (const tecnicoId of tecnicoIds) {
+        const tecnico = tecnicosPorId.get(tecnicoId)!;
+        const jornada = repo.create({
+          fecha: new Date(dto.fecha),
+          nombre: dto.nombre?.trim() ? dto.nombre.trim() : null,
+          observaciones: dto.observaciones,
+          latitud: dto.latitud,
+          longitud: dto.longitud,
+          tipo: dto.tipo ?? TipoJornada.INDIVIDUAL,
+          proyecto: { id: dto.proyectoId },
+          meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
+          vereda: { id: dto.veredaId },
+          tecnicoResponsable: { id: tecnicoId },
+          tecnicoResponsableNombre: tecnico.nombreCompleto,
+          equipo: [{ id: tecnicoId }],
+          jornadaActividades: lineas.map((linea) =>
+            manager.getRepository(JornadaActividad).create({ ...linea }),
+          ),
+          grupoJornadaId,
+        });
+        const guardada = await repo.save(jornada);
+        creadas.push(guardada.id);
+      }
+
+      return creadas;
     });
 
-    const guardada = await this.jornadaRepository.save(jornada);
-    const respuesta = await this.obtenerUna(guardada.id);
+    for (const jornadaId of idsGuardados) {
+      await this.cronologiaService.registrar({
+        actorId: usuarioActual.id,
+        proyectoId: dto.proyectoId,
+        accion: 'JORNADA_CREADA',
+        entidadTipo: 'jornada',
+        entidadId: jornadaId,
+        contextoTitulo: {
+          nombreJornadaFecha: this.formatoFechaTitulo(dto.fecha),
+        },
+        detalle: detalleConOrigen('api'),
+      });
+    }
 
-    await this.cronologiaService.registrar({
-      actorId: tecnicoId,
-      proyectoId: dto.proyectoId,
-      accion: 'JORNADA_CREADA',
-      entidadTipo: 'jornada',
-      entidadId: guardada.id,
-      contextoTitulo: {
-        nombreJornadaFecha: this.formatoFechaTitulo(dto.fecha),
-      },
-      detalle: detalleConOrigen('api'),
+    const jornadas = await Promise.all(
+      idsGuardados.map((id) => this.obtenerUna(id)),
+    );
+
+    return { grupoJornadaId, jornadas };
+  }
+
+  private resolverTecnicoIds(
+    dto: CrearJornadaDto,
+    usuarioActual: Usuario,
+  ): string[] {
+    if (dto.tecnicoResponsableIds?.length) {
+      return [...new Set(dto.tecnicoResponsableIds)];
+    }
+    return [dto.tecnicoResponsableId ?? usuarioActual.id];
+  }
+
+  private async mapearHermanosGrupo(
+    jornadas: Jornada[],
+  ): Promise<Map<string, RespuestaHermanoGrupoDto[]>> {
+    const grupoIds = [
+      ...new Set(
+        jornadas
+          .map((j) => j.grupoJornadaId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const porGrupo = new Map<string, RespuestaHermanoGrupoDto[]>();
+    if (!grupoIds.length) return porGrupo;
+
+    const hermanas = await this.jornadaRepository.find({
+      where: { grupoJornadaId: In(grupoIds) },
+      relations: { tecnicoResponsable: true },
     });
 
-    return respuesta;
+    for (const hermana of hermanas) {
+      if (!hermana.grupoJornadaId) continue;
+      const lista = porGrupo.get(hermana.grupoJornadaId) ?? [];
+      lista.push(aHermanoGrupo(hermana));
+      porGrupo.set(hermana.grupoJornadaId, lista);
+    }
+    return porGrupo;
   }
 
   async listar(
@@ -251,7 +327,14 @@ export class JornadasService {
     }
 
     const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
-    const datos = jornadas.map((j) => aRespuestaJornada(j));
+    const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
+    const datos = jornadas.map((j) =>
+      aRespuestaJornada(j, {
+        grupo: j.grupoJornadaId
+          ? hermanosPorGrupo.get(j.grupoJornadaId)
+          : undefined,
+      }),
+    );
     return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
   }
 
@@ -287,7 +370,14 @@ export class JornadasService {
     }
 
     const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
-    const datos = jornadas.map((j) => aRespuestaJornada(j));
+    const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
+    const datos = jornadas.map((j) =>
+      aRespuestaJornada(j, {
+        grupo: j.grupoJornadaId
+          ? hermanosPorGrupo.get(j.grupoJornadaId)
+          : undefined,
+      }),
+    );
     return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
   }
 
@@ -333,10 +423,15 @@ export class JornadasService {
       );
     }
 
+    const hermanosPorGrupo = await this.mapearHermanosGrupo([jornada]);
+
     return aRespuestaJornada(jornada, {
       enviosFormulario: envios,
       evidencias,
       metaEjecutadoTotal,
+      grupo: jornada.grupoJornadaId
+        ? hermanosPorGrupo.get(jornada.grupoJornadaId)
+        : undefined,
     });
   }
 
@@ -353,23 +448,14 @@ export class JornadasService {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
     }
 
-    if (dto.fecha !== undefined) jornada.fecha = new Date(dto.fecha);
-    if (dto.nombre !== undefined) {
-      jornada.nombre = dto.nombre.trim() ? dto.nombre.trim() : null;
-    }
-    if (dto.observaciones !== undefined) jornada.observaciones = dto.observaciones;
-    if (dto.latitud !== undefined) jornada.latitud = dto.latitud;
-    if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
-    if (dto.cantidadEjecutada !== undefined) {
-      jornada.cantidadEjecutada = dto.cantidadEjecutada;
-    }
-    if (dto.tipo !== undefined) {
-      jornada.tipo = dto.tipo;
-    }
-    if (dto.veredaId !== undefined) {
-      jornada.vereda = { id: dto.veredaId } as Jornada['vereda'];
-    }
+    const objetivos = jornada.grupoJornadaId
+      ? await this.jornadaRepository.find({
+          where: { grupoJornadaId: jornada.grupoJornadaId },
+          relations: { proyecto: true },
+        })
+      : [jornada];
 
+    let metaValidada: Meta | null | undefined;
     if (dto.metaId !== undefined) {
       const meta = await this.metaRepository.findOne({
         where: { id: dto.metaId },
@@ -382,27 +468,60 @@ export class JornadasService {
         throw new NotFoundException(`Meta ${dto.metaId} no encontrada`);
       }
 
-      if (meta.proceso.subactividad.actividad.proyecto.id !== jornada.proyecto.id) {
+      if (
+        meta.proceso.subactividad.actividad.proyecto.id !== jornada.proyecto.id
+      ) {
         throw new BadRequestException(
           'La meta no pertenece al proyecto de la jornada',
         );
       }
 
-      jornada.meta = { id: dto.metaId } as Meta;
+      metaValidada = meta;
+    }
+
+    for (const objetivo of objetivos) {
+      if (dto.fecha !== undefined) objetivo.fecha = new Date(dto.fecha);
+      if (dto.nombre !== undefined) {
+        objetivo.nombre = dto.nombre.trim() ? dto.nombre.trim() : null;
+      }
+      if (dto.observaciones !== undefined) {
+        objetivo.observaciones = dto.observaciones;
+      }
+      if (dto.latitud !== undefined) objetivo.latitud = dto.latitud;
+      if (dto.longitud !== undefined) objetivo.longitud = dto.longitud;
+      if (dto.tipo !== undefined) objetivo.tipo = dto.tipo;
+      if (dto.veredaId !== undefined) {
+        objetivo.vereda = { id: dto.veredaId } as Jornada['vereda'];
+      }
+      if (metaValidada !== undefined) {
+        objetivo.meta = { id: dto.metaId! } as Meta;
+      }
+
+      // cantidadEjecutada es por agente: solo en la jornada solicitada
+      if (dto.cantidadEjecutada !== undefined && objetivo.id === id) {
+        objetivo.cantidadEjecutada = dto.cantidadEjecutada;
+      }
     }
 
     if (dto.actividades !== undefined) {
-      await this.jornadaActividadRepository.delete({ jornada: { id } });
-      const lineas = await this.validarActividadesJornada(
-        jornada.proyecto.id,
-        dto.actividades,
-      );
-      jornada.jornadaActividades = lineas.map((linea) =>
-        this.jornadaActividadRepository.create({ ...linea, jornada: { id } }),
-      );
+      for (const objetivo of objetivos) {
+        await this.jornadaActividadRepository.delete({
+          jornada: { id: objetivo.id },
+        });
+        const lineas = await this.validarActividadesJornada(
+          objetivo.proyecto.id,
+          dto.actividades,
+        );
+        objetivo.jornadaActividades = lineas.map((linea) =>
+          this.jornadaActividadRepository.create({
+            ...linea,
+            jornada: { id: objetivo.id },
+          }),
+        );
+      }
     }
 
-    await this.jornadaRepository.save(jornada);
+    await this.jornadaRepository.save(objetivos);
     return this.obtenerUna(id);
   }
 
@@ -419,53 +538,95 @@ export class JornadasService {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
     }
 
-    if (jornada.estado === EstadoJornada.CANCELADA) {
-      return this.obtenerUna(id);
+    const objetivos = jornada.grupoJornadaId
+      ? await this.jornadaRepository.find({
+          where: { grupoJornadaId: jornada.grupoJornadaId },
+          relations: { proyecto: true },
+        })
+      : [jornada];
+
+    for (const objetivo of objetivos) {
+      if (objetivo.estado === EstadoJornada.CANCELADA) continue;
+
+      objetivo.estado = EstadoJornada.CANCELADA;
+      await this.jornadaRepository.save(objetivo);
+
+      const fechaStr =
+        objetivo.fecha instanceof Date
+          ? objetivo.fecha.toISOString().slice(0, 10)
+          : String(objetivo.fecha).slice(0, 10);
+
+      await this.cronologiaService.registrar({
+        actorId: usuarioActual.id,
+        proyectoId: objetivo.proyecto.id,
+        accion: 'JORNADA_CANCELADA',
+        entidadTipo: 'jornada',
+        entidadId: objetivo.id,
+        contextoTitulo: {
+          nombreJornadaFecha: this.formatoFechaTitulo(fechaStr),
+        },
+        detalle: detalleConOrigen('api'),
+      });
     }
-
-    jornada.estado = EstadoJornada.CANCELADA;
-    await this.jornadaRepository.save(jornada);
-
-    const fechaStr =
-      jornada.fecha instanceof Date
-        ? jornada.fecha.toISOString().slice(0, 10)
-        : String(jornada.fecha).slice(0, 10);
-
-    await this.cronologiaService.registrar({
-      actorId: usuarioActual.id,
-      proyectoId: jornada.proyecto.id,
-      accion: 'JORNADA_CANCELADA',
-      entidadTipo: 'jornada',
-      entidadId: id,
-      contextoTitulo: {
-        nombreJornadaFecha: this.formatoFechaTitulo(fechaStr),
-      },
-      detalle: detalleConOrigen('api'),
-    });
 
     return this.obtenerUna(id);
   }
 
-  async eliminar(id: string): Promise<void> {
+  async eliminar(id: string, forzar = false): Promise<void> {
     const jornada = await this.jornadaRepository.findOne({ where: { id } });
 
     if (!jornada) {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
     }
 
-    const [envios, evidencias] = await Promise.all([
-      this.envioRepository.count({ where: { jornada: { id } } }),
-      this.evidenciaRepository.count({ where: { jornada: { id } } }),
-    ]);
+    const objetivos = jornada.grupoJornadaId
+      ? await this.jornadaRepository.find({
+          where: { grupoJornadaId: jornada.grupoJornadaId },
+        })
+      : [jornada];
 
-    if (envios > 0 || evidencias > 0) {
-      throw new BadRequestException(
-        'No se puede eliminar una jornada con formularios enviados o evidencias registradas',
-      );
+    if (!forzar) {
+      for (const objetivo of objetivos) {
+        const [envios, evidencias] = await Promise.all([
+          this.envioRepository.count({
+            where: { jornada: { id: objetivo.id } },
+          }),
+          this.evidenciaRepository.count({
+            where: { jornada: { id: objetivo.id } },
+          }),
+        ]);
+
+        if (envios > 0 || evidencias > 0) {
+          throw new BadRequestException(
+            'No se puede eliminar una jornada con formularios enviados o evidencias registradas',
+          );
+        }
+      }
     }
 
-    await this.jornadaActividadRepository.delete({ jornada: { id } });
-    await this.jornadaRepository.remove(jornada);
+    for (const objetivo of objetivos) {
+      if (forzar) {
+        const envios = await this.envioRepository.find({
+          where: { jornada: { id: objetivo.id } },
+        });
+        if (envios.length > 0) {
+          await this.respuestaRepository.delete({
+            envioFormulario: { id: In(envios.map((envio) => envio.id)) },
+          });
+          await this.envioRepository.remove(envios);
+        }
+
+        await this.evidenciaRepository.delete({
+          jornada: { id: objetivo.id },
+        });
+      }
+
+      await this.jornadaActividadRepository.delete({
+        jornada: { id: objetivo.id },
+      });
+    }
+
+    await this.jornadaRepository.remove(objetivos);
   }
 
   async cambiarEstado(
@@ -746,6 +907,7 @@ export class JornadasService {
         proyecto: true,
         vereda: true,
         meta: { proceso: true },
+        tecnicoResponsable: true,
       },
     });
 
@@ -802,6 +964,15 @@ export class JornadasService {
       fecha: jornada.fecha,
       veredaNombre: jornada.vereda?.nombre,
       metaNombre: jornada.meta?.nombre,
+      unidadMedida: jornada.meta?.unidadMedida ?? null,
+      cantidadEjecutada:
+        jornada.cantidadEjecutada != null
+          ? Number(jornada.cantidadEjecutada)
+          : null,
+      tecnicoNombre:
+        jornada.tecnicoResponsableNombre ||
+        jornada.tecnicoResponsable?.nombreCompleto ||
+        null,
       observaciones: jornada.observaciones,
     };
 
@@ -820,6 +991,7 @@ export class JornadasService {
           etiqueta: campo.etiqueta,
           valor: resp ? this.valorRespuestaTexto(resp) : null,
           esFirma: campo.tipoCampo === TipoCampo.FIRMA,
+          tipoCampo: campo.tipoCampo,
         };
       });
 
@@ -894,6 +1066,176 @@ export class JornadasService {
     });
   }
 
+  async generarPdfFormulario(jornadaId: string): Promise<Buffer> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id: jornadaId },
+      relations: {
+        proyecto: true,
+        vereda: true,
+        meta: { proceso: true },
+        tecnicoResponsable: true,
+      },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+
+    if (jornada.tipo === TipoJornada.GRUPAL) {
+      throw new BadRequestException(
+        'Para jornadas grupales usa el PDF de lista de asistencia',
+      );
+    }
+
+    const envios = await this.envioRepository.find({
+      where: { jornada: { id: jornadaId } },
+      relations: { plantillaFormulario: { campos: true } },
+      order: { enviadoEn: 'ASC', indiceFila: 'ASC' },
+    });
+
+    const basePdf = {
+      proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
+      tituloDocumento: 'REPORTE DE FORMULARIO',
+      fecha: jornada.fecha,
+      veredaNombre: jornada.vereda?.nombre,
+      metaNombre: jornada.meta?.nombre,
+      unidadMedida: jornada.meta?.unidadMedida ?? null,
+      cantidadEjecutada:
+        jornada.cantidadEjecutada != null
+          ? Number(jornada.cantidadEjecutada)
+          : null,
+      tecnicoNombre:
+        jornada.tecnicoResponsableNombre ||
+        jornada.tecnicoResponsable?.nombreCompleto ||
+        null,
+      observaciones: jornada.observaciones,
+    };
+
+    if (envios.length === 0) {
+      return generarPdfAsistenciaJornada({
+        ...basePdf,
+        plantillaNombre: 'Formulario de campo',
+        resumenPie: 'sin respuestas',
+        cabecera: [
+          {
+            etiqueta: 'Estado del formulario',
+            valor: 'Sin respuestas registradas aún',
+          },
+        ],
+        tablas: [],
+      });
+    }
+
+    const cabecera: Array<{
+      etiqueta: string;
+      valor: string | null;
+      esFirma?: boolean;
+      tipoCampo?: string;
+    }> = [];
+    const tablas: Array<{
+      titulo?: string;
+      columnas: Array<{ clave: string; etiqueta: string; esFirma?: boolean }>;
+      filas: Array<Record<string, string | null>>;
+    }> = [];
+
+    const variosEnvios = envios.length > 1;
+    let totalRespuestas = 0;
+
+    for (const envio of envios) {
+      const plantilla = envio.plantillaFormulario;
+      if (!plantilla) continue;
+
+      const campos = (plantilla.campos ?? [])
+        .slice()
+        .sort((a, b) => a.orden - b.orden);
+      const camposTabla = campos.filter((c) => c.tipoCampo === TipoCampo.TABLA);
+      const camposSimples = campos.filter(
+        (c) => c.tipoCampo !== TipoCampo.TABLA,
+      );
+
+      const respuestas = await this.respuestaRepository.find({
+        where: { envioFormulario: { id: envio.id } },
+      });
+
+      const prefijo = variosEnvios
+        ? `${plantilla.nombre}${
+            envio.indiceFila > 0 ? ` · fila ${envio.indiceFila + 1}` : ''
+          }`
+        : '';
+
+      for (const campo of camposSimples) {
+        const resp = respuestas.find((r) => r.claveCampo === campo.clave);
+        cabecera.push({
+          etiqueta: prefijo
+            ? `${prefijo} · ${campo.etiqueta}`
+            : campo.etiqueta,
+          valor: resp ? this.valorRespuestaTexto(resp) : null,
+          esFirma: campo.tipoCampo === TipoCampo.FIRMA,
+          tipoCampo: campo.tipoCampo,
+        });
+        if (resp) totalRespuestas += 1;
+      }
+
+      for (const campoTabla of camposTabla) {
+        const resp = respuestas.find((r) => r.claveCampo === campoTabla.clave);
+        const columnasDef = this.columnasDeTabla(campoTabla);
+        const filasBrutas =
+          resp?.valorJson && Array.isArray(resp.valorJson.filas)
+            ? (resp.valorJson.filas as Record<string, unknown>[])
+            : [];
+
+        const filas = filasBrutas.map((fila) => {
+          const mapa: Record<string, string | null> = {};
+          for (const col of columnasDef) {
+            const v = fila[col.clave];
+            if (v == null || v === '') {
+              mapa[col.clave] = null;
+            } else if (typeof v === 'boolean') {
+              mapa[col.clave] = v ? 'Sí' : 'No';
+            } else {
+              mapa[col.clave] = String(v);
+            }
+          }
+          return mapa;
+        });
+
+        tablas.push({
+          titulo: prefijo
+            ? `${prefijo} · ${campoTabla.etiqueta}`
+            : campoTabla.etiqueta,
+          columnas: columnasDef.map((c) => ({
+            clave: c.clave,
+            etiqueta: c.etiqueta,
+            esFirma: c.tipoCampo === 'FIRMA',
+          })),
+          filas,
+        });
+        totalRespuestas += filas.length;
+      }
+    }
+
+    const primeraPlantilla = envios[0]?.plantillaFormulario?.nombre;
+
+    return generarPdfAsistenciaJornada({
+      ...basePdf,
+      plantillaNombre:
+        envios.length === 1 && primeraPlantilla
+          ? primeraPlantilla
+          : `${envios.length} envío(s) de formulario`,
+      resumenPie: `${totalRespuestas} respuesta(s)`,
+      cabecera:
+        cabecera.length > 0
+          ? cabecera
+          : [
+              {
+                etiqueta: 'Estado del formulario',
+                valor: 'Sin campos de respuesta en los envíos',
+              },
+            ],
+      tablas,
+    });
+  }
+
   private columnasDeTabla(campo: CampoFormulario): Array<{
     clave: string;
     etiqueta: string;
@@ -918,11 +1260,29 @@ export class JornadasService {
 
   private valorRespuestaTexto(resp: RespuestaFormulario): string | null {
     if (resp.urlArchivo != null) return resp.urlArchivo;
-    if (resp.valorTexto != null) return resp.valorTexto;
+    if (resp.valorTexto != null) {
+      const texto = resp.valorTexto.trim();
+      if (texto.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(texto) as unknown;
+          if (Array.isArray(parsed)) {
+            return parsed.map((v) => String(v)).filter(Boolean).join(', ');
+          }
+        } catch {
+          // texto plano
+        }
+      }
+      return resp.valorTexto;
+    }
     if (resp.valorNumero != null) return String(resp.valorNumero);
     if (resp.valorFecha != null) return resp.valorFecha.toISOString().slice(0, 10);
     if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
-    if (resp.valorJson != null) return JSON.stringify(resp.valorJson);
+    if (resp.valorJson != null) {
+      if (Array.isArray(resp.valorJson)) {
+        return resp.valorJson.map((v) => String(v)).filter(Boolean).join(', ');
+      }
+      return JSON.stringify(resp.valorJson);
+    }
     return null;
   }
 

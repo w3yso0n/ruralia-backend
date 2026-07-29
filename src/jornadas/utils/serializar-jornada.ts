@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { Jornada } from '../entities/jornada.entity';
 import {
   ResumenJornadaDto,
+  RespuestaHermanoGrupoDto,
   RespuestaJornadaActividadDto,
   RespuestaJornadaDto,
   RespuestaMetaResumenDto,
@@ -99,7 +100,26 @@ export function aRespuestaJornada(
           firmadoEn: a.firmadoEn,
           orden: a.orden,
         })),
+      grupoJornadaId: jornada.grupoJornadaId ?? null,
       ...extras,
+    },
+    { excludeExtraneousValues: true },
+  );
+}
+
+export function aHermanoGrupo(jornada: Jornada): RespuestaHermanoGrupoDto {
+  return plainToInstance(
+    RespuestaHermanoGrupoDto,
+    {
+      id: jornada.id,
+      estado: jornada.estado,
+      tecnicoResponsable: {
+        id: jornada.tecnicoResponsable?.id ?? '',
+        nombre:
+          jornada.tecnicoResponsableNombre ||
+          jornada.tecnicoResponsable?.nombreCompleto ||
+          '',
+      } as RespuestaResumenDto,
     },
     { excludeExtraneousValues: true },
   );

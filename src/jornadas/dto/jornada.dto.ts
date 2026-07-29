@@ -100,6 +100,17 @@ export class CrearJornadaDto {
   @IsUUID('4')
   @IsOptional()
   tecnicoResponsableId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'IDs de técnicos responsables (personal del proyecto). Crea una jornada independiente por cada uno, ligadas por grupoJornadaId si hay más de uno.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  tecnicoResponsableIds?: string[];
 }
 
 export class ActualizarJornadaDto {

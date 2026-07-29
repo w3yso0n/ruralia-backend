@@ -392,6 +392,12 @@ export class TablaJornadas {
 
   @ApiProperty({ description: 'ID de la vereda donde se realizó' })
   veredaId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'UUID compartido cuando varias jornadas se crearon juntas para distintos agentes',
+  })
+  grupoJornadaId?: string;
 }
 
 @ApiSchema({

@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   JoinTable,
   ManyToMany,
@@ -107,6 +108,15 @@ export class Jornada {
   /** Snapshot del nombre del técnico al crear la jornada. */
   @Column({ name: 'tecnico_responsable_nombre' })
   tecnicoResponsableNombre: string;
+
+  /**
+   * Vincula jornadas creadas juntas para varios agentes.
+   * Cada fila sigue siendo independiente (respuestas/avance);
+   * editar/cancelar datos compartidos aplica a todo el grupo.
+   */
+  @Index('IDX_jornadas_grupo_jornada_id')
+  @Column({ name: 'grupo_jornada_id', type: 'uuid', nullable: true })
+  grupoJornadaId: string | null;
 
   @ManyToMany(() => Beneficiario)
   @JoinTable({

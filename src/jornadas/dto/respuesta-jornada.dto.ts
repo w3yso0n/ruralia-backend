@@ -84,6 +84,24 @@ export class RespuestaMetaResumenDto {
   ejecutadoTotal?: number;
 }
 
+export class RespuestaHermanoGrupoDto {
+  @ApiProperty({ description: 'ID de la jornada hermana' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ enum: EstadoJornada, description: 'Estado de la jornada hermana' })
+  @Expose()
+  estado: EstadoJornada;
+
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Técnico responsable de la jornada hermana',
+  })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  tecnicoResponsable?: RespuestaResumenDto;
+}
+
 export class RespuestaJornadaDto {
   @ApiProperty({ description: 'ID de la jornada' })
   @Expose()
@@ -208,6 +226,22 @@ export class RespuestaJornadaDto {
   @ApiPropertyOptional({ description: 'Evidencias asociadas' })
   @Expose()
   evidencias?: unknown[];
+
+  @ApiPropertyOptional({
+    description:
+      'ID de grupo cuando esta jornada se creó junto con otras para varios agentes',
+    nullable: true,
+  })
+  @Expose()
+  grupoJornadaId?: string | null;
+
+  @ApiPropertyOptional({
+    type: [RespuestaHermanoGrupoDto],
+    description: 'Otras jornadas del mismo grupo (otros agentes)',
+  })
+  @Expose()
+  @Type(() => RespuestaHermanoGrupoDto)
+  grupo?: RespuestaHermanoGrupoDto[];
 }
 
 export class ResumenJornadaDto {
@@ -249,4 +283,22 @@ export class RespuestaPaginadaJornadasDto {
   @ApiProperty({ description: 'Total de páginas' })
   @Expose()
   totalPaginas: number;
+}
+
+export class RespuestaCrearJornadasDto {
+  @ApiPropertyOptional({
+    description:
+      'ID de grupo compartido (solo cuando se crearon 2+ jornadas para varios agentes)',
+    nullable: true,
+  })
+  @Expose()
+  grupoJornadaId: string | null;
+
+  @ApiProperty({
+    type: [RespuestaJornadaDto],
+    description: 'Jornadas creadas (una por agente)',
+  })
+  @Expose()
+  @Type(() => RespuestaJornadaDto)
+  jornadas: RespuestaJornadaDto[];
 }
