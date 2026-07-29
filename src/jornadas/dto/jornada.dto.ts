@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -31,6 +32,16 @@ export class CrearJornadaDto {
   @ApiProperty({ description: 'Fecha de la jornada (ISO 8601)' })
   @IsDateString()
   fecha: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Nombre de identificación opcional (para distinguir la jornada en listados)',
+    maxLength: 200,
+  })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  nombre?: string;
 
   @ApiPropertyOptional({ description: 'Observaciones de la jornada' })
   @IsString()
@@ -96,6 +107,16 @@ export class ActualizarJornadaDto {
   @IsDateString()
   @IsOptional()
   fecha?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Nombre de identificación opcional (cadena vacía para quitarlo)',
+    maxLength: 200,
+  })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  nombre?: string;
 
   @ApiPropertyOptional({ description: 'Observaciones de la jornada' })
   @IsString()

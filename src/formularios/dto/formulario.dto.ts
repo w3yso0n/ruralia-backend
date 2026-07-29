@@ -104,7 +104,7 @@ export class CrearPlantillaFormularioDto {
   @ApiPropertyOptional({
     enum: TipoPlantilla,
     description:
-      'INDIVIDUAL (formulario de campo estándar) o GRUPAL (lista de asistencia repetible)',
+      'INDIVIDUAL (formulario de campo estándar) o GRUPAL (cabecera + matrices/listas de asistencia)',
     default: TipoPlantilla.INDIVIDUAL,
   })
   @IsEnum(TipoPlantilla)
@@ -206,7 +206,7 @@ export class ActualizarPlantillaFormularioDto {
 
   @ApiPropertyOptional({
     enum: TipoPlantilla,
-    description: 'INDIVIDUAL o GRUPAL (lista de asistencia)',
+    description: 'INDIVIDUAL o GRUPAL (cabecera + matrices de asistencia)',
   })
   @IsEnum(TipoPlantilla)
   @IsOptional()

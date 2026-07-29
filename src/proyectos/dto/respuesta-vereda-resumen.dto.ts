@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
 export class RespuestaVeredaResumenDto {
@@ -13,4 +13,12 @@ export class RespuestaVeredaResumenDto {
   @ApiProperty({ description: 'Código de la vereda' })
   @Expose()
   codigo: string;
+
+  @ApiPropertyOptional({ description: 'Latitud si fue georreferenciada' })
+  @Expose()
+  latitud?: number;
+
+  @ApiPropertyOptional({ description: 'Longitud si fue georreferenciada' })
+  @Expose()
+  longitud?: number;
 }

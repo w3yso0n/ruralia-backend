@@ -166,6 +166,16 @@ export class TablaVeredas {
     description: 'ID del corregimiento (opcional / legado)',
   })
   corregimientoId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Latitud si la vereda fue georreferenciada (Google Maps)',
+  })
+  latitud?: number;
+
+  @ApiPropertyOptional({
+    description: 'Longitud si la vereda fue georreferenciada (Google Maps)',
+  })
+  longitud?: number;
 }
 
 @ApiSchema({

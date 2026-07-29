@@ -132,6 +132,12 @@ export class TerritoriosService implements OnModuleInit {
     const nombreVereda = dto.nombreVereda.trim();
     const municipioNombre = dto.municipio?.trim() || 'Municipio general';
     const departamentoNombre = dto.departamento?.trim() || 'Colombia';
+    const latitud =
+      dto.latitud != null && Number.isFinite(dto.latitud) ? dto.latitud : null;
+    const longitud =
+      dto.longitud != null && Number.isFinite(dto.longitud)
+        ? dto.longitud
+        : null;
 
     if (dto.placeId) {
       const codigoPlace = `gpl:${dto.placeId.slice(0, 80)}`;
@@ -139,6 +145,11 @@ export class TerritoriosService implements OnModuleInit {
         where: { codigo: codigoPlace, estaActivo: true },
       });
       if (existentePorPlace) {
+        await this.actualizarCoordenadasSiCorresponden(
+          existentePorPlace,
+          latitud,
+          longitud,
+        );
         return this.aRespuestaVereda(existentePorPlace.id);
       }
     }
@@ -158,6 +169,11 @@ export class TerritoriosService implements OnModuleInit {
       .getOne();
 
     if (existente) {
+      await this.actualizarCoordenadasSiCorresponden(
+        existente,
+        latitud,
+        longitud,
+      );
       return this.aRespuestaVereda(existente.id);
     }
 
@@ -175,6 +191,11 @@ export class TerritoriosService implements OnModuleInit {
       where: { codigo: codigoVereda },
     });
     if (duplicadoCodigo) {
+      await this.actualizarCoordenadasSiCorresponden(
+        duplicadoCodigo,
+        latitud,
+        longitud,
+      );
       return this.aRespuestaVereda(duplicadoCodigo.id);
     }
 
@@ -185,10 +206,24 @@ export class TerritoriosService implements OnModuleInit {
         municipio,
         corregimiento: null,
         estaActivo: true,
+        latitud,
+        longitud,
       }),
     );
 
     return this.aRespuestaVereda(vereda.id);
+  }
+
+  private async actualizarCoordenadasSiCorresponden(
+    vereda: Vereda,
+    latitud: number | null,
+    longitud: number | null,
+  ): Promise<void> {
+    if (latitud == null || longitud == null) return;
+    if (vereda.latitud === latitud && vereda.longitud === longitud) return;
+    vereda.latitud = latitud;
+    vereda.longitud = longitud;
+    await this.veredaRepository.save(vereda);
   }
 
   private async aRespuestaVereda(id: string): Promise<RespuestaVeredaDto> {
@@ -213,6 +248,8 @@ export class TerritoriosService implements OnModuleInit {
       municipioNombre: detalle.municipio?.nombre,
       departamentoNombre: detalle.municipio?.departamento?.nombre,
       regionNombre: detalle.municipio?.departamento?.region?.nombre,
+      latitud: detalle.latitud ?? undefined,
+      longitud: detalle.longitud ?? undefined,
     };
   }
 

@@ -22,6 +22,18 @@ export class Vereda {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
+  @Column({
+    type: 'double precision',
+    nullable: true,
+  })
+  latitud: number | null;
+
+  @Column({
+    type: 'double precision',
+    nullable: true,
+  })
+  longitud: number | null;
+
   @ManyToOne(() => Municipio, (municipio) => municipio.veredas, {
     nullable: false,
   })

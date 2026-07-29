@@ -60,7 +60,7 @@ export class RespuestaPlantillaFormularioDto {
 
   @ApiProperty({
     enum: TipoPlantilla,
-    description: 'INDIVIDUAL o GRUPAL (lista de asistencia repetible)',
+    description: 'INDIVIDUAL o GRUPAL (cabecera + matrices/listas de asistencia)',
   })
   @Expose()
   tipoPlantilla: TipoPlantilla;

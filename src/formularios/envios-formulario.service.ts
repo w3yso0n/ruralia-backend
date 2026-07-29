@@ -162,7 +162,12 @@ export class EnviosFormularioService {
       }
     }
 
-    return aRespuestaEnvio(envioGuardado);
+    const envioCompleto = await this.envioRepository.findOne({
+      where: { id: envioGuardado.id },
+      relations: { jornada: true, usuario: true, plantillaFormulario: true },
+    });
+
+    return aRespuestaEnvio(envioCompleto!);
   }
 
   async listarPorJornada(
@@ -172,6 +177,11 @@ export class EnviosFormularioService {
 
     const envios = await this.envioRepository.find({
       where: { jornada: { id: jornadaId } },
+      relations: {
+        jornada: true,
+        usuario: true,
+        plantillaFormulario: true,
+      },
       order: { indiceFila: 'ASC', enviadoEn: 'DESC' },
     });
 
@@ -371,6 +381,35 @@ export class EnviosFormularioService {
     return new Date(Date.UTC(anio, mes - 1, dia));
   }
 
+  private normalizarValorTabla(valor: unknown): {
+    filas: Record<string, unknown>[];
+  } {
+    if (valor == null || typeof valor !== 'object') {
+      throw new BadRequestException(
+        'El valor de un campo TABLA debe ser un objeto { filas: [...] }',
+      );
+    }
+
+    const bruto = valor as { filas?: unknown };
+    if (!Array.isArray(bruto.filas)) {
+      throw new BadRequestException(
+        'El valor de un campo TABLA debe incluir filas como arreglo',
+      );
+    }
+
+    const filas: Record<string, unknown>[] = [];
+    for (const fila of bruto.filas) {
+      if (fila == null || typeof fila !== 'object' || Array.isArray(fila)) {
+        throw new BadRequestException(
+          'Cada fila de un campo TABLA debe ser un objeto',
+        );
+      }
+      filas.push(fila as Record<string, unknown>);
+    }
+
+    return { filas };
+  }
+
   private validarCamposObligatorios(
     campos: CampoFormulario[],
     respuestas: RespuestaEntrada[],
@@ -381,6 +420,21 @@ export class EnviosFormularioService {
 
     for (const campo of campos.filter((c) => c.esObligatorio)) {
       const valor = mapaRespuestas.get(campo.clave);
+
+      if (campo.tipoCampo === TipoCampo.TABLA) {
+        if (valor === undefined || valor === null) {
+          throw new BadRequestException(
+            `El campo obligatorio "${campo.etiqueta}" (${campo.clave}) no fue completado`,
+          );
+        }
+        const tabla = this.normalizarValorTabla(valor);
+        if (tabla.filas.length === 0) {
+          throw new BadRequestException(
+            `El campo obligatorio "${campo.etiqueta}" (${campo.clave}) requiere al menos una fila`,
+          );
+        }
+        continue;
+      }
 
       if (valor === undefined || valor === null || valor === '') {
         throw new BadRequestException(
@@ -417,6 +471,14 @@ export class EnviosFormularioService {
         return manager.create(RespuestaFormulario, {
           ...base,
           valorBooleano: Boolean(valor),
+        });
+      case TipoCampo.TABLA:
+        return manager.create(RespuestaFormulario, {
+          ...base,
+          valorJson:
+            valor == null
+              ? { filas: [] }
+              : this.normalizarValorTabla(valor),
         });
       case TipoCampo.GPS:
       case TipoCampo.SELECCION_MULTIPLE:

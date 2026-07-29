@@ -43,6 +43,10 @@ export class Jornada {
   })
   tipo: TipoJornada;
 
+  /** Nombre de identificación opcional para distinguir jornadas en listados. */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  nombre: string | null;
+
   @Column({ type: 'text', nullable: true })
   observaciones: string;
 

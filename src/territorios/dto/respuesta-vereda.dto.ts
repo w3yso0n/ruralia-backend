@@ -33,6 +33,14 @@ export class RespuestaVeredaDto {
   @ApiPropertyOptional()
   @Expose()
   regionNombre?: string;
+
+  @ApiPropertyOptional({ description: 'Latitud (Google Maps / geocodificación)' })
+  @Expose()
+  latitud?: number;
+
+  @ApiPropertyOptional({ description: 'Longitud (Google Maps / geocodificación)' })
+  @Expose()
+  longitud?: number;
 }
 
 export class RespuestaPaginadaVeredasDto {

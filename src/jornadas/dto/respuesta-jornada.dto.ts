@@ -104,6 +104,12 @@ export class RespuestaJornadaDto {
   @Expose()
   tipo: TipoJornada;
 
+  @ApiPropertyOptional({
+    description: 'Nombre de identificación de la jornada',
+  })
+  @Expose()
+  nombre?: string | null;
+
   @ApiPropertyOptional({ description: 'Observaciones de la jornada' })
   @Expose()
   observaciones?: string;

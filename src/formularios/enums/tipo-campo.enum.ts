@@ -9,4 +9,6 @@ export enum TipoCampo {
   FOTO = 'FOTO',
   FIRMA = 'FIRMA',
   ARCHIVO = 'ARCHIVO',
+  /** Matriz/lista repetible (p. ej. asistencia). Columnas en opciones; filas en valorJson. */
+  TABLA = 'TABLA',
 }

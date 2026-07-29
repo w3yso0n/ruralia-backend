@@ -6,12 +6,14 @@ import { AppModule } from './app.module';
 import { migrarRolesNombreAntesDeSync } from './usuarios/migrar-roles-nombre';
 import { migrarTerritoriosAntesDeSync } from './territorios/migrar-territorios-esquema';
 import { migrarJornadaHistorialAntesDeSync } from './jornadas/migrar-jornada-historial';
+import { migrarTipoCampoTablaAntesDeSync } from './formularios/migrar-tipo-campo-tabla';
 
 async function bootstrap() {
   // Debe correr antes de TypeORM synchronize.
   await migrarRolesNombreAntesDeSync();
   await migrarTerritoriosAntesDeSync();
   await migrarJornadaHistorialAntesDeSync();
+  await migrarTipoCampoTablaAntesDeSync();
 
   const colaModule = await ColaModule.forRoot();
   const app = await NestFactory.create(AppModule.register(colaModule));

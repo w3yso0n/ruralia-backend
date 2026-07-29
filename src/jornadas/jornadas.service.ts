@@ -17,6 +17,7 @@ import {
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
+import { CampoFormulario } from '../formularios/entities/campo-formulario.entity';
 import { PlantillaFormulario } from '../formularios/entities/plantilla-formulario.entity';
 import { RespuestaFormulario } from '../formularios/entities/respuesta-formulario.entity';
 import { TipoPlantilla } from '../formularios/enums/tipo-plantilla.enum';
@@ -159,6 +160,7 @@ export class JornadasService {
 
     const jornada = this.jornadaRepository.create({
       fecha: new Date(dto.fecha),
+      nombre: dto.nombre?.trim() ? dto.nombre.trim() : null,
       observaciones: dto.observaciones,
       latitud: dto.latitud,
       longitud: dto.longitud,
@@ -352,6 +354,9 @@ export class JornadasService {
     }
 
     if (dto.fecha !== undefined) jornada.fecha = new Date(dto.fecha);
+    if (dto.nombre !== undefined) {
+      jornada.nombre = dto.nombre.trim() ? dto.nombre.trim() : null;
+    }
     if (dto.observaciones !== undefined) jornada.observaciones = dto.observaciones;
     if (dto.latitud !== undefined) jornada.latitud = dto.latitud;
     if (dto.longitud !== undefined) jornada.longitud = dto.longitud;
@@ -780,6 +785,9 @@ export class JornadasService {
       .slice()
       .sort((a, b) => a.orden - b.orden);
 
+    const camposTabla = campos.filter((c) => c.tipoCampo === TipoCampo.TABLA);
+    const camposCabecera = campos.filter((c) => c.tipoCampo !== TipoCampo.TABLA);
+
     const envios = await this.envioRepository.find({
       where: {
         jornada: { id: jornadaId },
@@ -788,6 +796,75 @@ export class JornadasService {
       order: { indiceFila: 'ASC' },
     });
 
+    const basePdf = {
+      proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
+      plantillaNombre: plantilla.nombre,
+      fecha: jornada.fecha,
+      veredaNombre: jornada.vereda?.nombre,
+      metaNombre: jornada.meta?.nombre,
+      observaciones: jornada.observaciones,
+    };
+
+    // Modelo nuevo: cabecera + matrices en un solo envío
+    if (camposTabla.length > 0) {
+      const envio = envios[0];
+      const respuestas = envio
+        ? await this.respuestaRepository.find({
+            where: { envioFormulario: { id: envio.id } },
+          })
+        : [];
+
+      const cabecera = camposCabecera.map((campo) => {
+        const resp = respuestas.find((r) => r.claveCampo === campo.clave);
+        return {
+          etiqueta: campo.etiqueta,
+          valor: resp ? this.valorRespuestaTexto(resp) : null,
+          esFirma: campo.tipoCampo === TipoCampo.FIRMA,
+        };
+      });
+
+      const tablas = camposTabla.map((campoTabla) => {
+        const resp = respuestas.find((r) => r.claveCampo === campoTabla.clave);
+        const columnasDef = this.columnasDeTabla(campoTabla);
+        const filasBrutas =
+          resp?.valorJson && Array.isArray(resp.valorJson.filas)
+            ? (resp.valorJson.filas as Record<string, unknown>[])
+            : [];
+
+        const filas = filasBrutas.map((fila) => {
+          const mapa: Record<string, string | null> = {};
+          for (const col of columnasDef) {
+            const v = fila[col.clave];
+            if (v == null || v === '') {
+              mapa[col.clave] = null;
+            } else if (typeof v === 'boolean') {
+              mapa[col.clave] = v ? 'Sí' : 'No';
+            } else {
+              mapa[col.clave] = String(v);
+            }
+          }
+          return mapa;
+        });
+
+        return {
+          titulo: campoTabla.etiqueta,
+          columnas: columnasDef.map((c) => ({
+            clave: c.clave,
+            etiqueta: c.etiqueta,
+            esFirma: c.tipoCampo === 'FIRMA',
+          })),
+          filas,
+        };
+      });
+
+      return generarPdfAsistenciaJornada({
+        ...basePdf,
+        cabecera,
+        tablas,
+      });
+    }
+
+    // Legacy: cada envío = una fila; todos los campos son columnas
     const filas: Array<Record<string, string | null>> = [];
     for (const envio of envios) {
       const respuestas = await this.respuestaRepository.find({
@@ -803,24 +880,45 @@ export class JornadasService {
     }
 
     return generarPdfAsistenciaJornada({
-      proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
-      plantillaNombre: plantilla.nombre,
-      fecha: jornada.fecha,
-      veredaNombre: jornada.vereda?.nombre,
-      metaNombre: jornada.meta?.nombre,
-      observaciones: jornada.observaciones,
-      columnas: campos.map((c) => ({
-        clave: c.clave,
-        etiqueta: c.etiqueta,
-        esFirma: c.tipoCampo === TipoCampo.FIRMA,
-      })),
-      filas,
+      ...basePdf,
+      tablas: [
+        {
+          columnas: campos.map((c) => ({
+            clave: c.clave,
+            etiqueta: c.etiqueta,
+            esFirma: c.tipoCampo === TipoCampo.FIRMA,
+          })),
+          filas,
+        },
+      ],
     });
   }
 
+  private columnasDeTabla(campo: CampoFormulario): Array<{
+    clave: string;
+    etiqueta: string;
+    tipoCampo: string;
+  }> {
+    const opciones = campo.opciones as
+      | { columnas?: Array<Record<string, unknown>> }
+      | null
+      | undefined;
+    const columnas = opciones?.columnas;
+    if (!Array.isArray(columnas)) return [];
+
+    return columnas
+      .filter((c) => c && typeof c === 'object')
+      .map((c) => ({
+        clave: String(c.clave ?? ''),
+        etiqueta: String(c.etiqueta ?? c.clave ?? ''),
+        tipoCampo: String(c.tipoCampo ?? 'TEXTO'),
+      }))
+      .filter((c) => c.clave);
+  }
+
   private valorRespuestaTexto(resp: RespuestaFormulario): string | null {
-    if (resp.valorTexto != null) return resp.valorTexto;
     if (resp.urlArchivo != null) return resp.urlArchivo;
+    if (resp.valorTexto != null) return resp.valorTexto;
     if (resp.valorNumero != null) return String(resp.valorNumero);
     if (resp.valorFecha != null) return resp.valorFecha.toISOString().slice(0, 10);
     if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
