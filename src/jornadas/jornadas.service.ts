@@ -126,6 +126,8 @@ export class JornadasService {
       );
     }
 
+    this.validarFechaDentroDelProyecto(dto.fecha, proyecto);
+
     if (!dto.metaId && (!dto.actividades || dto.actividades.length === 0)) {
       throw new BadRequestException(
         'Debe seleccionar una meta del plan para vincular formularios en campo',
@@ -480,7 +482,10 @@ export class JornadasService {
     }
 
     for (const objetivo of objetivos) {
-      if (dto.fecha !== undefined) objetivo.fecha = new Date(dto.fecha);
+      if (dto.fecha !== undefined) {
+        this.validarFechaDentroDelProyecto(dto.fecha, objetivo.proyecto);
+        objetivo.fecha = new Date(dto.fecha);
+      }
       if (dto.nombre !== undefined) {
         objetivo.nombre = dto.nombre.trim() ? dto.nombre.trim() : null;
       }
@@ -1401,5 +1406,40 @@ export class JornadasService {
     const [anio, mes, dia] = fechaIso.slice(0, 10).split('-');
     if (!anio || !mes || !dia) return fechaIso;
     return `${dia}/${mes}/${anio}`;
+  }
+
+  private aDiaIso(valor: string | Date): string {
+    if (typeof valor === 'string') {
+      return valor.slice(0, 10);
+    }
+    const anio = valor.getUTCFullYear();
+    const mes = String(valor.getUTCMonth() + 1).padStart(2, '0');
+    const dia = String(valor.getUTCDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+  }
+
+  private validarFechaDentroDelProyecto(
+    fecha: string,
+    proyecto: Pick<Proyecto, 'fechaInicio' | 'fechaFin'>,
+  ): void {
+    const dia = this.aDiaIso(fecha);
+
+    if (proyecto.fechaInicio) {
+      const inicio = this.aDiaIso(proyecto.fechaInicio);
+      if (dia < inicio) {
+        throw new BadRequestException(
+          `La fecha de la jornada no puede ser anterior al inicio del proyecto (${this.formatoFechaTitulo(inicio)})`,
+        );
+      }
+    }
+
+    if (proyecto.fechaFin) {
+      const fin = this.aDiaIso(proyecto.fechaFin);
+      if (dia > fin) {
+        throw new BadRequestException(
+          `La fecha de la jornada no puede ser posterior al fin del proyecto (${this.formatoFechaTitulo(fin)})`,
+        );
+      }
+    }
   }
 }

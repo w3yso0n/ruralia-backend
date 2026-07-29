@@ -252,11 +252,13 @@ export async function generarExcelSeguimientoDiario(
       const totalPlan = ws.getCell(filaPlan, colTotal);
       if (proceso.planMes != null) {
         totalPlan.value = Number(proceso.planMes);
+      } else {
+        totalPlan.value = 'n/a';
       }
       totalPlan.style = {
         ...estiloCentrado(false),
         fill: fillSolid(banda),
-        numFmt: '0.##',
+        ...(proceso.planMes != null ? { numFmt: '0.##' } : {}),
       };
       const avancePlan = ws.getCell(filaPlan, colAvance);
       avancePlan.value = {

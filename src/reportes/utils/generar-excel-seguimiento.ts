@@ -355,17 +355,21 @@ export async function generarExcelSeguimiento(
       const pintarFilaMeses = (
         row: number,
         valores: Array<number | null>,
+        tipo: 'plan' | 'ejec',
       ) => {
         for (let i = 0; i < numMeses; i++) {
           const cell = ws.getCell(row, colPrimeraMes + i);
           const v = valores[i];
-          if (v != null && v !== 0) {
+          const esNumerico = v != null || tipo === 'ejec';
+          if (v != null) {
             cell.value = Number(v);
-            cell.numFmt = '0.##';
-          } else if (v === 0) {
+          } else if (tipo === 'plan') {
+            // Sin cantidad planeada para el mes
+            cell.value = 'n/a';
+          } else {
+            // Sin resultados reportados → 0
             cell.value = 0;
           }
-          // null → vacío
           cell.style = {
             ...estiloCentrado(false),
             fill: {
@@ -373,7 +377,7 @@ export async function generarExcelSeguimiento(
               pattern: 'solid',
               fgColor: { argb: banda },
             },
-            numFmt: '0.##',
+            ...(esNumerico ? { numFmt: '0.##' } : {}),
           };
         }
 
@@ -414,8 +418,8 @@ export async function generarExcelSeguimiento(
         };
       };
 
-      pintarFilaMeses(filaPlan, proceso.planPorMes);
-      pintarFilaMeses(filaEjec, proceso.ejecPorMes);
+      pintarFilaMeses(filaPlan, proceso.planPorMes, 'plan');
+      pintarFilaMeses(filaEjec, proceso.ejecPorMes, 'ejec');
 
       filaActual += 2;
     }
