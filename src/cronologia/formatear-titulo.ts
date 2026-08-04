@@ -39,6 +39,16 @@ export function formatearTitulo(
       return contexto.nombreSubactividad
         ? `Completó subactividad «${contexto.nombreSubactividad}»`
         : 'Completó una subactividad';
+    case 'JORNADA_ENVIADA_REVISION':
+      return 'Envió jornada a revisión';
+    case 'JORNADA_REENVIADA_REVISION':
+      return 'Reenvió jornada a revisión';
+    case 'JORNADA_APROBADA':
+      return 'Aprobó la jornada';
+    case 'JORNADA_RECHAZADA':
+      return 'Rechazó la jornada';
+    case 'DOCUMENTO_VERSION_CREADA':
+      return 'Generó nueva versión de documento';
     default:
       return 'Evento de campo';
   }

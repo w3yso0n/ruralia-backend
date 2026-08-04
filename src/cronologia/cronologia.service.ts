@@ -217,6 +217,65 @@ export class CronologiaService {
     };
   }
 
+  /**
+   * Agentes CAMPO visibles para el consultante.
+   * Acceso total → todos los CAMPO activos.
+   * Resto → CAMPO que comparten al menos un proyecto en personal.
+   */
+  async listarActoresVisibles(
+    consultante: Usuario,
+  ): Promise<
+    Array<{ id: string; nombreCompleto: string; correo: string }>
+  > {
+    if (usuarioTieneAccesoTotal(consultante)) {
+      const filas: Array<{
+        id: string;
+        nombre_completo: string;
+        correo: string;
+      }> = await this.proyectoRepository.manager.query(
+        `SELECT DISTINCT u.id, u.nombre_completo, u.correo
+         FROM usuarios u
+         JOIN usuario_roles ur ON ur.usuario_id = u.id
+         JOIN roles r ON r.id = ur.rol_id
+         WHERE u.esta_activo = true AND r.nombre = 'CAMPO'
+         ORDER BY u.nombre_completo ASC`,
+      );
+      return filas.map((f) => ({
+        id: f.id,
+        nombreCompleto: f.nombre_completo,
+        correo: f.correo,
+      }));
+    }
+
+    const proyectos = await this.idsProyectosPersonal(consultante.id);
+    if (proyectos.length === 0) {
+      return [];
+    }
+
+    const filas: Array<{
+      id: string;
+      nombre_completo: string;
+      correo: string;
+    }> = await this.proyectoRepository.manager.query(
+      `SELECT DISTINCT u.id, u.nombre_completo, u.correo
+       FROM usuarios u
+       JOIN usuario_roles ur ON ur.usuario_id = u.id
+       JOIN roles r ON r.id = ur.rol_id
+       JOIN proyecto_personal pp ON pp.usuario_id = u.id
+       WHERE u.esta_activo = true
+         AND r.nombre = 'CAMPO'
+         AND pp.proyecto_id = ANY($1::uuid[])
+       ORDER BY u.nombre_completo ASC`,
+      [proyectos],
+    );
+
+    return filas.map((f) => ({
+      id: f.id,
+      nombreCompleto: f.nombre_completo,
+      correo: f.correo,
+    }));
+  }
+
   /** Expuesto para seed: mismo formateo centralizado. */
   formatearTitulo(
     accion: AccionCronologia,

@@ -16,6 +16,7 @@ import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
+import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 import { TipoJornada } from '../enums/tipo-jornada.enum';
 import { JornadaActividad } from './jornada-actividad.entity';
@@ -36,6 +37,15 @@ export class Jornada {
     default: EstadoJornada.PLANIFICADA,
   })
   estado: EstadoJornada;
+
+  /** Estado de revisión/aprobación (RF-19). Independiente de `estado` de ejecución. */
+  @Column({
+    name: 'estado_funcional',
+    type: 'enum',
+    enum: EstadoFuncional,
+    default: EstadoFuncional.BORRADOR,
+  })
+  estadoFuncional: EstadoFuncional;
 
   @Column({
     type: 'enum',

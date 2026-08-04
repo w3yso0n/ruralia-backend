@@ -6,11 +6,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActividadesModule } from './actividades/actividades.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AprobacionesModule } from './aprobaciones/aprobaciones.module';
 import { ArchivosModule } from './archivos/archivos.module';
 import { AsociacionesModule } from './asociaciones/asociaciones.module';
+import { AuditoriaModule } from './auditoria/auditoria.module';
 import { AutenticacionModule } from './autenticacion/autenticacion.module';
 import { BeneficiariosModule } from './beneficiarios/beneficiarios.module';
 import { CronologiaModule } from './cronologia/cronologia.module';
+import { DocumentosModule } from './documentos/documentos.module';
 import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
 import { IndicadoresModule } from './indicadores/indicadores.module';
@@ -56,6 +59,9 @@ const modulosBase = [
   ReportesModule,
   SaludModule,
   CronologiaModule,
+  AuditoriaModule,
+  DocumentosModule,
+  AprobacionesModule,
 ];
 
 @Module({})

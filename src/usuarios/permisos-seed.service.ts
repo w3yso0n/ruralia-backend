@@ -115,14 +115,27 @@ export class PermisosSeedService implements OnModuleInit {
       const sinPermisos =
         !esNuevo && (!rol.permisos || rol.permisos.length === 0);
       const esCuantiva = nombre === RolSistema.CUANTIVA;
-      // Cuantiva siempre se re-sincroniza con el catálogo completo.
+      const preset = PERMISOS_POR_ROL_SISTEMA[nombre];
+      const clavesPreset =
+        preset === 'ALL' ? todos.map((p) => p.clave) : [...preset];
+
       if (esNuevo || sinPermisos || esCuantiva) {
-        const preset = PERMISOS_POR_ROL_SISTEMA[nombre];
-        const claves =
-          preset === 'ALL' ? todos.map((p) => p.clave) : [...preset];
-        rol.permisos = claves
+        rol.permisos = clavesPreset
           .map((c) => porClave.get(c))
           .filter((p): p is Permiso => !!p);
+      } else {
+        // Sync aditivo: incorpora permisos nuevos del preset sin quitar customizaciones.
+        const actuales = new Set((rol.permisos ?? []).map((p) => p.clave));
+        const faltantes = clavesPreset
+          .filter((c) => !actuales.has(c))
+          .map((c) => porClave.get(c))
+          .filter((p): p is Permiso => !!p);
+        if (faltantes.length) {
+          rol.permisos = [...(rol.permisos ?? []), ...faltantes];
+          this.logger.log(
+            `Rol ${nombre}: +${faltantes.length} permisos (${faltantes.map((p) => p.clave).join(', ')})`,
+          );
+        }
       }
 
       await this.rolRepository.save(rol);

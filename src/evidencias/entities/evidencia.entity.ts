@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { Jornada } from '../../jornadas/entities/jornada.entity';
 import { EstadoEvidencia } from '../enums/estado-evidencia.enum';
 import { TipoEvidencia } from '../enums/tipo-evidencia.enum';
@@ -25,6 +26,14 @@ export class Evidencia {
     default: EstadoEvidencia.PENDIENTE_ARCHIVO,
   })
   estado: EstadoEvidencia;
+
+  @Column({
+    name: 'estado_funcional',
+    type: 'enum',
+    enum: EstadoFuncional,
+    default: EstadoFuncional.BORRADOR,
+  })
+  estadoFuncional: EstadoFuncional;
 
   @Column({ name: 'url_archivo', nullable: true })
   urlArchivo: string;

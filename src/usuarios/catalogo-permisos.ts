@@ -164,8 +164,36 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
         accion: 'cambiar_estado',
         descripcion: 'Cambiar estado de ejecución de jornadas',
       },
+      {
+        accion: 'enviar_revision',
+        descripcion: 'Enviar o reenviar jornadas a revisión',
+      },
+      {
+        accion: 'aprobar',
+        descripcion: 'Aprobar jornadas, documentos o evidencias',
+      },
+      {
+        accion: 'rechazar',
+        descripcion: 'Rechazar jornadas, documentos o evidencias',
+      },
     ],
     700,
+  ),
+  ...defs(
+    'auditoria',
+    [{ accion: 'ver', descripcion: 'Consultar bitácora de auditoría' }],
+    1250,
+  ),
+  ...defs(
+    'documentos',
+    [
+      { accion: 'ver', descripcion: 'Ver documentos versionados' },
+      {
+        accion: 'versionar',
+        descripcion: 'Generar nuevas versiones de documentos',
+      },
+    ],
+    1260,
   ),
   ...defs(
     'formularios',
@@ -257,6 +285,9 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'jornadas.editar',
   'jornadas.eliminar',
   'jornadas.cambiar_estado',
+  'jornadas.enviar_revision',
+  'jornadas.aprobar',
+  'jornadas.rechazar',
   'formularios.ver',
   'formularios.asignar_usuarios',
   'formularios.enviar',
@@ -268,6 +299,9 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'sincronizacion.usar',
   'archivos.subir',
   'archivos.ver',
+  'auditoria.ver',
+  'documentos.ver',
+  'documentos.versionar',
   'territorios.ver',
   'territorios.crear',
   'territorios.editar',
@@ -291,6 +325,9 @@ const PERMISOS_COORDINADOR_ZONA: string[] = [
   'jornadas.crear',
   'jornadas.editar',
   'jornadas.cambiar_estado',
+  'jornadas.enviar_revision',
+  'jornadas.aprobar',
+  'jornadas.rechazar',
   'formularios.ver',
   'formularios.enviar',
   'formularios.asignar_usuarios',
@@ -301,6 +338,9 @@ const PERMISOS_COORDINADOR_ZONA: string[] = [
   'sincronizacion.usar',
   'archivos.subir',
   'archivos.ver',
+  'auditoria.ver',
+  'documentos.ver',
+  'documentos.versionar',
   'territorios.ver',
 ];
 
@@ -314,6 +354,7 @@ const PERMISOS_CAMPO: string[] = [
   'jornadas.crear',
   'jornadas.editar',
   'jornadas.cambiar_estado',
+  'jornadas.enviar_revision',
   'formularios.ver',
   'formularios.enviar',
   'indicadores.ver',
@@ -321,6 +362,8 @@ const PERMISOS_CAMPO: string[] = [
   'sincronizacion.usar',
   'archivos.subir',
   'archivos.ver',
+  'documentos.ver',
+  'documentos.versionar',
   'territorios.ver',
 ];
 
@@ -333,6 +376,7 @@ const PERMISOS_VISUALIZADOR: string[] = [
   'formularios.ver',
   'indicadores.ver',
   'archivos.ver',
+  'documentos.ver',
   'territorios.ver',
 ];
 
@@ -357,8 +401,8 @@ export const DESCRIPCIONES_ROL_SISTEMA: Record<RolSistema, string> = {
   [RolSistema.COORDINADOR_DEPARTAMENTAL]:
     'Coordinación a nivel departamental: proyectos, equipo y reportes.',
   [RolSistema.COORDINADOR_ZONA]:
-    'Coordinación territorial de zona: ejecución y seguimiento en campo.',
+    'Supervisor de zona: revisión, aprobación/rechazo y seguimiento en campo.',
   [RolSistema.CAMPO]:
-    'Equipo de campo: jornadas, formularios, evidencias y avance.',
+    'Equipo de campo: jornadas, formularios, evidencias, avance y correcciones.',
   [RolSistema.VISUALIZADOR]: 'Solo lectura de módulos principales.',
 };

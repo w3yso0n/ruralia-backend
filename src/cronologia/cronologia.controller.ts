@@ -21,6 +21,16 @@ import {
 export class CronologiaController {
   constructor(private readonly cronologiaService: CronologiaService) {}
 
+  @Get('actores')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary:
+      'Listar agentes de campo visibles para seguimiento (sin exigir usuarios.ver)',
+  })
+  listarActores(@UsuarioActual() usuario: Usuario) {
+    return this.cronologiaService.listarActoresVisibles(usuario);
+  }
+
   @Get('actor/:usuarioId')
   @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Listar cronología de un actor (paginado)' })

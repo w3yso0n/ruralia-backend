@@ -116,6 +116,13 @@ export class RespuestaJornadaDto {
   estado: EstadoJornada;
 
   @ApiProperty({
+    enum: ['BORRADOR', 'CAPTURADO', 'SINCRONIZADO', 'EN_REVISION', 'APROBADO', 'RECHAZADO', 'EN_CORRECCION'],
+    description: 'Estado funcional de revisión/aprobación (RF-19)',
+  })
+  @Expose()
+  estadoFuncional: string;
+
+  @ApiProperty({
     enum: TipoJornada,
     description: 'INDIVIDUAL (formularios) o GRUPAL (asistencia)',
   })
