@@ -10,6 +10,7 @@ import {
   CronologiaService,
   detalleConOrigen,
 } from '../cronologia/cronologia.service';
+import { estadoEditable } from '../common/workflow/maquina-estados';
 import { JornadasService } from '../jornadas/jornadas.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { EnviarFormularioDto, ActualizarEnvioFormularioDto } from './dto/formulario.dto';
@@ -60,6 +61,7 @@ export class EnviosFormularioService {
   ): Promise<RespuestaEnvioFormularioDto> {
     if (dto.jornadaId) {
       await this.jornadasService.obtenerUna(dto.jornadaId);
+      await this.asegurarJornadaEditableParaCaptura(dto.jornadaId);
     }
 
     const plantilla = await this.plantillaRepository.findOne({
@@ -300,6 +302,10 @@ export class EnviosFormularioService {
       throw new NotFoundException(`Envío ${envioId} no encontrado`);
     }
 
+    if (envio.jornada?.id) {
+      await this.asegurarJornadaEditableParaCaptura(envio.jornada.id);
+    }
+
     const plantilla = envio.plantillaFormulario;
 
     if (!plantilla) {
@@ -363,6 +369,22 @@ export class EnviosFormularioService {
     return aRespuestaEnvio(actualizado!);
   }
 
+  private async asegurarJornadaEditableParaCaptura(
+    jornadaId: string,
+  ): Promise<void> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id: jornadaId },
+    });
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+    if (!estadoEditable(jornada.estadoFuncional)) {
+      throw new BadRequestException(
+        `La jornada está en ${jornada.estadoFuncional} y no admite cambios en formularios. Espera la revisión o una solicitud de corrección.`,
+      );
+    }
+  }
+
   private formatearFechaParaCliente(valor: Date): string {
     const y = valor.getUTCFullYear();
     const m = String(valor.getUTCMonth() + 1).padStart(2, '0');
@@ -370,15 +392,45 @@ export class EnviosFormularioService {
     return `${y}-${m}-${d}`;
   }
 
-  private parsearFechaCampo(valor: unknown): Date {
-    const texto = String(valor).slice(0, 10);
-    const [anio, mes, dia] = texto.split('-').map(Number);
+  private parsearFechaCampo(valor: unknown, etiquetaCampo?: string): Date {
+    const etiqueta = etiquetaCampo ? ` "${etiquetaCampo}"` : '';
 
-    if (!anio || !mes || !dia) {
-      return new Date(String(valor));
+    if (valor == null || valor === '') {
+      throw new BadRequestException(
+        `La fecha del campo${etiqueta} es obligatoria o llegó vacía`,
+      );
     }
 
-    return new Date(Date.UTC(anio, mes - 1, dia));
+    // Solo aceptamos YYYY-MM-DD (lo que envía <input type="date">).
+    const texto =
+      typeof valor === 'string'
+        ? valor.trim().slice(0, 10)
+        : String(valor).trim().slice(0, 10);
+
+    const coincide = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+    if (!coincide) {
+      throw new BadRequestException(
+        `La fecha del campo${etiqueta} no es válida (se espera AAAA-MM-DD). Recibido: ${JSON.stringify(valor)}`,
+      );
+    }
+
+    const anio = Number(coincide[1]);
+    const mes = Number(coincide[2]);
+    const dia = Number(coincide[3]);
+    const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+
+    if (
+      Number.isNaN(fecha.getTime()) ||
+      fecha.getUTCFullYear() !== anio ||
+      fecha.getUTCMonth() !== mes - 1 ||
+      fecha.getUTCDate() !== dia
+    ) {
+      throw new BadRequestException(
+        `La fecha del campo${etiqueta} no es una fecha de calendario válida`,
+      );
+    }
+
+    return fecha;
   }
 
   private normalizarValorTabla(valor: unknown): {
@@ -465,7 +517,7 @@ export class EnviosFormularioService {
       case TipoCampo.FECHA:
         return manager.create(RespuestaFormulario, {
           ...base,
-          valorFecha: this.parsearFechaCampo(valor),
+          valorFecha: this.parsearFechaCampo(valor, campo.etiqueta),
         });
       case TipoCampo.SI_NO:
         return manager.create(RespuestaFormulario, {

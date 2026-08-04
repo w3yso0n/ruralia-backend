@@ -29,6 +29,20 @@ export class AprobacionesController {
     return this.aprobacionesService.enviarARevision(id, usuario, dto.notas);
   }
 
+  @Post('jornadas/:id/subir-proyecto')
+  @RequierePermisos('jornadas.enviar_revision')
+  @ApiOperation({
+    summary:
+      'Confirmar jornada sin revisión: pasa a APROBADO y cuenta al avance de la meta',
+  })
+  subirProyecto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EnviarRevisionDto,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    return this.aprobacionesService.subirAProyecto(id, usuario, dto.notas);
+  }
+
   @Post('jornadas/:id/reenviar-revision')
   @RequierePermisos('jornadas.enviar_revision')
   @ApiOperation({ summary: 'Reenviar jornada corregida a revisión (nueva versión)' })

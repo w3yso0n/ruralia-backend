@@ -30,6 +30,13 @@ const ATAJOS_ONLINE: Readonly<
     EstadoFuncional.SINCRONIZADO,
   [`${EstadoFuncional.BORRADOR}->${EstadoFuncional.EN_REVISION}`]:
     EstadoFuncional.CAPTURADO,
+  // Subida directa al proyecto (sin paso de supervisor)
+  [`${EstadoFuncional.BORRADOR}->${EstadoFuncional.APROBADO}`]:
+    EstadoFuncional.CAPTURADO,
+  [`${EstadoFuncional.CAPTURADO}->${EstadoFuncional.APROBADO}`]:
+    EstadoFuncional.SINCRONIZADO,
+  [`${EstadoFuncional.SINCRONIZADO}->${EstadoFuncional.APROBADO}`]:
+    EstadoFuncional.EN_REVISION,
 };
 
 export function puedeTransicionar(

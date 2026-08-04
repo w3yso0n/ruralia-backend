@@ -123,6 +123,13 @@ export class RespuestaJornadaDto {
   estadoFuncional: string;
 
   @ApiProperty({
+    description:
+      'Si true, requiere aprobación del supervisor antes de contar al avance de la meta',
+  })
+  @Expose()
+  requiereRevision: boolean;
+
+  @ApiProperty({
     enum: TipoJornada,
     description: 'INDIVIDUAL (formularios) o GRUPAL (asistencia)',
   })

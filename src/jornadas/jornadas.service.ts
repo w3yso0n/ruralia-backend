@@ -58,6 +58,7 @@ import { Jornada } from './entities/jornada.entity';
 import { EstadoEjecucionJornada } from './enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from './enums/estado-jornada.enum';
 import { TipoJornada } from './enums/tipo-jornada.enum';
+import { estadoEditable } from '../common/workflow/maquina-estados';
 import {
   aHermanoGrupo,
   aResumenJornada,
@@ -194,6 +195,7 @@ export class JornadasService {
           latitud: dto.latitud,
           longitud: dto.longitud,
           tipo: dto.tipo ?? TipoJornada.INDIVIDUAL,
+          requiereRevision: dto.requiereRevision ?? true,
           proyecto: { id: dto.proyectoId },
           meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
           vereda: { id: dto.veredaId },
@@ -450,6 +452,12 @@ export class JornadasService {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
     }
 
+    if (!estadoEditable(jornada.estadoFuncional)) {
+      throw new BadRequestException(
+        `La jornada está en ${jornada.estadoFuncional} y no se puede modificar. Espera la revisión o una solicitud de corrección.`,
+      );
+    }
+
     const objetivos = jornada.grupoJornadaId
       ? await this.jornadaRepository.find({
           where: { grupoJornadaId: jornada.grupoJornadaId },
@@ -590,48 +598,112 @@ export class JornadasService {
         })
       : [jornada];
 
+    const ids = objetivos.map((o) => o.id);
+
     if (!forzar) {
       for (const objetivo of objetivos) {
-        const [envios, evidencias] = await Promise.all([
+        const [envios, evidencias, documentos] = await Promise.all([
           this.envioRepository.count({
             where: { jornada: { id: objetivo.id } },
           }),
           this.evidenciaRepository.count({
             where: { jornada: { id: objetivo.id } },
           }),
+          this.dataSource.query<{ count: string }[]>(
+            `SELECT COUNT(*)::text AS count FROM documents WHERE jornada_id = $1`,
+            [objetivo.id],
+          ),
         ]);
 
-        if (envios > 0 || evidencias > 0) {
+        const totalDocumentos = Number(documentos[0]?.count ?? 0);
+
+        if (envios > 0 || evidencias > 0 || totalDocumentos > 0) {
           throw new BadRequestException(
-            'No se puede eliminar una jornada con formularios enviados o evidencias registradas',
+            'No se puede eliminar una jornada con formularios, evidencias o documentos de revisión. Confirma el borrado forzado para continuar.',
           );
         }
       }
     }
 
-    for (const objetivo of objetivos) {
+    await this.dataSource.transaction(async (manager) => {
       if (forzar) {
-        const envios = await this.envioRepository.find({
-          where: { jornada: { id: objetivo.id } },
-        });
-        if (envios.length > 0) {
-          await this.respuestaRepository.delete({
-            envioFormulario: { id: In(envios.map((envio) => envio.id)) },
-          });
-          await this.envioRepository.remove(envios);
-        }
-
-        await this.evidenciaRepository.delete({
-          jornada: { id: objetivo.id },
-        });
+        await manager.query(
+          `DELETE FROM respuestas_formulario WHERE envio_formulario_id IN (
+             SELECT id FROM envios_formulario WHERE jornada_id = ANY($1::uuid[])
+           )`,
+          [ids],
+        );
+        await manager.query(
+          `DELETE FROM envios_formulario WHERE jornada_id = ANY($1::uuid[])`,
+          [ids],
+        );
+        await manager.query(
+          `DELETE FROM evidencias WHERE jornada_id = ANY($1::uuid[])`,
+          [ids],
+        );
       }
 
-      await this.jornadaActividadRepository.delete({
-        jornada: { id: objetivo.id },
-      });
-    }
+      await manager.query(
+        `DELETE FROM jornada_asistentes WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM jornada_equipo WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM jornada_beneficiarios WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM jornada_actividades WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
 
-    await this.jornadaRepository.remove(objetivos);
+      // Flujo de revisión / subida al proyecto
+      await manager.query(
+        `DELETE FROM approvals WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `UPDATE rejections SET resolution_version_id = NULL
+         WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM rejections WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM audit_logs WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `UPDATE documents SET version_vigente_id = NULL
+         WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM document_versions WHERE document_id IN (
+           SELECT id FROM documents WHERE jornada_id = ANY($1::uuid[])
+         )`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM documents WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+
+      await manager.query(
+        `DELETE FROM eventos_cronologia
+         WHERE entidad_tipo = 'jornada' AND entidad_id = ANY($1::uuid[])`,
+        [ids],
+      );
+
+      await manager.query(`DELETE FROM jornadas WHERE id = ANY($1::uuid[])`, [
+        ids,
+      ]);
+    });
   }
 
   async cambiarEstado(

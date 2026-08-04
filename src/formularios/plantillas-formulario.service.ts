@@ -45,9 +45,30 @@ export class PlantillasFormularioService {
     private readonly jornadaRepository: Repository<Jornada>,
   ) {}
 
+  private asegurarClavesCamposUnicas(
+    campos: { clave: string; etiqueta?: string }[],
+  ): void {
+    const vistas = new Set<string>();
+    for (const campo of campos) {
+      const clave = (campo.clave ?? '').trim();
+      if (!clave) {
+        throw new BadRequestException(
+          `El campo "${campo.etiqueta ?? 'sin etiqueta'}" no tiene clave.`,
+        );
+      }
+      if (vistas.has(clave)) {
+        throw new BadRequestException(
+          `Hay claves de campo duplicadas ("${clave}"). Cada pregunta debe tener una clave única (por ejemplo Fecha=fecha y Firma=firma).`,
+        );
+      }
+      vistas.add(clave);
+    }
+  }
+
   async crear(
     dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
+    this.asegurarClavesCamposUnicas(dto.campos);
     const procesos = await this.resolverProcesos(dto.procesoIds);
     const subactividades = await this.resolverSubactividades(
       dto.subactividadIds,
@@ -107,6 +128,9 @@ export class PlantillasFormularioService {
     id: string,
     dto: ActualizarPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
+    if (dto.campos) {
+      this.asegurarClavesCamposUnicas(dto.campos);
+    }
     const plantilla = await this.plantillaRepository.findOne({
       where: { id },
       relations: { campos: true },

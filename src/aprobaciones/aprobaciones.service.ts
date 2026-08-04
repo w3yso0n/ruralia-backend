@@ -21,6 +21,7 @@ import { Documento } from '../documentos/entities/documento.entity';
 import { DocumentoVersion } from '../documentos/entities/documento-version.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { RolSistema } from '../usuarios/catalogo-permisos';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { usuarioTieneAccesoTotal } from '../usuarios/utils/permisos-usuario';
@@ -86,6 +87,12 @@ export class AprobacionesService {
   async enviarARevision(jornadaId: string, usuario: Usuario, notas?: string) {
     const jornada = await this.cargarJornada(jornadaId);
 
+    if (!jornada.requiereRevision) {
+      throw new BadRequestException(
+        'Esta jornada no requiere revisión. Usa «Subir al proyecto» para confirmarla.',
+      );
+    }
+
     if (
       this.esCampo(usuario) &&
       jornada.tecnicoResponsable?.id !== usuario.id &&
@@ -150,12 +157,127 @@ export class AprobacionesService {
     };
   }
 
+  /**
+   * Confirma una jornada que no requiere revisión: pasa a APROBADO
+   * y cuenta hacia el avance de la meta sin pasar por bandeja.
+   */
+  async subirAProyecto(jornadaId: string, usuario: Usuario, notas?: string) {
+    const jornada = await this.cargarJornada(jornadaId);
+
+    if (jornada.requiereRevision) {
+      throw new BadRequestException(
+        'Esta jornada requiere revisión del supervisor. Usa «Enviar a revisión».',
+      );
+    }
+
+    if (
+      this.esCampo(usuario) &&
+      jornada.tecnicoResponsable?.id !== usuario.id &&
+      !(jornada.equipo ?? []).some((u) => u.id === usuario.id)
+    ) {
+      throw new ForbiddenException(
+        'Solo el técnico responsable o equipo puede subir la jornada al proyecto',
+      );
+    }
+
+    if (jornada.estadoFuncional === EstadoFuncional.APROBADO) {
+      throw new BadRequestException('La jornada ya está confirmada en el proyecto');
+    }
+
+    const estadosPermitidos = [
+      EstadoFuncional.BORRADOR,
+      EstadoFuncional.CAPTURADO,
+      EstadoFuncional.SINCRONIZADO,
+    ];
+    if (!estadosPermitidos.includes(jornada.estadoFuncional)) {
+      throw new BadRequestException(
+        `No se puede subir al proyecto desde el estado ${jornada.estadoFuncional}`,
+      );
+    }
+
+    const anterior = jornada.estadoFuncional;
+    jornada.estadoFuncional = transicionarEstado(
+      anterior,
+      EstadoFuncional.APROBADO,
+      { permitirAtajosOnline: true },
+    );
+    if (jornada.estado !== EstadoJornada.CANCELADA) {
+      jornada.estado = EstadoJornada.COMPLETADA;
+    }
+    await this.jornadaRepo.save(jornada);
+
+    const { documento, version } =
+      await this.documentosService.generarOVersionar(jornadaId, usuario, {
+        changeReason: notas ?? 'Subida al proyecto sin revisión',
+      });
+
+    version.status = EstadoVersionDocumento.APROBADO;
+    await this.versionRepo.save(version);
+    documento.estadoFuncional = EstadoFuncional.APROBADO;
+    await this.documentoRepo.save(documento);
+
+    const approval = this.approvalRepo.create({
+      entityType: EntidadRevisable.JORNADA,
+      entityId: jornada.id,
+      projectId: jornada.proyecto.id,
+      jornadaId: jornada.id,
+      documentId: documento.id,
+      documentVersionId: version.id,
+      approvedBy: usuario.id,
+      notes: notas ?? 'Confirmada por el técnico (sin revisión)',
+    });
+    await this.approvalRepo.save(approval);
+
+    await this.auditoriaService.registrar({
+      entityType: EntidadRevisable.JORNADA,
+      entityId: jornada.id,
+      field: 'estadoFuncional',
+      previousValue: anterior,
+      newValue: jornada.estadoFuncional,
+      reason: notas ?? 'Subida al proyecto sin revisión',
+      action: AccionAuditoria.APPROVE,
+      user: usuario,
+      projectId: jornada.proyecto.id,
+      jornadaId: jornada.id,
+      documentId: documento.id,
+      documentVersionId: version.id,
+    });
+
+    await this.cronologiaService.registrar({
+      actorId: usuario.id,
+      proyectoId: jornada.proyecto.id,
+      accion: 'JORNADA_SUBIDA_PROYECTO',
+      entidadTipo: 'jornada',
+      entidadId: jornada.id,
+      titulo: 'Subió jornada al proyecto',
+      detalle: {
+        origen: 'api',
+        documentoId: documento.id,
+        versionId: version.id,
+      },
+    });
+
+    return {
+      jornadaId: jornada.id,
+      estadoFuncional: jornada.estadoFuncional,
+      documentoId: documento.id,
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+    };
+  }
+
   async reenviarARevision(
     jornadaId: string,
     usuario: Usuario,
     dto: ReenviarRevisionDto,
   ) {
     const jornada = await this.cargarJornada(jornadaId);
+
+    if (!jornada.requiereRevision) {
+      throw new BadRequestException(
+        'Esta jornada no usa flujo de revisión',
+      );
+    }
 
     if (
       jornada.estadoFuncional !== EstadoFuncional.RECHAZADO &&
@@ -336,6 +458,9 @@ export class AprobacionesService {
       EstadoFuncional.APROBADO,
       { permitirAtajosOnline: false },
     );
+    if (jornada.estado !== EstadoJornada.CANCELADA) {
+      jornada.estado = EstadoJornada.COMPLETADA;
+    }
     await this.jornadaRepo.save(jornada);
 
     const approval = await this.approvalRepo.save(
@@ -697,6 +822,11 @@ export class AprobacionesService {
         proyectoId: filtros.proyectoId,
       });
     }
+
+    // La bandeja de revisión solo contempla jornadas que requieren aprobación.
+    qb.andWhere('j.requiereRevision = :requiereRevision', {
+      requiereRevision: true,
+    });
 
     if (vista === 'tecnico') {
       qb.andWhere(

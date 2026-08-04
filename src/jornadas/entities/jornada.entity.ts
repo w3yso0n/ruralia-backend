@@ -47,6 +47,14 @@ export class Jornada {
   })
   estadoFuncional: EstadoFuncional;
 
+  /**
+   * Si es true, la jornada debe pasar por bandeja de revisión antes de contar
+   * al avance de la meta. Si es false, el técnico la sube al proyecto y cuenta
+   * al quedar APROBADA sin paso de supervisor.
+   */
+  @Column({ name: 'requiere_revision', type: 'boolean', default: true })
+  requiereRevision: boolean;
+
   @Column({
     type: 'enum',
     enum: TipoJornada,

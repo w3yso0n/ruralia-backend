@@ -1,15 +1,19 @@
 import { Repository } from 'typeorm';
+import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { Jornada } from '../entities/jornada.entity';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 
 /**
- * Suma unidades ejecutadas hacia una meta:
- * - Si la jornada tiene cantidad_ejecutada, usa ese valor (cualquier estado excepto CANCELADA).
- * - Si no tiene cantidad pero está COMPLETADA, cuenta 1 (jornadas legacy).
+ * Suma unidades ejecutadas hacia una meta.
+ * Solo cuentan jornadas APROBADAS (vía revisión del supervisor o subida directa
+ * sin revisión). Canceladas se excluyen en el WHERE.
+ * - Con cantidad_ejecutada: suma ese valor.
+ * - Sin cantidad pero COMPLETADA: cuenta 1 (jornadas legacy).
  */
 const SQL_SUMA_EJECUTADO = `
   COALESCE(SUM(
     CASE
+      WHEN jornada.estado_funcional != :estadoAprobado THEN 0
       WHEN jornada.cantidad_ejecutada IS NOT NULL THEN jornada.cantidad_ejecutada
       WHEN jornada.estado = :estadoCompletada THEN 1
       ELSE 0
@@ -29,7 +33,8 @@ export async function sumarEjecutadoPorMeta(
     .andWhere('jornada.estado != :estadoCancelada', {
       estadoCancelada: EstadoJornada.CANCELADA,
     })
-    .setParameter('estadoCompletada', EstadoJornada.COMPLETADA);
+    .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
+    .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
 
   if (opciones?.anio !== undefined && opciones?.mes !== undefined) {
     const inicio = new Date(opciones.anio, opciones.mes - 1, 1);
@@ -58,6 +63,7 @@ export async function sumarEjecutadoPorProyecto(
     })
     .andWhere('jornada.meta_id IS NOT NULL')
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
+    .setParameter('estadoAprobado', EstadoFuncional.APROBADO)
     .groupBy('jornada.meta_id')
     .getRawMany<{ metaId: string; total: string }>();
 

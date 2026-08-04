@@ -76,8 +76,8 @@ export class DocumentosService {
       throw new NotFoundException('Una o ambas versiones no existen');
     }
 
-    const camposA = this.extraerCamposSnapshot(a.snapshot);
-    const camposB = this.extraerCamposSnapshot(b.snapshot);
+    const camposA = this.camposParaComparar(a.snapshot);
+    const camposB = this.camposParaComparar(b.snapshot);
     const porClaveA = new Map(camposA.map((c) => [c.clave, c]));
     const porClaveB = new Map(camposB.map((c) => [c.clave, c]));
     const claves = new Set([...porClaveA.keys(), ...porClaveB.keys()]);
@@ -91,7 +91,7 @@ export class DocumentosService {
         tipo: cb?.tipo ?? ca?.tipo ?? 'TEXTO',
         versionAnterior: ca?.valor ?? null,
         versionNueva: cb?.valor ?? null,
-        cambio: JSON.stringify(ca?.valor) !== JSON.stringify(cb?.valor),
+        cambio: !this.valoresEquivalentes(ca?.valor, cb?.valor),
       };
     });
 
@@ -136,8 +136,6 @@ export class DocumentosService {
 
     let documento = await this.documentoRepo.findOne({
       where: { jornadaId, tipo },
-      relations: { versiones: true },
-      order: { versiones: { versionNumber: 'DESC' } },
     });
 
     if (!documento) {
@@ -219,9 +217,18 @@ export class DocumentosService {
       }),
     );
 
+    // update parcial: evitar save del padre con `versiones` cargadas (borra huérfanas).
+    await this.documentoRepo.update(documento.id, {
+      versionVigenteId: version.id,
+      estadoFuncional: EstadoFuncional.SINCRONIZADO,
+    });
     documento.versionVigenteId = version.id;
     documento.estadoFuncional = EstadoFuncional.SINCRONIZADO;
-    await this.documentoRepo.save(documento);
+
+    const cambios = this.resumenCambiosEntreSnapshots(
+      ultima?.snapshot ?? null,
+      snapshot,
+    );
 
     await this.auditoriaService.registrar({
       entityType: 'DOCUMENTO',
@@ -236,9 +243,19 @@ export class DocumentosService {
       documentId: documento.id,
       documentVersionId: version.id,
       reason: opciones.changeReason ?? null,
-      newValue: { versionNumber, status, filePath },
+      newValue: {
+        versionNumber,
+        status,
+        filePath,
+        previousVersionId: ultima?.id ?? null,
+        cambios,
+      },
       previousValue: ultima
-        ? { versionNumber: ultima.versionNumber, status: ultima.status }
+        ? {
+            versionNumber: ultima.versionNumber,
+            status: ultima.status,
+            versionId: ultima.id,
+          }
         : null,
       source: 'api',
     });
@@ -268,6 +285,7 @@ export class DocumentosService {
 
       for (const r of envio.respuestas ?? []) {
         const campo = r.campoFormulario;
+        const tipo = String(campo?.tipoCampo ?? 'TEXTO');
         const valor =
           r.valorNumero != null
             ? Number(r.valorNumero)
@@ -277,17 +295,138 @@ export class DocumentosService {
                 ? r.valorFecha
                 : r.valorJson != null
                   ? r.valorJson
-                  : (r.valorTexto ?? r.urlArchivo ?? null);
+                  : (r.urlArchivo ?? r.valorTexto ?? null);
+
+        const claveEstable = campo?.id
+          ? `campo:${campo.id}`
+          : `${plantillaId}:${r.claveCampo}`;
 
         campos.push({
-          clave: r.claveCampo,
+          clave: claveEstable,
           etiqueta: campo?.etiqueta ?? r.claveCampo,
-          tipo: String(campo?.tipoCampo ?? 'TEXTO'),
+          tipo,
           valor,
         });
       }
     }
     return campos;
+  }
+
+  /** Campos de formulario + metadatos de jornada para el diff. */
+  private camposParaComparar(
+    snapshot: Record<string, unknown> | null | undefined,
+  ): CampoSnapshot[] {
+    const deFormulario = this.extraerCamposSnapshot(snapshot);
+    if (!snapshot) return deFormulario;
+
+    const meta: CampoSnapshot[] = [
+      {
+        clave: '_meta:cantidadEjecutada',
+        etiqueta: 'Avance de la meta (unidades)',
+        tipo: 'NUMERO',
+        valor:
+          snapshot.cantidadEjecutada != null
+            ? Number(snapshot.cantidadEjecutada)
+            : null,
+      },
+      {
+        clave: '_meta:observaciones',
+        etiqueta: 'Observaciones de la jornada',
+        tipo: 'TEXTO',
+        valor: snapshot.observaciones ?? null,
+      },
+    ];
+
+    return [...meta, ...deFormulario];
+  }
+
+  private resumenCambiosEntreSnapshots(
+    anterior: Record<string, unknown> | null | undefined,
+    nuevo: Record<string, unknown>,
+  ): Array<{
+    clave: string;
+    etiqueta: string;
+    tipo: string;
+    anterior: unknown;
+    nuevo: unknown;
+  }> {
+    const a = this.camposParaComparar(anterior);
+    const b = this.camposParaComparar(nuevo);
+    const porA = new Map(a.map((c) => [c.clave, c]));
+    const porB = new Map(b.map((c) => [c.clave, c]));
+    const claves = new Set([...porA.keys(), ...porB.keys()]);
+    const cambios: Array<{
+      clave: string;
+      etiqueta: string;
+      tipo: string;
+      anterior: unknown;
+      nuevo: unknown;
+    }> = [];
+
+    for (const clave of claves) {
+      const ca = porA.get(clave);
+      const cb = porB.get(clave);
+      if (this.valoresEquivalentes(ca?.valor, cb?.valor)) continue;
+      cambios.push({
+        clave,
+        etiqueta: cb?.etiqueta ?? ca?.etiqueta ?? clave,
+        tipo: cb?.tipo ?? ca?.tipo ?? 'TEXTO',
+        anterior: this.compactarValorParaAuditoria(ca?.valor, ca?.tipo),
+        nuevo: this.compactarValorParaAuditoria(cb?.valor, cb?.tipo),
+      });
+    }
+
+    return cambios;
+  }
+
+  private compactarValorParaAuditoria(
+    valor: unknown,
+    tipo?: string,
+  ): unknown {
+    if (valor == null || valor === '') return null;
+    if (
+      tipo === 'FIRMA' ||
+      (typeof valor === 'string' && /^data:image\//i.test(valor))
+    ) {
+      return {
+        firma: true,
+        presente: true,
+        bytes: String(valor).length,
+      };
+    }
+    if (
+      tipo === 'TABLA' ||
+      (valor &&
+        typeof valor === 'object' &&
+        Array.isArray((valor as { filas?: unknown }).filas))
+    ) {
+      const filas = (valor as { filas?: Record<string, unknown>[] }).filas ?? [];
+      return {
+        registros: filas.length,
+        filas: filas.map((fila) => {
+          const limpia: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(fila ?? {})) {
+            if (typeof v === 'string' && /^data:image\//i.test(v)) {
+              limpia[k] = { firma: true, presente: true, bytes: v.length };
+            } else {
+              limpia[k] = v;
+            }
+          }
+          return limpia;
+        }),
+      };
+    }
+    return valor;
+  }
+
+  private valoresEquivalentes(a: unknown, b: unknown): boolean {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return a === b;
+    }
   }
 
   private extraerCamposSnapshot(

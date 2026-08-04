@@ -84,6 +84,18 @@ export class RolesController {
     return this.rolesService.crear(dto);
   }
 
+  @Post('roles/:id/clonar')
+  @RequierePermisos('roles.crear')
+  @ApiOperation({
+    summary: 'Clonar un rol (copia la matriz; el clon siempre es personalizado)',
+  })
+  @ApiResponse({ status: 201, type: RespuestaRolDetalleDto })
+  clonar(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaRolDetalleDto> {
+    return this.rolesService.clonar(id);
+  }
+
   @Patch('roles/:id')
   @RequierePermisos('roles.editar')
   @ApiOperation({ summary: 'Actualizar un rol y su matriz de permisos' })

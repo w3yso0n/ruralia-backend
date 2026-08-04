@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -95,6 +96,15 @@ export class CrearJornadaDto {
   @IsEnum(TipoJornada)
   @IsOptional()
   tipo?: TipoJornada;
+
+  @ApiPropertyOptional({
+    description:
+      'Si true, la jornada debe aprobarse en revisión antes de contar al avance. Si false, el técnico la sube al proyecto y cuenta al confirmarse.',
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  requiereRevision?: boolean;
 
   @ApiPropertyOptional({ description: 'ID del técnico responsable' })
   @IsUUID('4')

@@ -43,6 +43,8 @@ export function formatearTitulo(
       return 'Envió jornada a revisión';
     case 'JORNADA_REENVIADA_REVISION':
       return 'Reenvió jornada a revisión';
+    case 'JORNADA_SUBIDA_PROYECTO':
+      return 'Subió jornada al proyecto';
     case 'JORNADA_APROBADA':
       return 'Aprobó la jornada';
     case 'JORNADA_RECHAZADA':

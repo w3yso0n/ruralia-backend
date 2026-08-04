@@ -573,7 +573,7 @@ export class TablaProcesos {
     'Objetivo cuantitativo de un proceso: cantidad total planeada y unidad de medida. ' +
     'DISTINTO de Indicador: Meta mide avance físico del plan (visitas, entregas), ' +
     'Indicador mide KPIs de gestión del proyecto (cobertura, impacto). ' +
-    'El avance se calcula sumando cantidad_ejecutada de jornadas no canceladas (default 1 solo si la jornada está COMPLETADA sin cantidad registrada).',
+    'El avance se calcula sumando cantidad_ejecutada de jornadas APROBADAS no canceladas (default 1 solo si la jornada está COMPLETADA sin cantidad registrada). Las que requieren revisión solo cuentan tras aprobación del supervisor; las demás al subirlas al proyecto.',
 })
 export class TablaMetas {
   @ApiProperty({ description: 'Identificador único (UUID)' })

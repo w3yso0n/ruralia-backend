@@ -52,7 +52,10 @@ export class Documento {
   })
   estadoFuncional: EstadoFuncional;
 
-  @OneToMany(() => DocumentoVersion, (v) => v.documento)
+  @OneToMany(() => DocumentoVersion, (v) => v.documento, {
+    // Historial append-only: nunca propagar remove desde el padre.
+    cascade: false,
+  })
   versiones: DocumentoVersion[];
 
   @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })

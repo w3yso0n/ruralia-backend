@@ -150,6 +150,41 @@ export class RolesService {
     await this.rolRepository.remove(rol);
   }
 
+  /**
+   * Crea un rol personalizado con la misma matriz de permisos.
+   * Sirve también para partir de un rol de sistema sin alterar el original.
+   */
+  async clonar(id: string): Promise<RespuestaRolDetalleDto> {
+    const original = await this.buscarRol(id);
+    const nombre = await this.generarNombreCopia(original.nombre);
+    return this.crear({
+      nombre,
+      descripcion: original.descripcion ?? undefined,
+      permisoIds: (original.permisos ?? []).map((p) => p.id),
+    });
+  }
+
+  private async generarNombreCopia(nombreOriginal: string): Promise<string> {
+    const maxLen = 80;
+    const base = `${nombreOriginal}_COPIA`.slice(0, maxLen);
+    let candidato = base;
+    let intento = 2;
+
+    while (await this.rolRepository.findOne({ where: { nombre: candidato } })) {
+      const sufijo = `_COPIA_${intento}`;
+      const prefijo = nombreOriginal.slice(0, Math.max(1, maxLen - sufijo.length));
+      candidato = `${prefijo}${sufijo}`;
+      intento += 1;
+      if (intento > 100) {
+        throw new ConflictException(
+          'No se pudo generar un nombre único para el rol clonado',
+        );
+      }
+    }
+
+    return candidato;
+  }
+
   private validarPermisosCriticosCuantiva(
     rol: Rol,
     permisos: Permiso[],

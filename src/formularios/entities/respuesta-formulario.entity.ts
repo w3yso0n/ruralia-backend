@@ -31,7 +31,7 @@ export class RespuestaFormulario {
   @Column({ name: 'valor_json', type: 'jsonb', nullable: true })
   valorJson: Record<string, unknown> | null;
 
-  @Column({ name: 'url_archivo', nullable: true })
+  @Column({ name: 'url_archivo', type: 'text', nullable: true })
   urlArchivo: string;
 
   @ManyToOne(() => EnvioFormulario, (envio) => envio.respuestas, {
