@@ -85,6 +85,21 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     100,
   ),
   ...defs(
+    'evaluaciones',
+    [
+      {
+        accion: 'ver',
+        descripcion:
+          'Ver evaluaciones, productividad y desviaciones del equipo',
+      },
+      {
+        accion: 'gestionar',
+        descripcion: 'Asignar cuotas personales y gestionar evaluación interna',
+      },
+    ],
+    150,
+  ),
+  ...defs(
     'usuarios',
     [
       { accion: 'ver', descripcion: 'Ver listado y detalle de usuarios' },
@@ -265,6 +280,8 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
 
 const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'dashboard.ver',
+  'evaluaciones.ver',
+  'evaluaciones.gestionar',
   'usuarios.ver',
   'proyectos.ver',
   'proyectos.crear',
@@ -310,6 +327,8 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
 
 const PERMISOS_COORDINADOR_ZONA: string[] = [
   'dashboard.ver',
+  'evaluaciones.ver',
+  'evaluaciones.gestionar',
   'proyectos.ver',
   'proyectos.editar',
   'proyectos.asignar_personal',
@@ -346,6 +365,7 @@ const PERMISOS_COORDINADOR_ZONA: string[] = [
 
 const PERMISOS_CAMPO: string[] = [
   'dashboard.ver',
+  'evaluaciones.ver',
   'proyectos.ver',
   'actividades.ver',
   'actividades.marcar_avance',
@@ -369,6 +389,7 @@ const PERMISOS_CAMPO: string[] = [
 
 const PERMISOS_VISUALIZADOR: string[] = [
   'dashboard.ver',
+  'evaluaciones.ver',
   'proyectos.ver',
   'actividades.ver',
   'contrapartes.ver',

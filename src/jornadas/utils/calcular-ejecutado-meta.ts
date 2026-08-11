@@ -49,6 +49,37 @@ export async function sumarEjecutadoPorMeta(
   return Number(resultado?.total ?? 0);
 }
 
+/** Ejecutado de un técnico hacia una meta (misma regla de aprobación). */
+export async function sumarEjecutadoPorMetaYUsuario(
+  jornadaRepository: Repository<Jornada>,
+  metaId: string,
+  usuarioId: string,
+  opciones?: { anio?: number; mes?: number },
+): Promise<number> {
+  const qb = jornadaRepository
+    .createQueryBuilder('jornada')
+    .select(SQL_SUMA_EJECUTADO, 'total')
+    .where('jornada.meta_id = :metaId', { metaId })
+    .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
+    .andWhere('jornada.estado != :estadoCancelada', {
+      estadoCancelada: EstadoJornada.CANCELADA,
+    })
+    .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
+    .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
+
+  if (opciones?.anio !== undefined && opciones?.mes !== undefined) {
+    const inicio = new Date(opciones.anio, opciones.mes - 1, 1);
+    const fin = new Date(opciones.anio, opciones.mes, 0);
+    qb.andWhere('jornada.fecha >= :inicio', { inicio }).andWhere(
+      'jornada.fecha <= :fin',
+      { fin },
+    );
+  }
+
+  const resultado = await qb.getRawOne<{ total: string }>();
+  return Number(resultado?.total ?? 0);
+}
+
 export async function sumarEjecutadoPorProyecto(
   jornadaRepository: Repository<Jornada>,
   proyectoId: string,

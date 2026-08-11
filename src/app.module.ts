@@ -8,11 +8,13 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AprobacionesModule } from './aprobaciones/aprobaciones.module';
 import { ArchivosModule } from './archivos/archivos.module';
+import { EvaluacionesModule } from './evaluaciones/evaluaciones.module';
 import { AsociacionesModule } from './asociaciones/asociaciones.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
 import { AutenticacionModule } from './autenticacion/autenticacion.module';
 import { BeneficiariosModule } from './beneficiarios/beneficiarios.module';
 import { CronologiaModule } from './cronologia/cronologia.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DocumentosModule } from './documentos/documentos.module';
 import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
@@ -62,6 +64,8 @@ const modulosBase = [
   AuditoriaModule,
   DocumentosModule,
   AprobacionesModule,
+  DashboardModule,
+  EvaluacionesModule,
 ];
 
 @Module({})
