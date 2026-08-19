@@ -56,6 +56,28 @@ export const ROLES_COORDINACION: readonly RolSistema[] = [
   RolSistema.COORDINADOR_ZONA,
 ];
 
+/**
+ * Orden de jerarquía de roles de sistema, de mayor a menor. Se usa para
+ * desempatar cuándo un usuario con varios roles tiene más de una plantilla
+ * de dashboard candidata (gana la del rol de mayor jerarquía). Roles
+ * personalizados (no listados aquí) se consideran de jerarquía más baja que
+ * cualquier rol de sistema.
+ */
+export const JERARQUIA_ROLES_SISTEMA: readonly RolSistema[] = [
+  RolSistema.CUANTIVA,
+  RolSistema.ADMINISTRADOR,
+  RolSistema.COORDINADOR_DEPARTAMENTAL,
+  RolSistema.COORDINADOR_ZONA,
+  RolSistema.CAMPO,
+  RolSistema.VISUALIZADOR,
+];
+
+/** Índice de jerarquía de un rol por nombre; roles no listados van al final. */
+export function ordenJerarquiaRol(nombreRol: string): number {
+  const idx = (JERARQUIA_ROLES_SISTEMA as readonly string[]).indexOf(nombreRol);
+  return idx === -1 ? JERARQUIA_ROLES_SISTEMA.length : idx;
+}
+
 export interface DefinicionPermiso {
   clave: string;
   modulo: string;
@@ -83,6 +105,21 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     'dashboard',
     [{ accion: 'ver', descripcion: 'Ver el panel de inicio' }],
     100,
+  ),
+  ...defs(
+    'configuracion',
+    [
+      {
+        accion: 'editar_dashboard',
+        descripcion: 'Personalizar los widgets del panel de inicio propio',
+      },
+      {
+        accion: 'gestionar_plantillas',
+        descripcion:
+          'Crear plantillas de dashboard y asignarlas a roles para usuarios sin edición propia',
+      },
+    ],
+    110,
   ),
   ...defs(
     'evaluaciones',
@@ -298,6 +335,7 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
 
 const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'dashboard.ver',
+  'configuracion.editar_dashboard',
   'evaluaciones.ver',
   'evaluaciones.gestionar',
   'usuarios.ver',
@@ -348,6 +386,7 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
 
 const PERMISOS_COORDINADOR_ZONA: string[] = [
   'dashboard.ver',
+  'configuracion.editar_dashboard',
   'evaluaciones.ver',
   'evaluaciones.gestionar',
   'proyectos.ver',
@@ -389,6 +428,7 @@ const PERMISOS_COORDINADOR_ZONA: string[] = [
 
 const PERMISOS_CAMPO: string[] = [
   'dashboard.ver',
+  'configuracion.editar_dashboard',
   'evaluaciones.ver',
   'proyectos.ver',
   'actividades.ver',
@@ -415,6 +455,7 @@ const PERMISOS_CAMPO: string[] = [
 
 const PERMISOS_VISUALIZADOR: string[] = [
   'dashboard.ver',
+  'configuracion.editar_dashboard',
   'evaluaciones.ver',
   'proyectos.ver',
   'actividades.ver',

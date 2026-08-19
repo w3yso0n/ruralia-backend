@@ -105,7 +105,8 @@ export class DashboardController {
   @Get('widgets-disponibles')
   @RequierePermisos('dashboard.ver')
   @ApiOperation({
-    summary: 'Catálogo de widgets que el usuario puede ver/agregar',
+    summary:
+      'Catálogo de widgets que el usuario puede ver/agregar (según sus permisos). Solo lectura: no requiere permiso de edición, lo usan tanto quien personaliza su propio dashboard como quien diseña plantillas para otros roles.',
   })
   @ApiResponse({ status: 200, type: [WidgetDisponibleDto] })
   obtenerWidgetsDisponibles(
@@ -121,11 +122,13 @@ export class DashboardController {
   obtenerMiConfiguracion(
     @UsuarioActual() usuario: Usuario,
   ): Promise<ConfiguracionDashboardDto> {
+    // Solo requiere dashboard.ver (no configuracion.editar_dashboard): el
+    // dashboard real también depende de este endpoint para saber qué pintar.
     return this.configuracionDashboardService.obtenerConfiguracion(usuario);
   }
 
   @Put('mi-configuracion')
-  @RequierePermisos('dashboard.ver')
+  @RequierePermisos('configuracion.editar_dashboard')
   @ApiOperation({ summary: 'Guarda el layout personalizado del usuario' })
   @ApiResponse({ status: 200, type: ConfiguracionDashboardDto })
   actualizarMiConfiguracion(
@@ -139,7 +142,7 @@ export class DashboardController {
   }
 
   @Post('mi-configuracion/restablecer')
-  @RequierePermisos('dashboard.ver')
+  @RequierePermisos('configuracion.editar_dashboard')
   @ApiOperation({ summary: 'Restablece el layout de fábrica del usuario' })
   @ApiResponse({ status: 200, type: ConfiguracionDashboardDto })
   restablecerMiConfiguracion(

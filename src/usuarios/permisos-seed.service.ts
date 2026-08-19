@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
@@ -107,8 +113,7 @@ export class PermisosSeedService implements OnModuleInit {
         });
       } else {
         rol.esSistema = true;
-        rol.descripcion =
-          DESCRIPCIONES_ROL_SISTEMA[nombre] ?? rol.descripcion;
+        rol.descripcion = DESCRIPCIONES_ROL_SISTEMA[nombre] ?? rol.descripcion;
       }
 
       const esNuevo = !rol.id;
@@ -119,27 +124,60 @@ export class PermisosSeedService implements OnModuleInit {
       const clavesPreset =
         preset === 'ALL' ? todos.map((p) => p.clave) : [...preset];
 
+      // Solo se aplica el preset completo al crear el rol por primera vez, si
+      // quedó huérfano de permisos, o para CUANTIVA (anti-lockout deliberado:
+      // ver asegurarPermisosCriticosCuantiva). Fuera de esos casos, el seed
+      // NO vuelve a tocar los permisos de un rol de sistema ya inicializado:
+      // un admin puede quitar/agregar permisos libremente desde /roles sin
+      // que el seed se los reponga en el siguiente refresh. Si se agrega un
+      // permiso nuevo al catálogo, hay que asignarlo manualmente a los roles
+      // que corresponda (o usar "Restablecer a valores de fábrica").
       if (esNuevo || sinPermisos || esCuantiva) {
         rol.permisos = clavesPreset
           .map((c) => porClave.get(c))
           .filter((p): p is Permiso => !!p);
-      } else {
-        // Sync aditivo: incorpora permisos nuevos del preset sin quitar customizaciones.
-        const actuales = new Set((rol.permisos ?? []).map((p) => p.clave));
-        const faltantes = clavesPreset
-          .filter((c) => !actuales.has(c))
-          .map((c) => porClave.get(c))
-          .filter((p): p is Permiso => !!p);
-        if (faltantes.length) {
-          rol.permisos = [...(rol.permisos ?? []), ...faltantes];
-          this.logger.log(
-            `Rol ${nombre}: +${faltantes.length} permisos (${faltantes.map((p) => p.clave).join(', ')})`,
-          );
-        }
+        await this.rolRepository.save(rol);
       }
-
-      await this.rolRepository.save(rol);
     }
+  }
+
+  /**
+   * Aplica el preset de fábrica (PERMISOS_POR_ROL_SISTEMA) a un rol de
+   * sistema puntual, bajo demanda. Es la única forma de "deshacer"
+   * ediciones manuales una vez que el seed dejó de auto-sincronizar ese rol
+   * (ver comentario en asegurarRolesSistema). No aplica a roles
+   * personalizados (no tienen preset).
+   */
+  async restablecerRolAValoresDeFabrica(rolId: string): Promise<void> {
+    const rol = await this.rolRepository.findOne({
+      where: { id: rolId },
+      relations: { permisos: true },
+    });
+    if (!rol) {
+      throw new NotFoundException(`Rol con id ${rolId} no encontrado`);
+    }
+    if (!rol.esSistema) {
+      throw new BadRequestException(
+        'Solo los roles de sistema tienen valores de fábrica para restablecer',
+      );
+    }
+
+    const preset = PERMISOS_POR_ROL_SISTEMA[rol.nombre as RolSistema];
+    if (!preset) {
+      throw new BadRequestException(
+        `El rol ${rol.nombre} no tiene un preset de fábrica conocido`,
+      );
+    }
+
+    const todos = await this.permisoRepository.find();
+    const porClave = new Map(todos.map((p) => [p.clave, p]));
+    const clavesPreset = preset === 'ALL' ? todos.map((p) => p.clave) : preset;
+
+    rol.permisos = clavesPreset
+      .map((c) => porClave.get(c))
+      .filter((p): p is Permiso => !!p);
+    await this.rolRepository.save(rol);
+    this.logger.log(`Rol ${rol.nombre} restablecido a valores de fábrica`);
   }
 
   private async asegurarPermisosCriticosCuantiva(): Promise<void> {

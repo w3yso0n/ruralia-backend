@@ -87,7 +87,8 @@ export class RolesController {
   @Post('roles/:id/clonar')
   @RequierePermisos('roles.crear')
   @ApiOperation({
-    summary: 'Clonar un rol (copia la matriz; el clon siempre es personalizado)',
+    summary:
+      'Clonar un rol (copia la matriz; el clon siempre es personalizado)',
   })
   @ApiResponse({ status: 201, type: RespuestaRolDetalleDto })
   clonar(
@@ -105,6 +106,18 @@ export class RolesController {
     @Body() dto: ActualizarRolDto,
   ): Promise<RespuestaRolDetalleDto> {
     return this.rolesService.actualizar(id, dto);
+  }
+
+  @Post('roles/:id/restablecer')
+  @RequierePermisos('roles.editar')
+  @ApiOperation({
+    summary: 'Restablecer un rol de sistema a su matriz de permisos de fábrica',
+  })
+  @ApiResponse({ status: 200, type: RespuestaRolDetalleDto })
+  restablecer(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaRolDetalleDto> {
+    return this.rolesService.restablecerAValoresDeFabrica(id);
   }
 
   @Delete('roles/:id')

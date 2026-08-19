@@ -49,15 +49,25 @@ export class ItemPreferenciaDashboardDto {
   visible: boolean;
 }
 
+/** De dónde viene el layout que se está devolviendo. */
+export type OrigenConfiguracionDashboard = 'PROPIA' | 'PLANTILLA' | 'FABRICA';
+
 export class ConfiguracionDashboardDto {
   @ApiProperty({ type: [ItemPreferenciaDashboardDto] })
   items: ItemPreferenciaDashboardDto[];
 
   @ApiProperty({
     description:
-      'true si el usuario nunca guardó configuración propia (layout de fábrica)',
+      'true si el usuario nunca guardó configuración propia (layout de fábrica o de plantilla)',
   })
   esPorDefecto: boolean;
+
+  @ApiProperty({
+    enum: ['PROPIA', 'PLANTILLA', 'FABRICA'],
+    description:
+      'PROPIA = el usuario guardó su propio layout. PLANTILLA = hereda la plantilla asignada a su rol. FABRICA = layout calculado del catálogo (fallback histórico).',
+  })
+  origen: OrigenConfiguracionDashboard;
 }
 
 export class ItemActualizarPreferenciaDto {

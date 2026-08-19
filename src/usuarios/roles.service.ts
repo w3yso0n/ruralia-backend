@@ -6,10 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import {
-  PERMISOS_CRITICOS_CUANTIVA,
-  RolSistema,
-} from './catalogo-permisos';
+import { PERMISOS_CRITICOS_CUANTIVA, RolSistema } from './catalogo-permisos';
 import { ActualizarRolDto } from './dto/actualizar-rol.dto';
 import { CrearRolDto } from './dto/crear-rol.dto';
 import {
@@ -120,9 +117,7 @@ export class RolesService {
 
     if (dto.estaActivo !== undefined) {
       if (rol.nombre === RolSistema.CUANTIVA && dto.estaActivo === false) {
-        throw new BadRequestException(
-          'No se puede desactivar el rol CUANTIVA',
-        );
+        throw new BadRequestException('No se puede desactivar el rol CUANTIVA');
       }
       rol.estaActivo = dto.estaActivo;
     }
@@ -150,6 +145,14 @@ export class RolesService {
     await this.rolRepository.remove(rol);
   }
 
+  /** Aplica el preset de fábrica del rol de sistema, deshaciendo ediciones manuales. */
+  async restablecerAValoresDeFabrica(
+    id: string,
+  ): Promise<RespuestaRolDetalleDto> {
+    await this.permisosSeed.restablecerRolAValoresDeFabrica(id);
+    return this.obtenerUno(id);
+  }
+
   /**
    * Crea un rol personalizado con la misma matriz de permisos.
    * Sirve también para partir de un rol de sistema sin alterar el original.
@@ -172,7 +175,10 @@ export class RolesService {
 
     while (await this.rolRepository.findOne({ where: { nombre: candidato } })) {
       const sufijo = `_COPIA_${intento}`;
-      const prefijo = nombreOriginal.slice(0, Math.max(1, maxLen - sufijo.length));
+      const prefijo = nombreOriginal.slice(
+        0,
+        Math.max(1, maxLen - sufijo.length),
+      );
       candidato = `${prefijo}${sufijo}`;
       intento += 1;
       if (intento > 100) {
@@ -185,10 +191,7 @@ export class RolesService {
     return candidato;
   }
 
-  private validarPermisosCriticosCuantiva(
-    rol: Rol,
-    permisos: Permiso[],
-  ): void {
+  private validarPermisosCriticosCuantiva(rol: Rol, permisos: Permiso[]): void {
     if (rol.nombre !== RolSistema.CUANTIVA) return;
     const claves = new Set(permisos.map((p) => p.clave));
     const faltantes = PERMISOS_CRITICOS_CUANTIVA.filter((c) => !claves.has(c));
@@ -224,9 +227,7 @@ export class RolesService {
 
   private aDetalle(rol: Rol): RespuestaRolDetalleDto {
     const permisoIds = (rol.permisos ?? []).map((p) => p.id);
-    const permisoClaves = (rol.permisos ?? [])
-      .map((p) => p.clave)
-      .sort();
+    const permisoClaves = (rol.permisos ?? []).map((p) => p.clave).sort();
     return {
       id: rol.id,
       nombre: rol.nombre,

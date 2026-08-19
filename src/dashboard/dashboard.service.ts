@@ -81,28 +81,33 @@ export class DashboardService {
   }
 
   async obtenerResumen(): Promise<ResumenDashboardDto> {
-    const [proyectosActivos, totalProyectos, jornadasRegistradas, agentesRaw, recientes] =
-      await Promise.all([
-        this.proyectoRepository.count({
-          where: { estado: EstadoProyecto.ACTIVO },
-        }),
-        this.proyectoRepository.count(),
-        this.jornadaRepository.count(),
-        this.jornadaRepository
-          .createQueryBuilder('jornada')
-          .where('jornada.estado != :cancelada', {
-            cancelada: EstadoJornada.CANCELADA,
-          })
-          .andWhere('jornada.tecnico_responsable_id IS NOT NULL')
-          .select('COUNT(DISTINCT jornada.tecnico_responsable_id)', 'total')
-          .getRawOne<{ total: string }>(),
-        this.proyectoRepository.find({
-          where: { estado: EstadoProyecto.ACTIVO },
-          order: { actualizadoEn: 'DESC' },
-          take: 5,
-          relations: { proyectoBeneficiarios: true },
-        }),
-      ]);
+    const [
+      proyectosActivos,
+      totalProyectos,
+      jornadasRegistradas,
+      agentesRaw,
+      recientes,
+    ] = await Promise.all([
+      this.proyectoRepository.count({
+        where: { estado: EstadoProyecto.ACTIVO },
+      }),
+      this.proyectoRepository.count(),
+      this.jornadaRepository.count(),
+      this.jornadaRepository
+        .createQueryBuilder('jornada')
+        .where('jornada.estado != :cancelada', {
+          cancelada: EstadoJornada.CANCELADA,
+        })
+        .andWhere('jornada.tecnico_responsable_id IS NOT NULL')
+        .select('COUNT(DISTINCT jornada.tecnico_responsable_id)', 'total')
+        .getRawOne<{ total: string }>(),
+      this.proyectoRepository.find({
+        where: { estado: EstadoProyecto.ACTIVO },
+        order: { actualizadoEn: 'DESC' },
+        take: 5,
+        relations: { proyectoBeneficiarios: true },
+      }),
+    ]);
 
     const agentesEnCampo = Number(agentesRaw?.total ?? 0);
 
@@ -169,8 +174,7 @@ export class DashboardService {
 
       const denom = Number(totalVeredas?.total ?? 0);
       const numer = Number(veredasConJornada?.total ?? 0);
-      coberturaTerritorial =
-        denom > 0 ? Math.round((numer / denom) * 100) : 0;
+      coberturaTerritorial = denom > 0 ? Math.round((numer / denom) * 100) : 0;
     }
 
     const completadas = await this.jornadaRepository.count({
@@ -424,7 +428,11 @@ export class DashboardService {
       .addGroupBy('proyecto.nombre')
       .orderBy('total', 'DESC')
       .limit(1)
-      .getRawOne<{ proyectoId: string; nombreProyecto: string; total: string }>();
+      .getRawOne<{
+        proyectoId: string;
+        nombreProyecto: string;
+        total: string;
+      }>();
 
     if (!candidatos) return null;
 
@@ -452,9 +460,7 @@ export class DashboardService {
       latitud: Number(j.latitud),
       longitud: Number(j.longitud),
       estado: j.estado,
-      fecha: j.fecha
-        ? new Date(j.fecha).toISOString().slice(0, 10)
-        : undefined,
+      fecha: j.fecha ? new Date(j.fecha).toISOString().slice(0, 10) : undefined,
       descripcion: j.observaciones || j.nombre || '',
     }));
 
@@ -463,9 +469,7 @@ export class DashboardService {
       nombreProyecto: candidatos.nombreProyecto,
       jornadas: puntos,
       progresoAvancePorcentaje:
-        conGeo.length > 0
-          ? Math.round((completadas / conGeo.length) * 100)
-          : 0,
+        conGeo.length > 0 ? Math.round((completadas / conGeo.length) * 100) : 0,
     };
   }
 
@@ -494,9 +498,7 @@ export class DashboardService {
           j.tecnicoResponsable?.nombreCompleto ||
           '—',
         estado: j.estado,
-        fecha: j.fecha
-          ? new Date(j.fecha).toISOString().slice(0, 10)
-          : '',
+        fecha: j.fecha ? new Date(j.fecha).toISOString().slice(0, 10) : '',
       }));
   }
 
