@@ -31,6 +31,23 @@ import {
   SugerenciaRepartoDto,
 } from './dto/respuesta-asignacion.dto';
 import { AsignacionMeta } from './entities/asignacion-meta.entity';
+import { generarPdfReporteEvaluaciones } from './utils/generar-pdf-evaluaciones';
+import { generarPdfFichaIndividual } from './utils/generar-pdf-ficha-individual';
+
+const NOMBRES_MES = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+];
 
 @Injectable()
 export class EvaluacionesService {
@@ -260,14 +277,10 @@ export class EvaluacionesService {
       anio,
       mes,
     });
-    const fuente =
-      asignaciones.length > 0
-        ? asignaciones
-        : await this.listarPorProyecto(proyectoId, {});
 
     const porUsuario = new Map<string, ProductividadPersonaDto>();
 
-    for (const a of fuente) {
+    for (const a of asignaciones) {
       const actual = this.basePersona(
         a.usuario.id,
         a.usuario.nombreCompleto,
@@ -304,6 +317,14 @@ export class EvaluacionesService {
     anio?: number,
     mes?: number,
     limite = 10,
+  ): Promise<ProductividadPersonaDto[]> {
+    const completo = await this.equipoGlobalCompleto(anio, mes);
+    return completo.slice(0, limite);
+  }
+
+  private async equipoGlobalCompleto(
+    anio?: number,
+    mes?: number,
   ): Promise<ProductividadPersonaDto[]> {
     const a = anio ?? new Date().getFullYear();
     const m = mes ?? new Date().getMonth() + 1;
@@ -360,9 +381,9 @@ export class EvaluacionesService {
       return p;
     });
 
-    return this.ordenarPorEficiencia(enriquecidos)
-      .filter((p) => p.conteoJornadas > 0 || p.cantidadAsignada > 0)
-      .slice(0, limite);
+    return this.ordenarPorEficiencia(enriquecidos).filter(
+      (p) => p.conteoJornadas > 0 || p.cantidadAsignada > 0,
+    );
   }
 
   private basePersona(
@@ -470,9 +491,7 @@ export class EvaluacionesService {
             ? Math.max(
                 0,
                 100 -
-                  (p.rechazosRevision /
-                    Math.max(p.conteoJornadas, 1)) *
-                    100,
+                  (p.rechazosRevision / Math.max(p.conteoJornadas, 1)) * 100,
               )
             : 100;
         const indiceEficiencia = Math.round(
@@ -756,8 +775,7 @@ export class EvaluacionesService {
   ): Promise<RespuestaAsignacionMetaDto> {
     const anio = asig.metaPeriodo?.anio;
     const mes = asig.metaPeriodo?.mes;
-    const opciones =
-      anio != null && mes != null ? { anio, mes } : undefined;
+    const opciones = anio != null && mes != null ? { anio, mes } : undefined;
 
     const ejecutado = await sumarEjecutadoPorMetaYUsuario(
       this.jornadaRepository,
@@ -809,7 +827,9 @@ export class EvaluacionesService {
     };
   }
 
-  private async cargarProyectoConPersonal(proyectoId: string): Promise<Proyecto> {
+  private async cargarProyectoConPersonal(
+    proyectoId: string,
+  ): Promise<Proyecto> {
     const proyecto = await this.proyectoRepository.findOne({
       where: { id: proyectoId },
       relations: { personal: true },
@@ -972,6 +992,120 @@ export class EvaluacionesService {
     this.aplicarPeriodo(qb, anio, mes);
     const raw = await qb.getRawOne<{ total: string }>();
     return Number(raw?.total ?? 0);
+  }
+
+  async generarPdfReporte(
+    filtros: FiltrosProductividadDto,
+    generadoPor?: string,
+  ): Promise<Buffer> {
+    const anio = filtros.anio ?? new Date().getFullYear();
+    const mes = filtros.mes ?? new Date().getMonth() + 1;
+
+    let ranking: ProductividadPersonaDto[];
+    let proyectoNombre: string | null = null;
+
+    if (filtros.proyectoId) {
+      const proyecto = await this.proyectoRepository.findOne({
+        where: { id: filtros.proyectoId },
+        select: { id: true, nombre: true },
+      });
+      if (!proyecto) {
+        throw new NotFoundException(
+          `Proyecto ${filtros.proyectoId} no encontrado`,
+        );
+      }
+      proyectoNombre = proyecto.nombre;
+      ranking = await this.productividadProyecto(filtros.proyectoId, {
+        anio,
+        mes,
+      });
+    } else {
+      ranking = await this.equipoGlobalCompleto(anio, mes);
+    }
+
+    return generarPdfReporteEvaluaciones({
+      anio,
+      mes,
+      nombreMes: NOMBRES_MES[mes - 1] ?? String(mes),
+      proyectoNombre,
+      generadoPor,
+      filas: ranking.map((r, i) => ({
+        puesto: i + 1,
+        nombreCompleto: r.nombreCompleto,
+        proyectoNombre: filtros.proyectoId ? null : r.proyectoNombre,
+        indiceEficiencia: r.indiceEficiencia,
+        cumplimientoPorcentaje: r.cumplimientoPorcentaje,
+        conteoJornadas: r.conteoJornadas,
+        jornadasAprobadas: r.jornadasAprobadas,
+        beneficiariosAtendidos: r.beneficiariosAtendidos,
+        veredasCubiertas: r.veredasCubiertas,
+        jornadasConEvidencia: r.jornadasConEvidencia,
+        rechazosRevision: r.rechazosRevision ?? 0,
+        ritmoEjecucion: r.ritmoEjecucion,
+      })),
+    });
+  }
+
+  async generarPdfFicha(
+    usuarioId: string,
+    filtros: FiltrosProductividadDto,
+    generadoPor?: string,
+  ): Promise<Buffer> {
+    const anio = filtros.anio ?? new Date().getFullYear();
+    const mes = filtros.mes ?? new Date().getMonth() + 1;
+
+    const [detalle, desviaciones, proyecto] = await Promise.all([
+      this.productividadUsuario(usuarioId, { ...filtros, anio, mes }),
+      this.desviacionesVsPlaneacion(usuarioId, { ...filtros, anio, mes }),
+      filtros.proyectoId
+        ? this.proyectoRepository.findOne({
+            where: { id: filtros.proyectoId },
+            select: { id: true, nombre: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return generarPdfFichaIndividual({
+      nombreCompleto: detalle.usuario.nombreCompleto,
+      correo: detalle.usuario.correo,
+      anio,
+      mes,
+      nombreMes: NOMBRES_MES[mes - 1] ?? String(mes),
+      proyectoNombre: proyecto?.nombre ?? null,
+      generadoPor,
+      cumplimientoPromedio: detalle.cumplimientoPromedio,
+      totalAsignado: detalle.totalAsignado,
+      totalEjecutado: detalle.totalEjecutado,
+      conteoJornadas: detalle.conteoJornadas,
+      beneficiariosAtendidos: detalle.beneficiariosAtendidos,
+      veredasCubiertas: detalle.veredasCubiertas,
+      rechazosRevision: detalle.rechazosRevision ?? 0,
+      asignaciones: detalle.asignaciones.map((a) => ({
+        metaNombre: a.metaNombre,
+        unidadMedida: a.unidadMedida,
+        periodo:
+          a.anio != null && a.mes != null
+            ? `${NOMBRES_MES[a.mes - 1] ?? a.mes} ${a.anio}`
+            : 'Total',
+        cantidadAsignada: a.cantidadAsignada,
+        ejecutado: a.ejecutado,
+        cumplimientoPorcentaje: a.cumplimientoPorcentaje,
+      })),
+      desviaciones: {
+        metasConCuota: desviaciones.metasConCuota,
+        fallosSinEjecucion: desviaciones.fallosSinEjecucion,
+        incumplimientos: desviaciones.incumplimientos,
+        detalle: desviaciones.detalle.map((d) => ({
+          metaNombre: d.metaNombre,
+          unidadMedida: d.unidadMedida,
+          cantidadAsignada: d.cantidadAsignada,
+          ejecutado: d.ejecutado,
+          cumplimientoPorcentaje: d.cumplimientoPorcentaje,
+          sinEjecucion: d.sinEjecucion,
+          incumplida: d.incumplida,
+        })),
+      },
+    });
   }
 
   private aplicarPeriodo(

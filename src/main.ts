@@ -1,5 +1,7 @@
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import * as path from 'path';
 import { ColaModule } from './cola/cola.module';
 import { configurarSwagger } from './common/swagger/configurar-swagger';
 import { AppModule } from './app.module';
@@ -16,7 +18,14 @@ async function bootstrap() {
   await migrarTipoCampoTablaAntesDeSync();
 
   const colaModule = await ColaModule.forRoot();
-  const app = await NestFactory.create(AppModule.register(colaModule));
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule.register(colaModule),
+  );
+
+  const rutaSubidas =
+    process.env.RUTA_SUBIDAS || path.join(process.cwd(), 'subidas');
+  app.useStaticAssets(rutaSubidas, { prefix: '/subidas' });
+
 
   app.useGlobalPipes(
     new ValidationPipe({

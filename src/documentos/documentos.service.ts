@@ -49,6 +49,14 @@ export class DocumentosService {
     });
   }
 
+  async listarPorProyecto(proyectoId: string): Promise<Documento[]> {
+    return this.documentoRepo.find({
+      where: { proyectoId },
+      relations: { versiones: true },
+      order: { creadoEn: 'DESC' },
+    });
+  }
+
   async obtenerConVersiones(documentoId: string): Promise<Documento> {
     const doc = await this.documentoRepo.findOne({
       where: { id: documentoId },

@@ -16,6 +16,7 @@ import { BeneficiariosModule } from './beneficiarios/beneficiarios.module';
 import { CronologiaModule } from './cronologia/cronologia.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DocumentosModule } from './documentos/documentos.module';
+import { DocumentosExternosModule } from './documentos-externos/documentos-externos.module';
 import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
 import { IndicadoresModule } from './indicadores/indicadores.module';
@@ -63,6 +64,7 @@ const modulosBase = [
   CronologiaModule,
   AuditoriaModule,
   DocumentosModule,
+  DocumentosExternosModule,
   AprobacionesModule,
   DashboardModule,
   EvaluacionesModule,

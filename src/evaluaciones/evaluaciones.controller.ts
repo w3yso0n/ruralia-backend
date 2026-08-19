@@ -6,14 +6,20 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
+import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
+import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   FiltrosAsignacionMetaDto,
   FiltrosProductividadDto,
@@ -91,7 +97,8 @@ export class EvaluacionesController {
   @Get('ranking')
   @RequierePermisos('evaluaciones.ver')
   @ApiOperation({
-    summary: 'Ranking global de cumplimiento del equipo (mes actual por defecto)',
+    summary:
+      'Ranking global de cumplimiento del equipo (mes actual por defecto)',
   })
   @ApiResponse({ status: 200, type: [ProductividadPersonaDto] })
   rankingGlobal(
@@ -103,9 +110,36 @@ export class EvaluacionesController {
     );
   }
 
+  @Get('reporte/pdf')
+  @RequierePermisos('evaluaciones.ver')
+  @ApiOperation({
+    summary: 'Descargar PDF del ranking de evaluaciones del periodo',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF de evaluaciones' })
+  async descargarPdfReporte(
+    @Query() filtros: FiltrosProductividadDto,
+    @UsuarioActual() usuario: Usuario,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.evaluacionesService.generarPdfReporte(
+      filtros,
+      usuario.nombreCompleto,
+    );
+    const anio = filtros.anio ?? new Date().getFullYear();
+    const mes = filtros.mes ?? new Date().getMonth() + 1;
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="evaluaciones-${anio}-${String(mes).padStart(2, '0')}.pdf"`,
+    });
+    return new StreamableFile(pdf);
+  }
+
   @Get('usuarios/:usuarioId')
   @RequierePermisos('evaluaciones.ver')
-  @ApiOperation({ summary: 'Ficha de evaluación / productividad de un usuario' })
+  @ApiOperation({
+    summary: 'Ficha de evaluación / productividad de un usuario',
+  })
   @ApiResponse({ status: 200, type: ProductividadUsuarioDetalleDto })
   fichaUsuario(
     @Param('usuarioId', ParseUUIDPipe) usuarioId: string,
@@ -129,5 +163,32 @@ export class EvaluacionesController {
       usuarioId,
       filtros,
     );
+  }
+
+  @Get('usuarios/:usuarioId/reporte/pdf')
+  @RequierePermisos('evaluaciones.ver')
+  @ApiOperation({
+    summary: 'Descargar PDF de la ficha de evaluación individual',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF de la ficha individual' })
+  async descargarPdfFicha(
+    @Param('usuarioId', ParseUUIDPipe) usuarioId: string,
+    @Query() filtros: FiltrosProductividadDto,
+    @UsuarioActual() usuario: Usuario,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.evaluacionesService.generarPdfFicha(
+      usuarioId,
+      filtros,
+      usuario.nombreCompleto,
+    );
+    const anio = filtros.anio ?? new Date().getFullYear();
+    const mes = filtros.mes ?? new Date().getMonth() + 1;
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="ficha-${usuarioId.slice(0, 8)}-${anio}-${String(mes).padStart(2, '0')}.pdf"`,
+    });
+    return new StreamableFile(pdf);
   }
 }

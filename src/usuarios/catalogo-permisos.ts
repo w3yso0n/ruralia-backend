@@ -276,6 +276,24 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     ],
     1300,
   ),
+  ...defs(
+    'documentos_externos',
+    [
+      {
+        accion: 'ver',
+        descripcion: 'Ver documentos externos del expediente',
+      },
+      {
+        accion: 'crear',
+        descripcion: 'Cargar y vincular documentos externos',
+      },
+      {
+        accion: 'eliminar',
+        descripcion: 'Eliminar documentos externos',
+      },
+    ],
+    1350,
+  ),
 ];
 
 const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
@@ -323,6 +341,9 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
   'territorios.crear',
   'territorios.editar',
   'territorios.eliminar',
+  'documentos_externos.ver',
+  'documentos_externos.crear',
+  'documentos_externos.eliminar',
 ];
 
 const PERMISOS_COORDINADOR_ZONA: string[] = [
@@ -361,6 +382,9 @@ const PERMISOS_COORDINADOR_ZONA: string[] = [
   'documentos.ver',
   'documentos.versionar',
   'territorios.ver',
+  'documentos_externos.ver',
+  'documentos_externos.crear',
+  'documentos_externos.eliminar',
 ];
 
 const PERMISOS_CAMPO: string[] = [
@@ -385,6 +409,8 @@ const PERMISOS_CAMPO: string[] = [
   'documentos.ver',
   'documentos.versionar',
   'territorios.ver',
+  'documentos_externos.ver',
+  'documentos_externos.crear',
 ];
 
 const PERMISOS_VISUALIZADOR: string[] = [
@@ -399,6 +425,7 @@ const PERMISOS_VISUALIZADOR: string[] = [
   'archivos.ver',
   'documentos.ver',
   'territorios.ver',
+  'documentos_externos.ver',
 ];
 
 /** Admin operativo: casi todo, sin poder destruir el rol Cuantiva (sigue pudiendo editar roles). */
