@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Put, Post, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -7,20 +7,32 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
+import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
+import { Usuario } from '../usuarios/entities/usuario.entity';
+import { ConfiguracionDashboardService } from './configuracion-dashboard.service';
 import { DashboardService } from './dashboard.service';
 import {
   CumplimientoDashboardDto,
   DashboardCompletoDto,
+  JornadaRecienteDashboardDto,
   ResumenDashboardDto,
   SerieMensualDashboardDto,
   VeredaCoberturaDto,
 } from './dto/respuesta-dashboard.dto';
+import {
+  ActualizarConfiguracionDashboardDto,
+  ConfiguracionDashboardDto,
+  WidgetDisponibleDto,
+} from './dto/widget-dashboard.dto';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth('bearer')
 @Controller('dashboard')
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(
+    private readonly dashboardService: DashboardService,
+    private readonly configuracionDashboardService: ConfiguracionDashboardService,
+  ) {}
 
   @Get()
   @RequierePermisos('dashboard.ver')
@@ -74,5 +86,65 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: [VeredaCoberturaDto] })
   obtenerMapaCobertura(): Promise<VeredaCoberturaDto[]> {
     return this.dashboardService.obtenerMapaCobertura();
+  }
+
+  @Get('jornadas-recientes')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({ summary: 'Últimas jornadas registradas' })
+  @ApiQuery({ name: 'limite', required: false, type: Number })
+  @ApiResponse({ status: 200, type: [JornadaRecienteDashboardDto] })
+  obtenerJornadasRecientes(
+    @Query('limite') limite?: string,
+  ): Promise<JornadaRecienteDashboardDto[]> {
+    const n = limite ? Number(limite) : 5;
+    return this.dashboardService.obtenerJornadasRecientes(
+      Number.isFinite(n) && n > 0 ? Math.min(n, 50) : 5,
+    );
+  }
+
+  @Get('widgets-disponibles')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({
+    summary: 'Catálogo de widgets que el usuario puede ver/agregar',
+  })
+  @ApiResponse({ status: 200, type: [WidgetDisponibleDto] })
+  obtenerWidgetsDisponibles(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<WidgetDisponibleDto[]> {
+    return this.configuracionDashboardService.obtenerDisponibles(usuario);
+  }
+
+  @Get('mi-configuracion')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({ summary: 'Layout personalizado del usuario autenticado' })
+  @ApiResponse({ status: 200, type: ConfiguracionDashboardDto })
+  obtenerMiConfiguracion(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<ConfiguracionDashboardDto> {
+    return this.configuracionDashboardService.obtenerConfiguracion(usuario);
+  }
+
+  @Put('mi-configuracion')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({ summary: 'Guarda el layout personalizado del usuario' })
+  @ApiResponse({ status: 200, type: ConfiguracionDashboardDto })
+  actualizarMiConfiguracion(
+    @UsuarioActual() usuario: Usuario,
+    @Body() dto: ActualizarConfiguracionDashboardDto,
+  ): Promise<ConfiguracionDashboardDto> {
+    return this.configuracionDashboardService.actualizarConfiguracion(
+      usuario,
+      dto,
+    );
+  }
+
+  @Post('mi-configuracion/restablecer')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({ summary: 'Restablece el layout de fábrica del usuario' })
+  @ApiResponse({ status: 200, type: ConfiguracionDashboardDto })
+  restablecerMiConfiguracion(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<ConfiguracionDashboardDto> {
+    return this.configuracionDashboardService.restablecerConfiguracion(usuario);
   }
 }
