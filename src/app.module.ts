@@ -44,6 +44,9 @@ const modulosBase = [
     {
       ttl: 60000,
       limit: 100,
+      skipIf: (context) =>
+        context.switchToHttp().getRequest<{ method?: string }>().method ===
+        'OPTIONS',
     },
   ]),
   UsuariosModule,

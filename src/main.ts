@@ -10,6 +10,29 @@ import { migrarTerritoriosAntesDeSync } from './territorios/migrar-territorios-e
 import { migrarJornadaHistorialAntesDeSync } from './jornadas/migrar-jornada-historial';
 import { migrarTipoCampoTablaAntesDeSync } from './formularios/migrar-tipo-campo-tabla';
 
+const ORIGENES_POR_DEFECTO = [
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+  'https://ruralia.tech',
+  'https://www.ruralia.tech',
+];
+
+function origenPermitido(origin: string): boolean {
+  const extra = (process.env.CORS_ORIGIN ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const permitidos = new Set([...ORIGENES_POR_DEFECTO, ...extra]);
+  if (permitidos.has(origin)) return true;
+
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'ruralia.tech' || host.endsWith('.ruralia.tech');
+  } catch {
+    return false;
+  }
+}
+
 async function bootstrap() {
   // Debe correr antes de TypeORM synchronize.
   await migrarRolesNombreAntesDeSync();
@@ -21,6 +44,19 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register(colaModule),
   );
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || origenPermitido(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
 
   const rutaSubidas =
     process.env.RUTA_SUBIDAS || path.join(process.cwd(), 'subidas');
@@ -41,14 +77,7 @@ async function bootstrap() {
 
   configurarSwagger(app);
 
-  app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? [
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-    ],
-    credentials: true,
-  });
-
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
+

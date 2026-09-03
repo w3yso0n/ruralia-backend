@@ -30,6 +30,10 @@ export class FirebaseAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
+    if (request.method === 'OPTIONS') {
+      return true;
+    }
+
     const authorization = request.headers.authorization;
 
     if (!authorization?.startsWith('Bearer ')) {
