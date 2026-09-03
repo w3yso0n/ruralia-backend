@@ -462,6 +462,21 @@ export class EnviosFormularioService {
     return { filas };
   }
 
+  private parsearBooleano(valor: unknown): boolean {
+    if (valor === true || valor === 1) return true;
+    if (valor === false || valor === 0) return false;
+    if (typeof valor === 'string') {
+      const texto = valor.trim().toLowerCase();
+      if (texto === 'si' || texto === 'sí' || texto === 'true' || texto === '1') {
+        return true;
+      }
+      if (texto === 'no' || texto === 'false' || texto === '0') {
+        return false;
+      }
+    }
+    return Boolean(valor);
+  }
+
   private validarCamposObligatorios(
     campos: CampoFormulario[],
     respuestas: RespuestaEntrada[],
@@ -522,7 +537,7 @@ export class EnviosFormularioService {
       case TipoCampo.SI_NO:
         return manager.create(RespuestaFormulario, {
           ...base,
-          valorBooleano: Boolean(valor),
+          valorBooleano: this.parsearBooleano(valor),
         });
       case TipoCampo.TABLA:
         return manager.create(RespuestaFormulario, {

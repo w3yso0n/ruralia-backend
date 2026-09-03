@@ -1337,6 +1337,7 @@ export class JornadasService {
 
   private valorRespuestaTexto(resp: RespuestaFormulario): string | null {
     if (resp.urlArchivo != null) return resp.urlArchivo;
+    if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
     if (resp.valorTexto != null) {
       const texto = resp.valorTexto.trim();
       if (texto.startsWith('[')) {
@@ -1353,7 +1354,6 @@ export class JornadasService {
     }
     if (resp.valorNumero != null) return String(resp.valorNumero);
     if (resp.valorFecha != null) return resp.valorFecha.toISOString().slice(0, 10);
-    if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
     if (resp.valorJson != null) {
       if (Array.isArray(resp.valorJson)) {
         return resp.valorJson.map((v) => String(v)).filter(Boolean).join(', ');

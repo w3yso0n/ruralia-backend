@@ -6,6 +6,7 @@ import {
   getAuth,
   UserRecord,
 } from 'firebase-admin/auth';
+import { normalizarClavePrivadaFirebase } from './normalizar-clave-privada';
 
 @Injectable()
 export class FirebaseAdminService implements OnModuleInit {
@@ -16,13 +17,20 @@ export class FirebaseAdminService implements OnModuleInit {
   onModuleInit(): void {
     const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
     const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
-    const privateKey = this.configService
-      .get<string>('FIREBASE_PRIVATE_KEY')
-      ?.replace(/\\n/g, '\n');
+    const privateKeyRaw = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
+    const privateKey = privateKeyRaw
+      ? normalizarClavePrivadaFirebase(privateKeyRaw)
+      : undefined;
 
     if (!projectId || !clientEmail || !privateKey) {
       throw new Error(
         'Variables de entorno de Firebase no configuradas (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)',
+      );
+    }
+
+    if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+      throw new Error(
+        'FIREBASE_PRIVATE_KEY no es un PEM válido. En Docker/Coolify pégala en una sola línea con \\n (sin saltos reales) y sin comillas extra.',
       );
     }
 
