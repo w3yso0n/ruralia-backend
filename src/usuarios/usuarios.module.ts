@@ -4,6 +4,7 @@ import { AutenticacionModule } from '../autenticacion/autenticacion.module';
 import { Permiso } from './entities/permiso.entity';
 import { Rol } from './entities/rol.entity';
 import { Usuario } from './entities/usuario.entity';
+import { AdminsBootstrapService } from './admins-bootstrap.service';
 import { PermisosSeedService } from './permisos-seed.service';
 import { RolesController } from './roles.controller';
 import { RolesService } from './roles.service';
@@ -16,7 +17,12 @@ import { UsuariosService } from './usuarios.service';
     forwardRef(() => AutenticacionModule),
   ],
   controllers: [UsuariosController, RolesController],
-  providers: [UsuariosService, RolesService, PermisosSeedService],
+  providers: [
+    UsuariosService,
+    RolesService,
+    PermisosSeedService,
+    AdminsBootstrapService,
+  ],
   exports: [UsuariosService, TypeOrmModule, PermisosSeedService],
 })
 export class UsuariosModule {}

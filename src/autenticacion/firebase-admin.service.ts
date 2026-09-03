@@ -51,6 +51,34 @@ export class FirebaseAdminService implements OnModuleInit {
     return getAuth(this.app).verifyIdToken(token);
   }
 
+  async obtenerPorCorreo(correo: string): Promise<UserRecord | null> {
+    try {
+      return await getAuth(this.app).getUserByEmail(correo);
+    } catch (error) {
+      if ((error as { code?: string }).code === 'auth/user-not-found') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async asegurarUsuario(
+    correo: string,
+    contrasena: string,
+    nombreCompleto: string,
+  ): Promise<UserRecord> {
+    const existente = await this.obtenerPorCorreo(correo);
+    if (existente) {
+      return getAuth(this.app).updateUser(existente.uid, {
+        password: contrasena,
+        displayName: nombreCompleto,
+        disabled: false,
+        emailVerified: true,
+      });
+    }
+    return this.crearUsuario(correo, contrasena, nombreCompleto);
+  }
+
   async crearUsuario(
     correo: string,
     contrasena: string,
