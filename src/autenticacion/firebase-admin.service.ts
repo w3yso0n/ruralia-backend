@@ -1,15 +1,20 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createPrivateKey } from 'node:crypto';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import {
   DecodedIdToken,
   getAuth,
   UserRecord,
 } from 'firebase-admin/auth';
-import { normalizarClavePrivadaFirebase } from './normalizar-clave-privada';
+import {
+  clavePrivadaFirebaseEsValida,
+  normalizarClavePrivadaFirebase,
+} from './normalizar-clave-privada';
 
 @Injectable()
 export class FirebaseAdminService implements OnModuleInit {
+  private readonly logger = new Logger(FirebaseAdminService.name);
   private app: App;
 
   constructor(private readonly configService: ConfigService) {}
@@ -17,7 +22,9 @@ export class FirebaseAdminService implements OnModuleInit {
   onModuleInit(): void {
     const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
     const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
-    const privateKeyRaw = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
+    const privateKeyRaw =
+      this.configService.get<string>('FIREBASE_PRIVATE_KEY_BASE64') ??
+      this.configService.get<string>('FIREBASE_PRIVATE_KEY');
     const privateKey = privateKeyRaw
       ? normalizarClavePrivadaFirebase(privateKeyRaw)
       : undefined;
@@ -28,9 +35,17 @@ export class FirebaseAdminService implements OnModuleInit {
       );
     }
 
-    if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    if (!clavePrivadaFirebaseEsValida(privateKey)) {
       throw new Error(
-        'FIREBASE_PRIVATE_KEY no es un PEM válido. En Docker/Coolify pégala en una sola línea con \\n (sin saltos reales) y sin comillas extra.',
+        `FIREBASE_PRIVATE_KEY inválida o truncada por Coolify (len=${privateKey.length}, begin=${privateKey.includes('-----BEGIN PRIVATE KEY-----')}, end=${privateKey.includes('-----END PRIVATE KEY-----')}). Pega solo el cuerpo base64 en una sola línea, sin BEGIN/END, sin comillas y sin \\n.`,
+      );
+    }
+
+    try {
+      createPrivateKey(privateKey);
+    } catch {
+      throw new Error(
+        `FIREBASE_PRIVATE_KEY no se pudo parsear (len=${privateKey.length}). En Coolify usa el cuerpo PKCS#8 en una sola línea, sin saltos.`,
       );
     }
 
@@ -42,6 +57,7 @@ export class FirebaseAdminService implements OnModuleInit {
           privateKey,
         }),
       });
+      this.logger.log('Firebase Admin inicializado');
     } else {
       this.app = getApps()[0];
     }
