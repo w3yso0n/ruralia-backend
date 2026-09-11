@@ -90,12 +90,20 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     enum: TipoJornada,
     description:
-      'INDIVIDUAL (formularios de campo) o GRUPAL (lista de asistencia). Por defecto INDIVIDUAL.',
+      'INDIVIDUAL (formularios de campo) o GRUPAL (lista de asistencia). Por defecto INDIVIDUAL. Si se envía plantillaFormularioId, el tipo se toma de esa plantilla.',
     default: TipoJornada.INDIVIDUAL,
   })
   @IsEnum(TipoJornada)
   @IsOptional()
   tipo?: TipoJornada;
+
+  @ApiPropertyOptional({
+    description:
+      'Plantilla de formulario a usar en esta jornada (cualquier plantilla publicada). Si se omite, se usa el formulario individual o grupal asignado al proceso de la meta.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  plantillaFormularioId?: string | null;
 
   @ApiPropertyOptional({
     description:
@@ -195,6 +203,15 @@ export class ActualizarJornadaDto {
   @IsEnum(TipoJornada)
   @IsOptional()
   tipo?: TipoJornada;
+
+  @ApiPropertyOptional({
+    description:
+      'Plantilla concreta; envíe null para volver al formulario del proceso',
+    nullable: true,
+  })
+  @IsUUID('4')
+  @IsOptional()
+  plantillaFormularioId?: string | null;
 }
 
 export class CambiarEstadoJornadaDto {

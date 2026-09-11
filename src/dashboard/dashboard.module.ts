@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActividadesModule } from '../actividades/actividades.module';
+import { EvaluacionesModule } from '../evaluaciones/evaluaciones.module';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
@@ -21,6 +22,7 @@ import { WidgetsDashboardSeedService } from './widgets-dashboard-seed.service';
 @Module({
   imports: [
     ActividadesModule,
+    EvaluacionesModule,
     TypeOrmModule.forFeature([
       Proyecto,
       Jornada,

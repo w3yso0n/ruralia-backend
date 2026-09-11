@@ -179,6 +179,15 @@ export class JornadasService {
         ? await this.validarActividadesJornada(dto.proyectoId, dto.actividades)
         : [];
 
+    const plantilla = await this.resolverPlantillaOpcional(
+      dto.plantillaFormularioId,
+    );
+    const tipoJornada = plantilla
+      ? plantilla.tipoPlantilla === TipoPlantilla.GRUPAL
+        ? TipoJornada.GRUPAL
+        : TipoJornada.INDIVIDUAL
+      : (dto.tipo ?? TipoJornada.INDIVIDUAL);
+
     const grupoJornadaId = tecnicoIds.length > 1 ? randomUUID() : null;
     const tecnicosPorId = new Map(tecnicos.map((t) => [t.id, t]));
 
@@ -194,10 +203,13 @@ export class JornadasService {
           observaciones: dto.observaciones,
           latitud: dto.latitud,
           longitud: dto.longitud,
-          tipo: dto.tipo ?? TipoJornada.INDIVIDUAL,
+          tipo: tipoJornada,
           requiereRevision: dto.requiereRevision ?? true,
           proyecto: { id: dto.proyectoId },
           meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
+          plantillaFormulario: plantilla
+            ? ({ id: plantilla.id } as PlantillaFormulario)
+            : null,
           vereda: { id: dto.veredaId },
           tecnicoResponsable: { id: tecnicoId },
           tecnicoResponsableNombre: tecnico.nombreCompleto,
@@ -243,6 +255,45 @@ export class JornadasService {
       return [...new Set(dto.tecnicoResponsableIds)];
     }
     return [dto.tecnicoResponsableId ?? usuarioActual.id];
+  }
+
+  async listarCatalogoFormularios(): Promise<
+    Array<{
+      id: string;
+      nombre: string;
+      tipoPlantilla: TipoPlantilla;
+      version: number;
+    }>
+  > {
+    const plantillas = await this.plantillaRepository.find({
+      where: { estaActivo: true },
+      select: { id: true, nombre: true, tipoPlantilla: true, version: true },
+      order: { nombre: 'ASC' },
+    });
+    return plantillas.map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      tipoPlantilla: p.tipoPlantilla,
+      version: p.version,
+    }));
+  }
+
+  private async resolverPlantillaOpcional(
+    plantillaId?: string | null,
+  ): Promise<PlantillaFormulario | null> {
+    if (!plantillaId) return null;
+    const plantilla = await this.plantillaRepository.findOne({
+      where: { id: plantillaId },
+    });
+    if (!plantilla) {
+      throw new NotFoundException(`Plantilla ${plantillaId} no encontrada`);
+    }
+    if (!plantilla.estaActivo) {
+      throw new BadRequestException(
+        'Solo se pueden usar plantillas publicadas',
+      );
+    }
+    return plantilla;
   }
 
   private async mapearHermanosGrupo(
@@ -291,6 +342,7 @@ export class JornadasService {
       .leftJoinAndSelect('ja.actividad', 'actividadJa')
       .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
       .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
+      .leftJoinAndSelect('jornada.plantillaFormulario', 'plantillaFormulario')
       .orderBy('jornada.fecha', 'DESC')
       .addOrderBy('ja.orden', 'ASC');
 
@@ -358,6 +410,7 @@ export class JornadasService {
       .leftJoinAndSelect('meta.proceso', 'proceso')
       .leftJoinAndSelect('proceso.subactividad', 'subactividad')
       .leftJoinAndSelect('subactividad.actividad', 'actividad')
+      .leftJoinAndSelect('jornada.plantillaFormulario', 'plantillaFormulario')
       .where(
         '(jornada.tecnico_responsable_id = :usuarioId OR EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = jornada.id AND je.usuario_id = :usuarioId))',
         { usuarioId: usuario.id },
@@ -399,6 +452,7 @@ export class JornadasService {
         beneficiarios: true,
         equipo: true,
         asistentes: true,
+        plantillaFormulario: true,
       },
       order: {
         jornadaActividades: { orden: 'ASC' },
@@ -445,7 +499,7 @@ export class JornadasService {
   ): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
-      relations: { proyecto: true },
+      relations: { proyecto: true, plantillaFormulario: true },
     });
 
     if (!jornada) {
@@ -461,7 +515,7 @@ export class JornadasService {
     const objetivos = jornada.grupoJornadaId
       ? await this.jornadaRepository.find({
           where: { grupoJornadaId: jornada.grupoJornadaId },
-          relations: { proyecto: true },
+          relations: { proyecto: true, plantillaFormulario: true },
         })
       : [jornada];
 
@@ -489,6 +543,11 @@ export class JornadasService {
       metaValidada = meta;
     }
 
+    const plantillaNueva =
+      dto.plantillaFormularioId !== undefined
+        ? await this.resolverPlantillaOpcional(dto.plantillaFormularioId)
+        : undefined;
+
     for (const objetivo of objetivos) {
       if (dto.fecha !== undefined) {
         this.validarFechaDentroDelProyecto(dto.fecha, objetivo.proyecto);
@@ -505,6 +564,15 @@ export class JornadasService {
       if (dto.tipo !== undefined) objetivo.tipo = dto.tipo;
       if (dto.veredaId !== undefined) {
         objetivo.vereda = { id: dto.veredaId } as Jornada['vereda'];
+      }
+      if (plantillaNueva !== undefined) {
+        objetivo.plantillaFormulario = plantillaNueva;
+        if (plantillaNueva) {
+          objetivo.tipo =
+            plantillaNueva.tipoPlantilla === TipoPlantilla.GRUPAL
+              ? TipoJornada.GRUPAL
+              : TipoJornada.INDIVIDUAL;
+        }
       }
       if (metaValidada !== undefined) {
         objetivo.meta = { id: dto.metaId! } as Meta;
@@ -985,6 +1053,7 @@ export class JornadasService {
         vereda: true,
         meta: { proceso: true },
         tecnicoResponsable: true,
+        plantillaFormulario: { campos: true },
       },
     });
 
@@ -999,24 +1068,25 @@ export class JornadasService {
     }
 
     const procesoId = jornada.meta?.proceso?.id;
-    if (!procesoId) {
-      throw new BadRequestException(
-        'La jornada no tiene proceso vinculado para obtener el formulario grupal',
-      );
-    }
-
-    const plantilla = await this.plantillaRepository.findOne({
-      where: {
-        procesos: { id: procesoId },
-        estaActivo: true,
-        tipoPlantilla: TipoPlantilla.GRUPAL,
-      },
-      relations: { campos: true },
-    });
+    const plantilla =
+      jornada.plantillaFormulario?.estaActivo
+        ? jornada.plantillaFormulario
+        : procesoId
+          ? await this.plantillaRepository.findOne({
+              where: {
+                procesos: { id: procesoId },
+                estaActivo: true,
+                tipoPlantilla: TipoPlantilla.GRUPAL,
+              },
+              relations: { campos: true },
+            })
+          : null;
 
     if (!plantilla) {
       throw new BadRequestException(
-        'No hay formulario grupal publicado asignado al proceso',
+        jornada.plantillaFormulario
+          ? 'La plantilla de esta jornada no está publicada'
+          : 'No hay formulario grupal publicado asignado al proceso',
       );
     }
 

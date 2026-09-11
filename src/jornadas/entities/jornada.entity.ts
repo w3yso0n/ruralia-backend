@@ -19,6 +19,7 @@ import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 import { TipoJornada } from '../enums/tipo-jornada.enum';
+import { PlantillaFormulario } from '../../formularios/entities/plantilla-formulario.entity';
 import { JornadaActividad } from './jornada-actividad.entity';
 import { JornadaAsistente } from './jornada-asistente.entity';
 
@@ -106,6 +107,14 @@ export class Jornada {
   @ManyToOne(() => Meta, { nullable: true })
   @JoinColumn({ name: 'meta_id' })
   meta: Meta | null;
+
+  /**
+   * Plantilla concreta a usar en esta jornada. Si es null, se usa el
+   * formulario individual/grupal asignado al proceso de la meta.
+   */
+  @ManyToOne(() => PlantillaFormulario, { nullable: true })
+  @JoinColumn({ name: 'plantilla_formulario_id' })
+  plantillaFormulario: PlantillaFormulario | null;
 
   @OneToMany(() => JornadaActividad, (ja) => ja.jornada, { cascade: true })
   jornadaActividades: JornadaActividad[];

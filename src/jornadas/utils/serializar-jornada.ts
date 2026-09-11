@@ -81,6 +81,14 @@ export function aRespuestaJornada(
           jornada.tecnicoResponsable?.nombreCompleto ||
           '',
       } as RespuestaResumenDto,
+      plantillaFormulario: jornada.plantillaFormulario
+        ? {
+            id: jornada.plantillaFormulario.id,
+            nombre: jornada.plantillaFormulario.nombre,
+            tipoPlantilla: jornada.plantillaFormulario.tipoPlantilla,
+            version: jornada.plantillaFormulario.version,
+          }
+        : null,
       beneficiarios: jornada.beneficiarios?.map((b) => ({
         id: b.id,
         nombre: `${b.nombres} ${b.apellidos}`,

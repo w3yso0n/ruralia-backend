@@ -1,20 +1,32 @@
-import { Body, Controller, Get, Put, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
-  ApiQuery,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ConfiguracionDashboardService } from './configuracion-dashboard.service';
 import { DashboardService } from './dashboard.service';
+import { FiltrosDashboardDto } from './dto/filtros-dashboard.dto';
 import {
   CumplimientoDashboardDto,
   DashboardCompletoDto,
   JornadaRecienteDashboardDto,
+  ProyectoFiltroDashboardDto,
   ResumenDashboardDto,
   SerieMensualDashboardDto,
   VeredaCoberturaDto,
@@ -39,44 +51,83 @@ export class DashboardController {
   @ApiOperation({
     summary: 'Dashboard completo (KPIs, medidores, series, mapas)',
   })
-  @ApiQuery({ name: 'meses', required: false, type: Number })
   @ApiResponse({ status: 200, type: DashboardCompletoDto })
   obtenerCompleto(
-    @Query('meses') meses?: string,
+    @Query() filtros: FiltrosDashboardDto,
   ): Promise<DashboardCompletoDto> {
-    const n = meses ? Number(meses) : 6;
     return this.dashboardService.obtenerCompleto(
-      Number.isFinite(n) && n > 0 ? Math.min(n, 24) : 6,
+      filtros.meses ?? 6,
+      filtros.proyectoId,
     );
+  }
+
+  @Get('proyectos')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({
+    summary: 'Listado liviano de proyectos para filtrar el dashboard',
+  })
+  @ApiResponse({ status: 200, type: [ProyectoFiltroDashboardDto] })
+  listarProyectosFiltro(): Promise<ProyectoFiltroDashboardDto[]> {
+    return this.dashboardService.listarProyectosFiltro();
+  }
+
+  @Get('reporte/pdf')
+  @RequierePermisos('dashboard.ver')
+  @ApiOperation({
+    summary:
+      'Descargar PDF imprimible del reporte operativo (todos los proyectos o uno solo)',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF del dashboard' })
+  async descargarPdf(
+    @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.dashboardService.generarPdf(
+      filtros.proyectoId,
+      usuario.nombreCompleto,
+    );
+    const sufijo = filtros.proyectoId
+      ? filtros.proyectoId.slice(0, 8)
+      : 'general';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="reporte-dashboard-${sufijo}.pdf"`,
+    });
+    return new StreamableFile(pdf);
   }
 
   @Get('resumen')
   @RequierePermisos('dashboard.ver')
   @ApiOperation({ summary: 'KPIs principales del dashboard' })
   @ApiResponse({ status: 200, type: ResumenDashboardDto })
-  obtenerResumen(): Promise<ResumenDashboardDto> {
-    return this.dashboardService.obtenerResumen();
+  obtenerResumen(
+    @Query() filtros: FiltrosDashboardDto,
+  ): Promise<ResumenDashboardDto> {
+    return this.dashboardService.obtenerResumen(filtros.proyectoId);
   }
 
   @Get('cumplimiento')
   @RequierePermisos('dashboard.ver')
   @ApiOperation({ summary: 'Medidores de cumplimiento operativo' })
   @ApiResponse({ status: 200, type: CumplimientoDashboardDto })
-  obtenerCumplimiento(): Promise<CumplimientoDashboardDto> {
-    return this.dashboardService.obtenerCumplimiento();
+  obtenerCumplimiento(
+    @Query() filtros: FiltrosDashboardDto,
+  ): Promise<CumplimientoDashboardDto> {
+    return this.dashboardService.obtenerCumplimiento(filtros.proyectoId);
   }
 
   @Get('actividad-mensual')
   @RequierePermisos('dashboard.ver')
   @ApiOperation({ summary: 'Serie mensual de actividad' })
-  @ApiQuery({ name: 'meses', required: false, type: Number })
   @ApiResponse({ status: 200, type: [SerieMensualDashboardDto] })
   obtenerActividadMensual(
-    @Query('meses') meses?: string,
+    @Query() filtros: FiltrosDashboardDto,
   ): Promise<SerieMensualDashboardDto[]> {
-    const n = meses ? Number(meses) : 6;
     return this.dashboardService.obtenerActividadMensual(
-      Number.isFinite(n) && n > 0 ? Math.min(n, 24) : 6,
+      filtros.meses ?? 6,
+      filtros.proyectoId,
     );
   }
 
@@ -84,21 +135,22 @@ export class DashboardController {
   @RequierePermisos('dashboard.ver')
   @ApiOperation({ summary: 'Veredas con proyectos para mapa de cobertura' })
   @ApiResponse({ status: 200, type: [VeredaCoberturaDto] })
-  obtenerMapaCobertura(): Promise<VeredaCoberturaDto[]> {
-    return this.dashboardService.obtenerMapaCobertura();
+  obtenerMapaCobertura(
+    @Query() filtros: FiltrosDashboardDto,
+  ): Promise<VeredaCoberturaDto[]> {
+    return this.dashboardService.obtenerMapaCobertura(filtros.proyectoId);
   }
 
   @Get('jornadas-recientes')
   @RequierePermisos('dashboard.ver')
   @ApiOperation({ summary: 'Últimas jornadas registradas' })
-  @ApiQuery({ name: 'limite', required: false, type: Number })
   @ApiResponse({ status: 200, type: [JornadaRecienteDashboardDto] })
   obtenerJornadasRecientes(
-    @Query('limite') limite?: string,
+    @Query() filtros: FiltrosDashboardDto,
   ): Promise<JornadaRecienteDashboardDto[]> {
-    const n = limite ? Number(limite) : 5;
     return this.dashboardService.obtenerJornadasRecientes(
-      Number.isFinite(n) && n > 0 ? Math.min(n, 50) : 5,
+      filtros.limite ?? 5,
+      filtros.proyectoId,
     );
   }
 

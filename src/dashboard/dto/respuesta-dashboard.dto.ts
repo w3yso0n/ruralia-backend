@@ -216,3 +216,17 @@ export class DashboardCompletoDto {
   @ApiProperty({ type: [JornadaRecienteDashboardDto] })
   jornadasRecientes: JornadaRecienteDashboardDto[];
 }
+
+export class ProyectoFiltroDashboardDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  nombre: string;
+
+  @ApiProperty({ enum: TipoProyecto })
+  tipo: TipoProyecto;
+
+  @ApiProperty({ enum: EstadoProyecto })
+  estado: EstadoProyecto;
+}

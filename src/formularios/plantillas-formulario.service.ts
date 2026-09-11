@@ -397,7 +397,17 @@ export class PlantillasFormularioService {
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id: jornadaId },
-      relations: { meta: { proceso: true }, proyecto: true, tecnicoResponsable: true },
+      relations: {
+        meta: { proceso: true },
+        proyecto: true,
+        tecnicoResponsable: true,
+        plantillaFormulario: {
+          campos: true,
+          procesos: true,
+          subactividades: true,
+          usuarios: true,
+        },
+      },
     });
 
     if (!jornada) {
@@ -428,6 +438,10 @@ export class PlantillasFormularioService {
       if (!esMiembro) {
         throw new ForbiddenException('No tiene acceso a esta jornada');
       }
+    }
+
+    if (jornada.plantillaFormulario?.estaActivo) {
+      return [aRespuestaPlantilla(jornada.plantillaFormulario)];
     }
 
     if (!jornada.meta?.proceso) {

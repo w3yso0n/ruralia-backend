@@ -3,6 +3,7 @@ import { Expose, Transform, Type } from 'class-transformer';
 import { EstadoEjecucionJornada } from '../enums/estado-ejecucion-jornada.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 import { TipoJornada } from '../enums/tipo-jornada.enum';
+import { TipoPlantilla } from '../../formularios/enums/tipo-plantilla.enum';
 
 export class RespuestaResumenDto {
   @ApiProperty({ description: 'ID del recurso' })
@@ -84,6 +85,24 @@ export class RespuestaMetaResumenDto {
   ejecutadoTotal?: number;
 }
 
+export class PlantillaFormularioResumenDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  nombre: string;
+
+  @ApiProperty({ enum: TipoPlantilla })
+  @Expose()
+  tipoPlantilla: TipoPlantilla;
+
+  @ApiPropertyOptional()
+  @Expose()
+  version?: number;
+}
+
 export class RespuestaHermanoGrupoDto {
   @ApiProperty({ description: 'ID de la jornada hermana' })
   @Expose()
@@ -135,6 +154,16 @@ export class RespuestaJornadaDto {
   })
   @Expose()
   tipo: TipoJornada;
+
+  @ApiPropertyOptional({
+    type: PlantillaFormularioResumenDto,
+    description:
+      'Plantilla concreta de esta jornada; si es null se usa la del proceso',
+    nullable: true,
+  })
+  @Expose()
+  @Type(() => PlantillaFormularioResumenDto)
+  plantillaFormulario?: PlantillaFormularioResumenDto | null;
 
   @ApiPropertyOptional({
     description: 'Nombre de identificación de la jornada',

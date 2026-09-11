@@ -43,6 +43,7 @@ import { FiltrosJornadaDto } from './dto/filtros-jornada.dto';
 import { FiltrosJornadaAsignadaDto } from './dto/filtros-jornada-asignada.dto';
 import {
   ResumenJornadaDto,
+  PlantillaFormularioResumenDto,
   RespuestaCrearJornadasDto,
   RespuestaJornadaDto,
   RespuestaPaginadaJornadasDto,
@@ -88,6 +89,17 @@ export class JornadasController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPaginadaJornadasDto> {
     return this.jornadasService.listarAsignadasAUsuario(usuario, filtros);
+  }
+
+  @Get('catalogo-formularios')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({
+    summary:
+      'Plantillas de formulario publicadas para elegir al crear o editar una jornada',
+  })
+  @ApiResponse({ status: 200, type: [PlantillaFormularioResumenDto] })
+  listarCatalogoFormularios(): Promise<PlantillaFormularioResumenDto[]> {
+    return this.jornadasService.listarCatalogoFormularios();
   }
 
   @Get(':id/resumen')
