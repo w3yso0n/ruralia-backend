@@ -105,6 +105,7 @@ export class DocumentosExternosService {
       .createQueryBuilder('documento')
       .leftJoinAndSelect('documento.subidoPor', 'subidoPor')
       .leftJoinAndSelect('documento.jornada', 'jornada')
+      .leftJoinAndSelect('jornada.beneficiarios', 'beneficiariosJornada')
       .leftJoinAndSelect('documento.actividad', 'actividad')
       .leftJoinAndSelect('documento.subactividad', 'subactividad')
       .leftJoinAndSelect('documento.beneficiario', 'beneficiario')

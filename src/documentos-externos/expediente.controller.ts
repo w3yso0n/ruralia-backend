@@ -1,13 +1,19 @@
-import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
+import { DescargarExpedienteDto } from './dto/descargar-expediente.dto';
+import { ExpedienteDescargaService } from './expediente-descarga.service';
 import { ExpedienteService } from './expediente.service';
 
 @ApiTags('Expediente')
 @ApiBearerAuth('bearer')
 @Controller('proyectos')
 export class ExpedienteController {
-  constructor(private readonly expedienteService: ExpedienteService) {}
+  constructor(
+    private readonly expedienteService: ExpedienteService,
+    private readonly descargaService: ExpedienteDescargaService,
+  ) {}
 
   @Get(':id/expediente')
   @RequierePermisos('documentos_externos.ver')
@@ -18,5 +24,20 @@ export class ExpedienteController {
   })
   obtener(@Param('id', ParseUUIDPipe) id: string) {
     return this.expedienteService.obtenerExpediente(id);
+  }
+
+  @Post(':id/expediente/descarga')
+  @RequierePermisos('documentos_externos.ver')
+  @ApiOperation({
+    summary: 'Descargar expediente filtrado en ZIP',
+    description:
+      'Arma un ZIP con el PDF vigente, los adjuntos del formulario y las evidencias de cada jornada, en carpetas de actividad, subactividad, proceso, meta y jornada.',
+  })
+  descargar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DescargarExpedienteDto,
+    @Res() res: Response,
+  ) {
+    return this.descargaService.escribirZip(id, dto, res);
   }
 }

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { existsSync } from 'fs';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -52,9 +53,40 @@ export class DocumentosService {
   async listarPorProyecto(proyectoId: string): Promise<Documento[]> {
     return this.documentoRepo.find({
       where: { proyectoId },
-      relations: { versiones: true },
+      relations: { versiones: true, jornada: { beneficiarios: true } },
       order: { creadoEn: 'DESC' },
     });
+  }
+
+  async leerPdfVigente(
+    documentoId: string,
+    versionId?: string,
+  ): Promise<{ buffer: Buffer; nombre: string }> {
+    const doc = await this.obtenerConVersiones(documentoId);
+    const vigente = versionId
+      ? doc.versiones.find((v) => v.id === versionId)
+      : (doc.versiones.find((v) => v.id === doc.versionVigenteId) ??
+        [...doc.versiones].reverse().find((v) => v.filePath));
+    if (versionId && !vigente) {
+      throw new NotFoundException('Versión no encontrada en este documento');
+    }
+    if (!vigente?.filePath) {
+      throw new NotFoundException(
+        'Este documento aún no tiene un archivo generado',
+      );
+    }
+
+    const absoluta = this.resolverRutaPdf(vigente.filePath);
+    if (!absoluta) {
+      throw new NotFoundException(
+        'No se encontró el archivo del documento en el servidor',
+      );
+    }
+
+    return {
+      buffer: await fs.readFile(absoluta),
+      nombre: this.nombreArchivoPdf(doc.titulo, vigente.versionNumber),
+    };
   }
 
   async obtenerConVersiones(documentoId: string): Promise<Documento> {
@@ -483,6 +515,32 @@ export class DocumentosService {
               : 'TEXTO',
         valor,
       }));
+  }
+
+  private resolverRutaPdf(filePath: string): string | null {
+    if (path.isAbsolute(filePath) && existsSync(filePath)) return filePath;
+
+    const enCwd = path.join(process.cwd(), filePath);
+    if (existsSync(enCwd)) return enCwd;
+
+    const rutaBase =
+      this.configService.get<string>('RUTA_SUBIDAS') ||
+      path.join(process.cwd(), 'subidas');
+    const relativo = filePath.replace(/^subidas[/\\]/, '');
+    const enBase = path.join(rutaBase, relativo);
+    if (existsSync(enBase)) return enBase;
+
+    return null;
+  }
+
+  private nombreArchivoPdf(titulo: string, version: number): string {
+    const base = titulo
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+    return `${base || 'documento'}-v${version}.pdf`;
   }
 
   private async guardarPdf(

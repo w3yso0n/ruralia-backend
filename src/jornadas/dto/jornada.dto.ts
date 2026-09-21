@@ -133,7 +133,7 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Beneficiarios del proyecto atendidos en esta jornada. Se eligen al registrar la visita.',
+      'Beneficiarios del proyecto atendidos en esta jornada. Obligatorio si no se envían asociaciones.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -143,7 +143,7 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Asociaciones del proyecto atendidas en esta jornada. Se eligen al registrar la visita.',
+      'Asociaciones del proyecto atendidas en esta jornada. Obligatorio si no se envían beneficiarios. No se combinan con beneficiarios.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -235,7 +235,8 @@ export class ActualizarJornadaDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Beneficiarios del proyecto atendidos en esta jornada',
+    description:
+      'Reemplaza los beneficiarios de la jornada. Si se envía, la jornada debe quedar asignada a beneficiarios o a asociaciones, no a ambos ni a ninguno.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -244,7 +245,8 @@ export class ActualizarJornadaDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Asociaciones del proyecto atendidas en esta jornada',
+    description:
+      'Reemplaza las asociaciones de la jornada. No se combina con beneficiarios.',
   })
   @IsArray()
   @IsUUID('4', { each: true })

@@ -9,6 +9,7 @@ import { migrarRolesNombreAntesDeSync } from './usuarios/migrar-roles-nombre';
 import { migrarTerritoriosAntesDeSync } from './territorios/migrar-territorios-esquema';
 import { migrarJornadaHistorialAntesDeSync } from './jornadas/migrar-jornada-historial';
 import { migrarTipoCampoTablaAntesDeSync } from './formularios/migrar-tipo-campo-tabla';
+import { migrarDocumentosUnicosAntesDeSync } from './documentos/migrar-documentos-unicos';
 
 const ORIGENES_POR_DEFECTO = [
   'http://localhost:3001',
@@ -39,6 +40,7 @@ async function bootstrap() {
   await migrarTerritoriosAntesDeSync();
   await migrarJornadaHistorialAntesDeSync();
   await migrarTipoCampoTablaAntesDeSync();
+  await migrarDocumentosUnicosAntesDeSync();
 
   const colaModule = await ColaModule.forRoot();
   const app = await NestFactory.create<NestExpressApplication>(

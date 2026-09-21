@@ -1,5 +1,19 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { DocumentosService } from './documentos.service';
 
@@ -21,6 +35,29 @@ export class DocumentosController {
   @ApiOperation({ summary: 'Obtener documento con versiones' })
   obtener(@Param('id', ParseUUIDPipe) id: string) {
     return this.documentosService.obtenerConVersiones(id);
+  }
+
+  @Get(':id/archivo')
+  @RequierePermisos('jornadas.ver')
+  @ApiOperation({
+    summary: 'Ver o descargar el PDF vigente de un documento generado',
+  })
+  @ApiProduces('application/pdf')
+  async archivo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('versionId', new ParseUUIDPipe({ optional: true }))
+    versionId: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, nombre } = await this.documentosService.leerPdfVigente(
+      id,
+      versionId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${nombre}"`,
+    });
+    return new StreamableFile(buffer);
   }
 
   @Get(':id/versiones/comparar')

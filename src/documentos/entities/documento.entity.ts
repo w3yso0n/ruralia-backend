@@ -6,6 +6,7 @@ import {
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  Unique,
 } from 'typeorm';
 import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { Jornada } from '../../jornadas/entities/jornada.entity';
@@ -14,6 +15,7 @@ import { TipoDocumento } from '../enums/tipo-documento.enum';
 import { DocumentoVersion } from './documento-version.entity';
 
 @Entity('documents')
+@Unique('UQ_documento_jornada_tipo', ['jornadaId', 'tipo'])
 export class Documento {
   @PrimaryGeneratedColumn('uuid')
   id: string;

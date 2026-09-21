@@ -187,6 +187,8 @@ export class JornadasService {
         : TipoJornada.INDIVIDUAL
       : (dto.tipo ?? TipoJornada.INDIVIDUAL);
 
+    this.validarAsignacionExclusiva(dto.beneficiarioIds, dto.asociacionIds);
+
     const participantes = await this.resolverParticipantesDeProyecto(
       dto.proyectoId,
       dto.beneficiarioIds,
@@ -262,6 +264,26 @@ export class JornadasService {
       return [...new Set(dto.tecnicoResponsableIds)];
     }
     return [dto.tecnicoResponsableId ?? usuarioActual.id];
+  }
+
+  private validarAsignacionExclusiva(
+    beneficiarioIds?: string[],
+    asociacionIds?: string[],
+  ): void {
+    const tieneBeneficiarios = (beneficiarioIds?.length ?? 0) > 0;
+    const tieneAsociaciones = (asociacionIds?.length ?? 0) > 0;
+
+    if (!tieneBeneficiarios && !tieneAsociaciones) {
+      throw new BadRequestException(
+        'La jornada debe asignarse a un beneficiario o a una asociación del proyecto',
+      );
+    }
+
+    if (tieneBeneficiarios && tieneAsociaciones) {
+      throw new BadRequestException(
+        'La jornada se asigna a beneficiarios o a asociaciones, no a ambos a la vez',
+      );
+    }
   }
 
   private async resolverParticipantesDeProyecto(
@@ -563,7 +585,16 @@ export class JornadasService {
 
     return aRespuestaJornada(jornada, {
       enviosFormulario: envios,
-      evidencias,
+      evidencias: evidencias.map((evidencia) => ({
+        id: evidencia.id,
+        tipo: evidencia.tipo,
+        nombreArchivo: evidencia.nombreArchivo,
+        urlArchivo: evidencia.urlArchivo ?? null,
+        urlMiniatura: evidencia.urlMiniatura ?? null,
+        tipoMime: evidencia.tipoMime,
+        capturadoEn: evidencia.capturadoEn,
+        estado: evidencia.estado,
+      })),
       metaEjecutadoTotal,
       grupo: jornada.grupoJornadaId
         ? hermanosPorGrupo.get(jornada.grupoJornadaId)
@@ -673,12 +704,18 @@ export class JornadasService {
     }
 
     if (dto.beneficiarioIds !== undefined || dto.asociacionIds !== undefined) {
+      const beneficiarioIds =
+        dto.beneficiarioIds ??
+        jornada.beneficiarios?.map((b) => b.id) ??
+        [];
+      const asociacionIds =
+        dto.asociacionIds ?? jornada.asociaciones?.map((a) => a.id) ?? [];
+      this.validarAsignacionExclusiva(beneficiarioIds, asociacionIds);
+
       const participantes = await this.resolverParticipantesDeProyecto(
         jornada.proyecto.id,
-        dto.beneficiarioIds ??
-          jornada.beneficiarios?.map((b) => b.id) ??
-          [],
-        dto.asociacionIds ?? jornada.asociaciones?.map((a) => a.id) ?? [],
+        beneficiarioIds,
+        asociacionIds,
       );
       for (const objetivo of objetivos) {
         if (dto.beneficiarioIds !== undefined) {

@@ -9,9 +9,11 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
+import { EstadoFuncional } from '../common/workflow/estado-funcional.enum';
 import { ColaEvidenciasService } from '../cola/cola-evidencias.service';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EstadoEvidencia } from '../evidencias/enums/estado-evidencia.enum';
+import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto';
 
@@ -84,6 +86,66 @@ export class ArchivosService {
     });
 
     return { archivoId: evidenciaId, estado: 'en_cola' };
+  }
+
+  async subirEvidenciaDeJornada(
+    archivo: Express.Multer.File,
+    jornadaId: string,
+    tipo?: TipoEvidencia,
+  ) {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id: jornadaId },
+      relations: { proyecto: true },
+    });
+
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+
+    if (
+      jornada.estadoFuncional === EstadoFuncional.APROBADO ||
+      jornada.estadoFuncional === EstadoFuncional.EN_REVISION
+    ) {
+      throw new BadRequestException(
+        'Esta jornada no admite nuevas evidencias en su estado actual',
+      );
+    }
+
+    const evidencia = await this.evidenciaRepository.save(
+      this.evidenciaRepository.create({
+        tipo: tipo ?? this.tipoDesdeMime(archivo.mimetype),
+        estado: EstadoEvidencia.PENDIENTE_ARCHIVO,
+        estadoFuncional: EstadoFuncional.CAPTURADO,
+        nombreArchivo: archivo.originalname || 'evidencia',
+        tipoMime: archivo.mimetype || 'application/octet-stream',
+        capturadoEn: new Date(),
+        esOffline: false,
+        jornada: { id: jornadaId } as Jornada,
+      }),
+    );
+
+    await this.subirEvidencia(archivo, evidencia.id, jornadaId);
+
+    const actual = await this.evidenciaRepository.findOne({
+      where: { id: evidencia.id },
+    });
+
+    return {
+      id: actual?.id ?? evidencia.id,
+      tipo: actual?.tipo ?? evidencia.tipo,
+      nombreArchivo: actual?.nombreArchivo ?? evidencia.nombreArchivo,
+      urlArchivo: actual?.urlArchivo ?? null,
+      urlMiniatura: actual?.urlMiniatura ?? null,
+      tipoMime: actual?.tipoMime ?? evidencia.tipoMime,
+      capturadoEn: actual?.capturadoEn ?? evidencia.capturadoEn,
+      estado: actual?.estado ?? evidencia.estado,
+    };
+  }
+
+  private tipoDesdeMime(mime: string): TipoEvidencia {
+    if (mime.startsWith('image/')) return TipoEvidencia.FOTO;
+    if (mime.startsWith('video/')) return TipoEvidencia.VIDEO;
+    return TipoEvidencia.DOCUMENTO;
   }
 
   private extensionDesdeMime(mime: string): string {
