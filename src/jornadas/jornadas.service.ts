@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { Actividad } from '../actividades/entities/actividad.entity';
 import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
+import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import {
   CronologiaService,
@@ -92,8 +93,6 @@ export class JornadasService {
     private readonly actividadRepository: Repository<Actividad>,
     @InjectRepository(Subactividad)
     private readonly subactividadRepository: Repository<Subactividad>,
-    @InjectRepository(Beneficiario)
-    private readonly beneficiarioRepository: Repository<Beneficiario>,
     @InjectRepository(Usuario)
     private readonly usuarioRepository: Repository<Usuario>,
     @InjectRepository(EnvioFormulario)
@@ -188,6 +187,12 @@ export class JornadasService {
         : TipoJornada.INDIVIDUAL
       : (dto.tipo ?? TipoJornada.INDIVIDUAL);
 
+    const participantes = await this.resolverParticipantesDeProyecto(
+      dto.proyectoId,
+      dto.beneficiarioIds,
+      dto.asociacionIds,
+    );
+
     const grupoJornadaId = tecnicoIds.length > 1 ? randomUUID() : null;
     const tecnicosPorId = new Map(tecnicos.map((t) => [t.id, t]));
 
@@ -218,6 +223,8 @@ export class JornadasService {
             manager.getRepository(JornadaActividad).create({ ...linea }),
           ),
           grupoJornadaId,
+          beneficiarios: participantes.beneficiarios,
+          asociaciones: participantes.asociaciones,
         });
         const guardada = await repo.save(jornada);
         creadas.push(guardada.id);
@@ -255,6 +262,74 @@ export class JornadasService {
       return [...new Set(dto.tecnicoResponsableIds)];
     }
     return [dto.tecnicoResponsableId ?? usuarioActual.id];
+  }
+
+  private async resolverParticipantesDeProyecto(
+    proyectoId: string,
+    beneficiarioIds?: string[],
+    asociacionIds?: string[],
+  ): Promise<{
+    beneficiarios: Beneficiario[];
+    asociaciones: Asociacion[];
+  }> {
+    const beneficiariosUnicos = [...new Set(beneficiarioIds ?? [])];
+    const asociacionesUnicas = [...new Set(asociacionIds ?? [])];
+
+    if (!beneficiariosUnicos.length && !asociacionesUnicas.length) {
+      return { beneficiarios: [], asociaciones: [] };
+    }
+
+    const proyecto = await this.proyectoRepository.findOne({
+      where: { id: proyectoId },
+      relations: {
+        proyectoBeneficiarios: { beneficiario: true },
+        proyectoAsociaciones: { asociacion: true },
+      },
+    });
+    if (!proyecto) {
+      throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
+    }
+
+    const activosBenef = new Map(
+      (proyecto.proyectoBeneficiarios ?? [])
+        .filter((pb) => pb.estaActivoEnProyecto && pb.beneficiario)
+        .map((pb) => [pb.beneficiario.id, pb.beneficiario]),
+    );
+    const asociados = new Map(
+      (proyecto.proyectoAsociaciones ?? [])
+        .filter((pa) => pa.asociacion)
+        .map((pa) => [pa.asociacion.id, pa.asociacion]),
+    );
+
+    if (beneficiariosUnicos.some((id) => !activosBenef.has(id))) {
+      throw new BadRequestException(
+        'Solo se pueden atender en la jornada beneficiarios activos de este proyecto',
+      );
+    }
+    if (asociacionesUnicas.some((id) => !asociados.has(id))) {
+      throw new BadRequestException(
+        'Solo se pueden atender en la jornada asociaciones vinculadas a este proyecto',
+      );
+    }
+
+    return {
+      beneficiarios: beneficiariosUnicos.map((id) => activosBenef.get(id)!),
+      asociaciones: asociacionesUnicas.map((id) => asociados.get(id)!),
+    };
+  }
+
+  private async adjuntarParticipantes(jornadas: Jornada[]): Promise<void> {
+    if (!jornadas.length) return;
+    const conVinculos = await this.jornadaRepository.find({
+      where: { id: In(jornadas.map((j) => j.id)) },
+      relations: { beneficiarios: true, asociaciones: true },
+    });
+    const porId = new Map(conVinculos.map((j) => [j.id, j]));
+    for (const jornada of jornadas) {
+      const detalle = porId.get(jornada.id);
+      jornada.beneficiarios = detalle?.beneficiarios ?? [];
+      jornada.asociaciones = detalle?.asociaciones ?? [];
+    }
   }
 
   async listarCatalogoFormularios(): Promise<
@@ -383,6 +458,7 @@ export class JornadasService {
     }
 
     const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    await this.adjuntarParticipantes(jornadas);
     const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
     const datos = jornadas.map((j) =>
       aRespuestaJornada(j, {
@@ -427,6 +503,7 @@ export class JornadasService {
     }
 
     const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    await this.adjuntarParticipantes(jornadas);
     const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
     const datos = jornadas.map((j) =>
       aRespuestaJornada(j, {
@@ -450,6 +527,7 @@ export class JornadasService {
         vereda: true,
         tecnicoResponsable: true,
         beneficiarios: true,
+        asociaciones: true,
         equipo: true,
         asistentes: true,
         plantillaFormulario: true,
@@ -499,7 +577,12 @@ export class JornadasService {
   ): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
-      relations: { proyecto: true, plantillaFormulario: true },
+      relations: {
+        proyecto: true,
+        plantillaFormulario: true,
+        beneficiarios: true,
+        asociaciones: true,
+      },
     });
 
     if (!jornada) {
@@ -515,7 +598,12 @@ export class JornadasService {
     const objetivos = jornada.grupoJornadaId
       ? await this.jornadaRepository.find({
           where: { grupoJornadaId: jornada.grupoJornadaId },
-          relations: { proyecto: true, plantillaFormulario: true },
+          relations: {
+            proyecto: true,
+            plantillaFormulario: true,
+            beneficiarios: true,
+            asociaciones: true,
+          },
         })
       : [jornada];
 
@@ -581,6 +669,24 @@ export class JornadasService {
       // cantidadEjecutada es por agente: solo en la jornada solicitada
       if (dto.cantidadEjecutada !== undefined && objetivo.id === id) {
         objetivo.cantidadEjecutada = dto.cantidadEjecutada;
+      }
+    }
+
+    if (dto.beneficiarioIds !== undefined || dto.asociacionIds !== undefined) {
+      const participantes = await this.resolverParticipantesDeProyecto(
+        jornada.proyecto.id,
+        dto.beneficiarioIds ??
+          jornada.beneficiarios?.map((b) => b.id) ??
+          [],
+        dto.asociacionIds ?? jornada.asociaciones?.map((a) => a.id) ?? [],
+      );
+      for (const objetivo of objetivos) {
+        if (dto.beneficiarioIds !== undefined) {
+          objetivo.beneficiarios = participantes.beneficiarios;
+        }
+        if (dto.asociacionIds !== undefined) {
+          objetivo.asociaciones = participantes.asociaciones;
+        }
       }
     }
 
@@ -845,23 +951,23 @@ export class JornadasService {
   ): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id: jornadaId },
-      relations: { beneficiarios: true },
+      relations: { beneficiarios: true, proyecto: true },
     });
 
     if (!jornada) {
       throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
     }
 
-    const beneficiarios = await this.beneficiarioRepository.findBy({
-      id: In(dto.beneficiarioIds),
-    });
-
-    if (beneficiarios.length !== dto.beneficiarioIds.length) {
-      throw new NotFoundException('Uno o más beneficiarios no existen');
-    }
+    const participantes = await this.resolverParticipantesDeProyecto(
+      jornada.proyecto.id,
+      dto.beneficiarioIds,
+      [],
+    );
 
     const existentes = new Set(jornada.beneficiarios?.map((b) => b.id) ?? []);
-    const nuevos = beneficiarios.filter((b) => !existentes.has(b.id));
+    const nuevos = participantes.beneficiarios.filter(
+      (b) => !existentes.has(b.id),
+    );
     jornada.beneficiarios = [...(jornada.beneficiarios ?? []), ...nuevos];
 
     await this.jornadaRepository.save(jornada);

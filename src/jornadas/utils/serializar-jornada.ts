@@ -93,6 +93,10 @@ export function aRespuestaJornada(
         id: b.id,
         nombre: `${b.nombres} ${b.apellidos}`,
       })),
+      asociaciones: jornada.asociaciones?.map((a) => ({
+        id: a.id,
+        nombre: a.nombre,
+      })),
       equipo: jornada.equipo?.map((u) => ({
         id: u.id,
         nombre: u.nombreCompleto,

@@ -306,6 +306,33 @@ export class TablaProyectoAsociaciones {
 }
 
 @ApiSchema({
+  name: 'geocercas',
+  description:
+    'Zonas poligonales de un proyecto. Cada geocerca se define con vértices de latitud y longitud y se visualiza sobre el mapa territorial.',
+})
+export class TablaGeocercas {
+  @ApiProperty({ description: 'Identificador único (UUID)' })
+  id: string;
+
+  @ApiProperty({ description: 'Nombre de la geocerca' })
+  nombre: string;
+
+  @ApiPropertyOptional({ description: 'Descripción de la zona' })
+  descripcion?: string;
+
+  @ApiProperty({ description: 'Color hexadecimal para pintar el polígono' })
+  color: string;
+
+  @ApiProperty({
+    description: 'Vértices [{ latitud, longitud }, …] en orden de trazado',
+  })
+  puntos: Array<{ latitud: number; longitud: number }>;
+
+  @ApiProperty({ description: 'ID del proyecto al que pertenece' })
+  proyectoId: string;
+}
+
+@ApiSchema({
   name: 'beneficiarios',
   description:
     'Personas atendidas por los proyectos. Registra datos de identificación, contacto y vereda de residencia.',
@@ -708,6 +735,7 @@ export const ESQUEMAS_TABLAS = [
   TablaProyectoPersonal,
   TablaProyectoBeneficiarios,
   TablaProyectoAsociaciones,
+  TablaGeocercas,
   TablaBeneficiarios,
   TablaAsociaciones,
   TablaJornadas,

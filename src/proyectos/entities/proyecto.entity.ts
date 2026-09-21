@@ -17,6 +17,7 @@ import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoProyecto } from '../enums/estado-proyecto.enum';
 import { TipoProyecto } from '../enums/tipo-proyecto.enum';
+import { Geocerca } from './geocerca.entity';
 import { ProyectoAsociacion } from './proyecto-asociacion.entity';
 import { ProyectoBeneficiario } from './proyecto-beneficiario.entity';
 
@@ -85,4 +86,7 @@ export class Proyecto {
     inverseJoinColumn: { name: 'usuario_id', referencedColumnName: 'id' },
   })
   personal: Usuario[];
+
+  @OneToMany(() => Geocerca, (geocerca) => geocerca.proyecto)
+  geocercas: Geocerca[];
 }

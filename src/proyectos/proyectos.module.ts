@@ -9,9 +9,12 @@ import { RegistroIndicador } from '../indicadores/entities/registro-indicador.en
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { Geocerca } from './entities/geocerca.entity';
 import { ProyectoAsociacion } from './entities/proyecto-asociacion.entity';
 import { ProyectoBeneficiario } from './entities/proyecto-beneficiario.entity';
 import { Proyecto } from './entities/proyecto.entity';
+import { GeocercasController } from './geocercas.controller';
+import { GeocercasService } from './geocercas.service';
 import { ProyectosController } from './proyectos.controller';
 import { ProyectosService } from './proyectos.service';
 
@@ -22,6 +25,7 @@ import { ProyectosService } from './proyectos.service';
       Proyecto,
       ProyectoBeneficiario,
       ProyectoAsociacion,
+      Geocerca,
       Beneficiario,
       Asociacion,
       Vereda,
@@ -32,8 +36,8 @@ import { ProyectosService } from './proyectos.service';
       RegistroIndicador,
     ]),
   ],
-  controllers: [ProyectosController],
-  providers: [ProyectosService],
-  exports: [TypeOrmModule, ProyectosService],
+  controllers: [ProyectosController, GeocercasController],
+  providers: [ProyectosService, GeocercasService],
+  exports: [TypeOrmModule, ProyectosService, GeocercasService],
 })
 export class ProyectosModule {}

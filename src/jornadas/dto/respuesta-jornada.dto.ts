@@ -243,6 +243,14 @@ export class RespuestaJornadaDto {
 
   @ApiPropertyOptional({
     type: [RespuestaResumenDto],
+    description: 'Asociaciones asociadas a la jornada (si aplica)',
+  })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  asociaciones?: RespuestaResumenDto[];
+
+  @ApiPropertyOptional({
+    type: [RespuestaResumenDto],
     description: 'Equipo de la jornada',
   })
   @Expose()

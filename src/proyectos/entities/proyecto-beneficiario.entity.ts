@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -31,4 +32,27 @@ export class ProyectoBeneficiario {
 
   @Column({ name: 'es_principal', default: false })
   esPrincipal: boolean;
+
+  /** Si es false, salió del cupo activo (reemplazo o baja) pero queda el rastro. */
+  @Column({ name: 'esta_activo_en_proyecto', default: true })
+  estaActivoEnProyecto: boolean;
+
+  /** Persona a la que este beneficiario sustituye en el proyecto. */
+  @ManyToOne(() => Beneficiario, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'reemplaza_a_id' })
+  reemplazaA: Beneficiario | null;
+
+  /** Quién ocupó el cupo de este beneficiario. */
+  @ManyToOne(() => Beneficiario, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'reemplazado_por_id' })
+  reemplazadoPor: Beneficiario | null;
+
+  @Column({ name: 'reemplazado_en', type: 'timestamptz', nullable: true })
+  reemplazadoEn: Date | null;
+
+  @Column({ name: 'nota_reemplazo', type: 'text', nullable: true })
+  notaReemplazo: string | null;
+
+  @CreateDateColumn({ name: 'creado_en' })
+  creadoEn: Date;
 }

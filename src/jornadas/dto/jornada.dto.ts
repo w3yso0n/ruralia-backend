@@ -129,6 +129,26 @@ export class CrearJornadaDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   tecnicoResponsableIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Beneficiarios del proyecto atendidos en esta jornada. Se eligen al registrar la visita.',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  beneficiarioIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Asociaciones del proyecto atendidas en esta jornada. Se eligen al registrar la visita.',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  asociacionIds?: string[];
 }
 
 export class ActualizarJornadaDto {
@@ -212,6 +232,24 @@ export class ActualizarJornadaDto {
   @IsUUID('4')
   @IsOptional()
   plantillaFormularioId?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Beneficiarios del proyecto atendidos en esta jornada',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  beneficiarioIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Asociaciones del proyecto atendidas en esta jornada',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  asociacionIds?: string[];
 }
 
 export class CambiarEstadoJornadaDto {

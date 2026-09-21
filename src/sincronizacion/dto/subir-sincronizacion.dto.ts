@@ -163,6 +163,15 @@ export class JornadaOfflineDto {
   beneficiarioIds?: string[];
 
   @ApiPropertyOptional({
+    description: 'IDs de asociaciones del proyecto atendidas en la jornada',
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  asociacionIds?: string[];
+
+  @ApiPropertyOptional({
     description: 'IDs del equipo',
     type: [String],
   })

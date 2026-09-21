@@ -39,6 +39,34 @@ export class RespuestaBeneficiarioResumenDto {
   @ApiProperty()
   @Expose()
   apellidos: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  numeroDocumento?: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  estaActivoEnProyecto?: boolean;
+
+  @ApiPropertyOptional({
+    type: () => RespuestaBeneficiarioResumenDto,
+    description: 'Persona a la que sustituye en este proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  reemplazaA?: RespuestaBeneficiarioResumenDto;
+
+  @ApiPropertyOptional({
+    type: () => RespuestaBeneficiarioResumenDto,
+    description: 'Persona que ocupó su cupo',
+  })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  reemplazadoPor?: RespuestaBeneficiarioResumenDto;
+
+  @ApiPropertyOptional()
+  @Expose()
+  reemplazadoEn?: Date | null;
 }
 
 export class RespuestaAsociacionResumenDto {
@@ -135,11 +163,19 @@ export class RespuestaProyectoDto {
 
   @ApiPropertyOptional({
     type: [RespuestaBeneficiarioResumenDto],
-    description: 'Beneficiarios vinculados al proyecto',
+    description: 'Beneficiarios activos vinculados al proyecto',
   })
   @Expose()
   @Type(() => RespuestaBeneficiarioResumenDto)
   beneficiarios?: RespuestaBeneficiarioResumenDto[];
+
+  @ApiPropertyOptional({
+    type: [RespuestaBeneficiarioResumenDto],
+    description: 'Beneficiarios que fueron reemplazados y quedan en el historial del cupo',
+  })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  beneficiariosReemplazados?: RespuestaBeneficiarioResumenDto[];
 
   @ApiPropertyOptional({
     type: RespuestaAsociacionResumenDto,

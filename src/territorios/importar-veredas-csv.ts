@@ -5,6 +5,8 @@
  *   pnpm run seed:territorios
  *
  * Idempotente: upsert por código (COD_DPTO, DPTOMPIO, CODIGO_VER).
+ * No borra territorios existentes; si el código ya está, actualiza nombre/municipio
+ * y conserva el id (las relaciones de proyectos y beneficiarios se mantienen).
  */
 import { createReadStream, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -95,14 +97,71 @@ async function main(): Promise<void> {
 
   const deptCache = new Map<string, string>();
   const munCache = new Map<string, string>();
-  const TAMANO_LOTE = 400;
+  const TAMANO_LOTE = 1000;
   let filas = 0;
   let veredasUpsert = 0;
   const lote: FilaCsv[] = [];
 
+  async function asegurarDepartamento(
+    codDpto: string,
+    nomDpto: string,
+  ): Promise<string> {
+    const cached = deptCache.get(codDpto);
+    if (cached) return cached;
+    const codigoRegion = codigoRegionParaDepartamento(codDpto);
+    const regionId =
+      regionIds.get(codigoRegion) ?? regionIds.get('SIN_CLASIFICAR')!;
+    const d = await client.query<{ id: string }>(
+      `
+      INSERT INTO departamentos (id, nombre, codigo, esta_activo, region_id)
+      VALUES (gen_random_uuid(), $1, $2, true, $3)
+      ON CONFLICT (codigo) DO UPDATE
+        SET nombre = EXCLUDED.nombre,
+            region_id = EXCLUDED.region_id,
+            esta_activo = true
+      RETURNING id
+      `,
+      [nomDpto, codDpto, regionId],
+    );
+    const deptId = d.rows[0]?.id;
+    if (!deptId) throw new Error(`No se pudo upsert departamento ${codDpto}`);
+    deptCache.set(codDpto, deptId);
+    return deptId;
+  }
+
+  async function asegurarMunicipio(
+    codMun: string,
+    nomMun: string,
+    deptId: string,
+  ): Promise<string> {
+    const cached = munCache.get(codMun);
+    if (cached) return cached;
+    const m = await client.query<{ id: string }>(
+      `
+      INSERT INTO municipios (id, nombre, codigo, esta_activo, departamento_id)
+      VALUES (gen_random_uuid(), $1, $2, true, $3)
+      ON CONFLICT (codigo) DO UPDATE
+        SET nombre = EXCLUDED.nombre,
+            departamento_id = EXCLUDED.departamento_id,
+            esta_activo = true
+      RETURNING id
+      `,
+      [nomMun, codMun, deptId],
+    );
+    const munId = m.rows[0]?.id;
+    if (!munId) throw new Error(`No se pudo upsert municipio ${codMun}`);
+    munCache.set(codMun, munId);
+    return munId;
+  }
+
   async function flush(): Promise<void> {
     if (!lote.length) return;
     const filasLote = lote.splice(0, lote.length);
+
+    const porCodigo = new Map<
+      string,
+      { nombre: string; municipioId: string }
+    >();
 
     for (const fila of filasLote) {
       const codDpto = padCodigoDepartamento(fila.COD_DPTO);
@@ -116,59 +175,34 @@ async function main(): Promise<void> {
 
       if (!codVer || !nomVer || !codMun || !codDpto) continue;
 
-      let deptId = deptCache.get(codDpto);
-      if (!deptId) {
-        const codigoRegion = codigoRegionParaDepartamento(codDpto);
-        const regionId =
-          regionIds.get(codigoRegion) ?? regionIds.get('SIN_CLASIFICAR')!;
-        const d = await client.query<{ id: string }>(
-          `
-          INSERT INTO departamentos (id, nombre, codigo, esta_activo, region_id)
-          VALUES (gen_random_uuid(), $1, $2, true, $3)
-          ON CONFLICT (codigo) DO UPDATE
-            SET nombre = EXCLUDED.nombre,
-                region_id = EXCLUDED.region_id,
-                esta_activo = true
-          RETURNING id
-          `,
-          [nomDpto, codDpto, regionId],
-        );
-        deptId = d.rows[0]?.id;
-        if (!deptId) throw new Error(`No se pudo upsert departamento ${codDpto}`);
-        deptCache.set(codDpto, deptId);
-      }
+      const deptId = await asegurarDepartamento(codDpto, nomDpto);
+      const munId = await asegurarMunicipio(codMun, nomMun, deptId);
+      porCodigo.set(codVer, { nombre: nomVer, municipioId: munId });
+    }
 
-      let munId = munCache.get(codMun);
-      if (!munId) {
-        const m = await client.query<{ id: string }>(
-          `
-          INSERT INTO municipios (id, nombre, codigo, esta_activo, departamento_id)
-          VALUES (gen_random_uuid(), $1, $2, true, $3)
-          ON CONFLICT (codigo) DO UPDATE
-            SET nombre = EXCLUDED.nombre,
-                departamento_id = EXCLUDED.departamento_id,
-                esta_activo = true
-          RETURNING id
-          `,
-          [nomMun, codMun, deptId],
-        );
-        munId = m.rows[0]?.id;
-        if (!munId) throw new Error(`No se pudo upsert municipio ${codMun}`);
-        munCache.set(codMun, munId);
-      }
+    const nombres: string[] = [];
+    const codigos: string[] = [];
+    const municipioIds: string[] = [];
+    for (const [codigo, v] of porCodigo) {
+      nombres.push(v.nombre);
+      codigos.push(codigo);
+      municipioIds.push(v.municipioId);
+    }
 
+    if (nombres.length) {
       await client.query(
         `
         INSERT INTO veredas (id, nombre, codigo, esta_activo, municipio_id, corregimiento_id)
-        VALUES (gen_random_uuid(), $1, $2, true, $3, NULL)
+        SELECT gen_random_uuid(), x.nombre, x.codigo, true, x.municipio_id, NULL
+        FROM unnest($1::text[], $2::text[], $3::uuid[]) AS x(nombre, codigo, municipio_id)
         ON CONFLICT (codigo) DO UPDATE
           SET nombre = EXCLUDED.nombre,
               municipio_id = EXCLUDED.municipio_id,
               esta_activo = true
         `,
-        [nomVer, codVer, munId],
+        [nombres, codigos, municipioIds],
       );
-      veredasUpsert += 1;
+      veredasUpsert += nombres.length;
     }
 
     process.stdout.write(
@@ -177,9 +211,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Importando ${csvPath}…`);
-  await client.query('BEGIN');
-  try {
-    await new Promise<void>((resolvePromise, reject) => {
+  await new Promise<void>((resolvePromise, reject) => {
       const stream = createReadStream(csvPath).pipe(
         parse({ headers: true, trim: true }),
       );
@@ -210,12 +242,6 @@ async function main(): Promise<void> {
           .catch(reject);
       });
     });
-
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  }
 
   const counts = await client.query<{
     regiones: string;

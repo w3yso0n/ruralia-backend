@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,13 +11,21 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -27,6 +36,11 @@ import {
   AsignarAsociacionesProyectoDto,
   AsignarBeneficiariosProyectoDto,
 } from './dto/asignar-vinculos.dto';
+import {
+  RespuestaCargaMasivaBeneficiariosDto,
+  RespuestaHistorialBeneficiarioProyectoDto,
+  ReemplazarBeneficiarioProyectoDto,
+} from './dto/carga-beneficiarios.dto';
 import { CrearProyectoDto } from './dto/crear-proyecto.dto';
 import { FiltrosProyectoDto } from './dto/filtros-proyecto.dto';
 import {
@@ -61,6 +75,24 @@ export class ProyectosController {
     @Query() filtros: FiltrosProyectoDto,
   ): Promise<RespuestaPaginadaProyectosDto> {
     return this.proyectosService.listar(filtros);
+  }
+
+  @Get('plantilla-beneficiarios-excel')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @ApiOperation({
+    summary: 'Plantilla Excel de carga masiva (nombre + identificador único)',
+  })
+  async plantillaBeneficiariosGlobal(@Res() res: Response): Promise<void> {
+    const buffer = await this.proyectosService.generarPlantillaBeneficiarios();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="plantilla-beneficiarios.xlsx"',
+    );
+    res.send(buffer);
   }
 
   @Get(':id/estadisticas')
@@ -154,7 +186,9 @@ export class ProyectosController {
 
   @Post(':id/beneficiarios')
   @RequierePermisos('proyectos.gestionar_vinculos')
-  @ApiOperation({ summary: 'Asignar beneficiarios al proyecto' })
+  @ApiOperation({
+    summary: 'Asignar beneficiarios al proyecto (varios, no excluye asociaciones)',
+  })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarBeneficiarios(
     @Param('id', ParseUUIDPipe) id: string,
@@ -162,6 +196,95 @@ export class ProyectosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaProyectoDto> {
     return this.proyectosService.asignarBeneficiarios(id, dto, usuario);
+  }
+
+  @Get(':id/beneficiarios/plantilla-excel')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @ApiOperation({ summary: 'Descargar plantilla Excel para carga masiva' })
+  async plantillaBeneficiarios(@Res() res: Response): Promise<void> {
+    const buffer = await this.proyectosService.generarPlantillaBeneficiarios();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="plantilla-beneficiarios.xlsx"',
+    );
+    res.send(buffer);
+  }
+
+  @Post(':id/beneficiarios/importar')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { archivo: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary:
+      'Carga masiva de beneficiarios desde Excel. Si el documento ya existe, solo se asigna al proyecto.',
+  })
+  @ApiResponse({ status: 201, type: RespuestaCargaMasivaBeneficiariosDto })
+  importarBeneficiarios(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() archivo: Express.Multer.File,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
+    if (!archivo?.buffer) {
+      throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
+    }
+    return this.proyectosService.importarBeneficiariosExcel(
+      id,
+      archivo,
+      usuario,
+    );
+  }
+
+  @Post(':id/beneficiarios/:beneficiarioId/reemplazar')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @ApiOperation({
+    summary:
+      'Reemplaza un beneficiario del proyecto. El historial del cupo (jornadas) se conserva y queda marcado como reemplazo.',
+  })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  reemplazarBeneficiario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('beneficiarioId', ParseUUIDPipe) beneficiarioId: string,
+    @Body() dto: ReemplazarBeneficiarioProyectoDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.reemplazarBeneficiario(
+      id,
+      beneficiarioId,
+      dto,
+      usuario,
+    );
+  }
+
+  @Get(':id/beneficiarios/:beneficiarioId/historial')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary:
+      'Historial del cupo: jornadas propias y las heredadas de quien fue reemplazado',
+  })
+  @ApiResponse({ status: 200, type: RespuestaHistorialBeneficiarioProyectoDto })
+  historialBeneficiario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('beneficiarioId', ParseUUIDPipe) beneficiarioId: string,
+  ): Promise<RespuestaHistorialBeneficiarioProyectoDto> {
+    return this.proyectosService.historialBeneficiarioProyecto(
+      id,
+      beneficiarioId,
+    );
   }
 
   @Post(':id/asociaciones')

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Actividad } from '../actividades/entities/actividad.entity';
 import { Meta } from '../actividades/entities/meta.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
+import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
@@ -29,6 +30,7 @@ import { JornadasService } from './jornadas.service';
       Actividad,
       Subactividad,
       Beneficiario,
+      Asociacion,
       Usuario,
       EnvioFormulario,
       PlantillaFormulario,

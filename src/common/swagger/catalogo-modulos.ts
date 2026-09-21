@@ -17,7 +17,7 @@ export const TAGS_MODULOS: TagModulo[] = [
   {
     name: 'Proyectos',
     description:
-      'CRUD de proyectos rurales, asignación de territorios (veredas) y personal del equipo de campo.',
+      'CRUD de proyectos rurales, asignación de territorios (veredas), geocercas por puntos GPS y personal del equipo de campo.',
   },
   {
     name: 'Jornadas',
@@ -133,6 +133,7 @@ Catálogo de tablas de PostgreSQL gestionadas por TypeORM. Los esquemas detallad
 | \`proyecto_personal\` | Usuarios asignados al equipo de trabajo de un proyecto. |
 | \`proyecto_beneficiarios\` | Beneficiarios inscritos o atendidos por un proyecto. |
 | \`proyecto_asociaciones\` | Asociaciones rurales vinculadas a un proyecto. |
+| \`geocercas\` | Zonas poligonales de un proyecto, definidas por vértices de latitud y longitud. |
 
 ### Población objetivo
 

@@ -13,6 +13,7 @@ import {
 } from 'typeorm';
 import { Meta } from '../../actividades/entities/meta.entity';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
+import { Asociacion } from '../../asociaciones/entities/asociacion.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
@@ -152,6 +153,14 @@ export class Jornada {
     inverseJoinColumn: { name: 'beneficiario_id', referencedColumnName: 'id' },
   })
   beneficiarios: Beneficiario[];
+
+  @ManyToMany(() => Asociacion)
+  @JoinTable({
+    name: 'jornada_asociaciones',
+    joinColumn: { name: 'jornada_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'asociacion_id', referencedColumnName: 'id' },
+  })
+  asociaciones: Asociacion[];
 
   @ManyToMany(() => Usuario)
   @JoinTable({

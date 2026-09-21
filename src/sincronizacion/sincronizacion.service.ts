@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import {
   CronologiaService,
@@ -234,6 +235,12 @@ export class SincronizacionService {
       if (dto.beneficiarioIds?.length) {
         jornada.beneficiarios = dto.beneficiarioIds.map((id) =>
           manager.create(Beneficiario, { id }),
+        );
+      }
+
+      if (dto.asociacionIds?.length) {
+        jornada.asociaciones = dto.asociacionIds.map((id) =>
+          manager.create(Asociacion, { id }),
         );
       }
 
