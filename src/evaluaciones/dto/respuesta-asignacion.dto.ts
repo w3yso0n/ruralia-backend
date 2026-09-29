@@ -79,8 +79,14 @@ export class ProductividadPersonaDto {
   @ApiProperty()
   ejecutado: number;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Promedio del cumplimiento de cada cuota (cada meta pesa igual, sin importar su unidad)',
+  })
   cumplimientoPorcentaje: number;
+
+  @ApiProperty({ description: 'Cuotas personales evaluadas en el periodo' })
+  cuotasAsignadas: number;
 
   @ApiProperty({
     description:

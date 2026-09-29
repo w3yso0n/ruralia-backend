@@ -10,6 +10,46 @@ import { EstadoJornada } from '../enums/estado-jornada.enum';
  * - Con cantidad_ejecutada: suma ese valor.
  * - Sin cantidad pero COMPLETADA: cuenta 1 (jornadas legacy).
  */
+/**
+ * Primer y último día del mes como 'YYYY-MM-DD'. Se comparan como texto contra
+ * la columna `date` para no depender de la zona horaria del servidor (con objetos
+ * Date se perdían las jornadas del día 1 cuando el servidor y la BD difieren).
+ */
+export function rangoMes(
+  anio: number,
+  mes: number,
+): { desde: string; hasta: string } {
+  const ultimoDia = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  const mm = String(mes).padStart(2, '0');
+  return {
+    desde: `${anio}-${mm}-01`,
+    hasta: `${anio}-${mm}-${String(ultimoDia).padStart(2, '0')}`,
+  };
+}
+
+/** Rango de fechas de jornada: un mes concreto, o todo lo ejecutado hasta un día. */
+export type OpcionesRangoJornada = {
+  anio?: number;
+  mes?: number;
+  /** 'YYYY-MM-DD' inclusive; se usa cuando no hay anio/mes. */
+  hasta?: string;
+};
+
+function aplicarRangoFechas(
+  qb: ReturnType<Repository<Jornada>['createQueryBuilder']>,
+  opciones?: OpcionesRangoJornada,
+): void {
+  if (opciones?.anio !== undefined && opciones?.mes !== undefined) {
+    const { desde, hasta } = rangoMes(opciones.anio, opciones.mes);
+    qb.andWhere('jornada.fecha >= :desdeRango', { desdeRango: desde }).andWhere(
+      'jornada.fecha <= :hastaRango',
+      { hastaRango: hasta },
+    );
+  } else if (opciones?.hasta) {
+    qb.andWhere('jornada.fecha <= :hastaRango', { hastaRango: opciones.hasta });
+  }
+}
+
 const SQL_SUMA_EJECUTADO = `
   COALESCE(SUM(
     CASE
@@ -24,7 +64,7 @@ const SQL_SUMA_EJECUTADO = `
 export async function sumarEjecutadoPorMeta(
   jornadaRepository: Repository<Jornada>,
   metaId: string,
-  opciones?: { anio?: number; mes?: number },
+  opciones?: OpcionesRangoJornada,
 ): Promise<number> {
   const qb = jornadaRepository
     .createQueryBuilder('jornada')
@@ -36,14 +76,7 @@ export async function sumarEjecutadoPorMeta(
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
 
-  if (opciones?.anio !== undefined && opciones?.mes !== undefined) {
-    const inicio = new Date(opciones.anio, opciones.mes - 1, 1);
-    const fin = new Date(opciones.anio, opciones.mes, 0);
-    qb.andWhere('jornada.fecha >= :inicio', { inicio }).andWhere(
-      'jornada.fecha <= :fin',
-      { fin },
-    );
-  }
+  aplicarRangoFechas(qb, opciones);
 
   const resultado = await qb.getRawOne<{ total: string }>();
   return Number(resultado?.total ?? 0);
@@ -54,7 +87,7 @@ export async function sumarEjecutadoPorMetaYUsuario(
   jornadaRepository: Repository<Jornada>,
   metaId: string,
   usuarioId: string,
-  opciones?: { anio?: number; mes?: number },
+  opciones?: OpcionesRangoJornada,
 ): Promise<number> {
   const qb = jornadaRepository
     .createQueryBuilder('jornada')
@@ -67,14 +100,7 @@ export async function sumarEjecutadoPorMetaYUsuario(
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
 
-  if (opciones?.anio !== undefined && opciones?.mes !== undefined) {
-    const inicio = new Date(opciones.anio, opciones.mes - 1, 1);
-    const fin = new Date(opciones.anio, opciones.mes, 0);
-    qb.andWhere('jornada.fecha >= :inicio', { inicio }).andWhere(
-      'jornada.fecha <= :fin',
-      { fin },
-    );
-  }
+  aplicarRangoFechas(qb, opciones);
 
   const resultado = await qb.getRawOne<{ total: string }>();
   return Number(resultado?.total ?? 0);

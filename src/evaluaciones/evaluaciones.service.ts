@@ -14,7 +14,11 @@ import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
-import { sumarEjecutadoPorMetaYUsuario } from '../jornadas/utils/calcular-ejecutado-meta';
+import {
+  OpcionesRangoJornada,
+  rangoMes,
+  sumarEjecutadoPorMetaYUsuario,
+} from '../jornadas/utils/calcular-ejecutado-meta';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -273,14 +277,17 @@ export class EvaluacionesService {
     const anio = filtros.anio ?? new Date().getFullYear();
     const mes = filtros.mes ?? new Date().getMonth() + 1;
 
-    const asignaciones = await this.listarPorProyecto(proyectoId, {
+    const asignaciones = await this.asignacionesDelPeriodo(
+      { proyectoId },
       anio,
       mes,
-    });
+    );
 
     const porUsuario = new Map<string, ProductividadPersonaDto>();
+    const sumaPorcentajes = new Map<string, number>();
 
     for (const a of asignaciones) {
+      if (a.cantidadAsignada <= 0) continue;
       const actual = this.basePersona(
         a.usuario.id,
         a.usuario.nombreCompleto,
@@ -289,7 +296,18 @@ export class EvaluacionesService {
       const prev = porUsuario.get(a.usuario.id) ?? actual;
       prev.cantidadAsignada += a.cantidadAsignada;
       prev.ejecutado += a.ejecutado;
+      prev.cuotasAsignadas += 1;
       porUsuario.set(a.usuario.id, prev);
+      sumaPorcentajes.set(
+        a.usuario.id,
+        (sumaPorcentajes.get(a.usuario.id) ?? 0) + a.cumplimientoPorcentaje,
+      );
+    }
+    for (const [usuarioId, persona] of porUsuario) {
+      persona.cumplimientoPorcentaje = this.promedio(
+        sumaPorcentajes.get(usuarioId) ?? 0,
+        persona.cuotasAsignadas,
+      );
     }
 
     // Incluir técnicos con jornadas aunque no tengan cuota asignada
@@ -316,10 +334,10 @@ export class EvaluacionesService {
   async cumplimientoEquipoGlobal(
     anio?: number,
     mes?: number,
-    limite = 10,
+    limite?: number,
   ): Promise<ProductividadPersonaDto[]> {
     const completo = await this.equipoGlobalCompleto(anio, mes);
-    return completo.slice(0, limite);
+    return limite ? completo.slice(0, limite) : completo;
   }
 
   private async equipoGlobalCompleto(
@@ -347,6 +365,12 @@ export class EvaluacionesService {
           proyectoId: p.id,
           proyectoNombre: p.nombre,
         };
+        actual.cumplimientoPorcentaje = this.promedio(
+          actual.cumplimientoPorcentaje * actual.cuotasAsignadas +
+            r.cumplimientoPorcentaje * r.cuotasAsignadas,
+          actual.cuotasAsignadas + r.cuotasAsignadas,
+        );
+        actual.cuotasAsignadas += r.cuotasAsignadas;
         actual.cantidadAsignada += r.cantidadAsignada;
         actual.ejecutado += r.ejecutado;
         actual.conteoJornadas += r.conteoJornadas;
@@ -366,10 +390,6 @@ export class EvaluacionesService {
     }
 
     const enriquecidos = [...mapa.values()].map((p) => {
-      p.cumplimientoPorcentaje =
-        p.cantidadAsignada > 0
-          ? Math.round((p.ejecutado / p.cantidadAsignada) * 1000) / 10
-          : 0;
       p.promedioBeneficiariosPorJornada =
         p.conteoJornadas > 0
           ? Math.round((p.beneficiariosAtendidos / p.conteoJornadas) * 10) / 10
@@ -382,8 +402,12 @@ export class EvaluacionesService {
     });
 
     return this.ordenarPorEficiencia(enriquecidos).filter(
-      (p) => p.conteoJornadas > 0 || p.cantidadAsignada > 0,
+      (p) => p.conteoJornadas > 0 || p.cuotasAsignadas > 0,
     );
+  }
+
+  private promedio(suma: number, cantidad: number): number {
+    return cantidad > 0 ? Math.round((suma / cantidad) * 10) / 10 : 0;
   }
 
   private basePersona(
@@ -397,6 +421,7 @@ export class EvaluacionesService {
       cantidadAsignada: 0,
       ejecutado: 0,
       cumplimientoPorcentaje: 0,
+      cuotasAsignadas: 0,
       indiceEficiencia: 0,
       conteoJornadas: 0,
       jornadasAprobadas: 0,
@@ -435,14 +460,8 @@ export class EvaluacionesService {
       this.contarVeredasUsuario(proyectoId, base.usuarioId, anio, mes),
     ]);
 
-    const cumplimientoPorcentaje =
-      base.cantidadAsignada > 0
-        ? Math.round((base.ejecutado / base.cantidadAsignada) * 1000) / 10
-        : 0;
-
     return {
       ...base,
-      cumplimientoPorcentaje,
       conteoJornadas,
       jornadasAprobadas,
       jornadasConEvidencia,
@@ -473,7 +492,7 @@ export class EvaluacionesService {
     return personas
       .map((p) => {
         const cumplimiento =
-          p.cantidadAsignada > 0
+          p.cuotasAsignadas > 0
             ? Math.min(p.cumplimientoPorcentaje, 120) / 1.2
             : p.conteoJornadas > 0
               ? 50
@@ -554,8 +573,7 @@ export class EvaluacionesService {
     anio: number,
     mes: number,
   ): Promise<number> {
-    const inicio = new Date(anio, mes - 1, 1);
-    const fin = new Date(anio, mes, 0);
+    const { desde, hasta } = rangoMes(anio, mes);
     const raw = await this.evidenciaRepository
       .createQueryBuilder('evidencia')
       .innerJoin('evidencia.jornada', 'jornada')
@@ -565,8 +583,8 @@ export class EvaluacionesService {
         cancelada: EstadoJornada.CANCELADA,
       })
       .andWhere('evidencia.tipo = :tipo', { tipo: TipoEvidencia.FOTO })
-      .andWhere('jornada.fecha >= :inicioPeriodo', { inicioPeriodo: inicio })
-      .andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: fin })
+      .andWhere('jornada.fecha >= :inicioPeriodo', { inicioPeriodo: desde })
+      .andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: hasta })
       .select('COUNT(DISTINCT jornada.id)', 'total')
       .getRawOne<{ total: string }>();
     return Number(raw?.total ?? 0);
@@ -638,37 +656,10 @@ export class EvaluacionesService {
     const anio = filtros.anio;
     const mes = filtros.mes;
 
-    const qb = this.asignacionRepository
-      .createQueryBuilder('asig')
-      .innerJoinAndSelect('asig.meta', 'meta')
-      .innerJoinAndSelect('meta.proceso', 'proceso')
-      .innerJoinAndSelect('proceso.subactividad', 'sub')
-      .innerJoinAndSelect('sub.actividad', 'actividad')
-      .innerJoinAndSelect('actividad.proyecto', 'proyecto')
-      .innerJoinAndSelect('asig.usuario', 'u')
-      .leftJoinAndSelect('asig.metaPeriodo', 'periodo')
-      .where('u.id = :usuarioId', { usuarioId });
-
-    if (filtros.proyectoId) {
-      qb.andWhere('proyecto.id = :proyectoId', {
-        proyectoId: filtros.proyectoId,
-      });
-    }
-    if (anio != null && mes != null) {
-      qb.andWhere('periodo.anio = :anio', { anio }).andWhere(
-        'periodo.mes = :mes',
-        { mes },
-      );
-    }
-
-    const filas = await qb.getMany();
-    const asignaciones = await Promise.all(
-      filas.map((a) =>
-        this.enriquecerAsignacion(
-          a,
-          a.meta.proceso.subactividad.actividad.proyecto.id,
-        ),
-      ),
+    const asignaciones = await this.asignacionesDelPeriodo(
+      { usuarioId, proyectoId: filtros.proyectoId },
+      anio,
+      mes,
     );
 
     const totalAsignado = asignaciones.reduce(
@@ -744,8 +735,11 @@ export class EvaluacionesService {
     const detalle = detalleUsuario.asignaciones
       .filter((a) => a.cantidadAsignada > 0)
       .map((a) => {
-        const sinEjecucion = a.ejecutado <= 0;
-        const incumplida = a.cumplimientoPorcentaje < 100;
+        // Una cuota total del proyecto sigue en curso mientras el proyecto avanza:
+        // solo las cuotas del mes cuentan como incumplidas.
+        const esCuotaMensual = a.anio != null && a.mes != null;
+        const sinEjecucion = esCuotaMensual && a.ejecutado <= 0;
+        const incumplida = esCuotaMensual && a.cumplimientoPorcentaje < 100;
         return {
           metaId: a.metaId,
           metaNombre: a.metaNombre,
@@ -769,13 +763,23 @@ export class EvaluacionesService {
     };
   }
 
+  /**
+   * @param corte Mes evaluado. Una cuota mensual mide solo su mes; una cuota
+   * total mide lo ejecutado desde el inicio hasta el fin del mes de corte.
+   */
   private async enriquecerAsignacion(
     asig: AsignacionMeta,
     proyectoId: string,
+    corte?: { anio: number; mes: number },
   ): Promise<RespuestaAsignacionMetaDto> {
     const anio = asig.metaPeriodo?.anio;
     const mes = asig.metaPeriodo?.mes;
-    const opciones = anio != null && mes != null ? { anio, mes } : undefined;
+    const opciones: OpcionesRangoJornada | undefined =
+      anio != null && mes != null
+        ? { anio, mes }
+        : corte
+          ? { hasta: rangoMes(corte.anio, corte.mes).hasta }
+          : undefined;
 
     const ejecutado = await sumarEjecutadoPorMetaYUsuario(
       this.jornadaRepository,
@@ -794,15 +798,13 @@ export class EvaluacionesService {
       proyectoId,
       asig.meta.id,
       asig.usuario.id,
-      anio,
-      mes,
+      opciones,
     );
     const beneficiariosAtendidos = await this.contarBeneficiariosMetaUsuario(
       proyectoId,
       asig.meta.id,
       asig.usuario.id,
-      anio,
-      mes,
+      opciones,
     );
 
     return {
@@ -875,8 +877,7 @@ export class EvaluacionesService {
     proyectoId: string,
     metaId: string,
     usuarioId: string,
-    anio?: number | null,
-    mes?: number | null,
+    rango?: OpcionesRangoJornada,
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
@@ -889,7 +890,7 @@ export class EvaluacionesService {
       .andWhere('jornada.estado_funcional = :aprobado', {
         aprobado: EstadoFuncional.APROBADO,
       });
-    this.aplicarPeriodo(qb, anio, mes);
+    this.aplicarRango(qb, rango);
     return qb.getCount();
   }
 
@@ -897,8 +898,7 @@ export class EvaluacionesService {
     proyectoId: string,
     metaId: string,
     usuarioId: string,
-    anio?: number | null,
-    mes?: number | null,
+    rango?: OpcionesRangoJornada,
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
@@ -910,7 +910,7 @@ export class EvaluacionesService {
         cancelada: EstadoJornada.CANCELADA,
       })
       .select('COUNT(DISTINCT b.id)', 'total');
-    this.aplicarPeriodo(qb, anio, mes);
+    this.aplicarRango(qb, rango);
     const raw = await qb.getRawOne<{ total: string }>();
     return Number(raw?.total ?? 0);
   }
@@ -1114,11 +1114,77 @@ export class EvaluacionesService {
     mes?: number | null,
   ): void {
     if (anio != null && mes != null) {
-      const inicio = new Date(anio, mes - 1, 1);
-      const fin = new Date(anio, mes, 0);
-      qb.andWhere('jornada.fecha >= :inicioPeriodo', {
-        inicioPeriodo: inicio,
-      }).andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: fin });
+      this.aplicarRango(qb, { anio, mes });
     }
+  }
+
+  private aplicarRango(
+    qb: ReturnType<Repository<Jornada>['createQueryBuilder']>,
+    rango?: OpcionesRangoJornada,
+  ): void {
+    if (rango?.anio != null && rango?.mes != null) {
+      const { desde, hasta } = rangoMes(rango.anio, rango.mes);
+      qb.andWhere('jornada.fecha >= :inicioPeriodo', {
+        inicioPeriodo: desde,
+      }).andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: hasta });
+    } else if (rango?.hasta) {
+      qb.andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: rango.hasta });
+    }
+  }
+
+  /**
+   * Cuotas que se evalúan en un mes: las mensuales de ese mes y, para cada
+   * meta/persona sin cuota mensual ese mes, su cuota total del proyecto (medida
+   * con lo acumulado hasta el fin del mes). Sin mes se devuelven todas.
+   * Antes solo contaban las mensuales, así que las cuotas totales (lo más común)
+   * dejaban todo el cumplimiento en cero.
+   */
+  private async asignacionesDelPeriodo(
+    filtro: { proyectoId?: string; usuarioId?: string },
+    anio?: number,
+    mes?: number,
+  ): Promise<RespuestaAsignacionMetaDto[]> {
+    const qb = this.asignacionRepository
+      .createQueryBuilder('asig')
+      .innerJoinAndSelect('asig.meta', 'meta')
+      .innerJoinAndSelect('meta.proceso', 'proceso')
+      .innerJoinAndSelect('proceso.subactividad', 'sub')
+      .innerJoinAndSelect('sub.actividad', 'actividad')
+      .innerJoinAndSelect('actividad.proyecto', 'proyecto')
+      .innerJoinAndSelect('asig.usuario', 'usuario')
+      .leftJoinAndSelect('asig.metaPeriodo', 'periodo');
+    if (filtro.proyectoId) {
+      qb.andWhere('proyecto.id = :proyectoId', {
+        proyectoId: filtro.proyectoId,
+      });
+    }
+    if (filtro.usuarioId) {
+      qb.andWhere('usuario.id = :usuarioId', { usuarioId: filtro.usuarioId });
+    }
+    const todas = await qb.getMany();
+
+    const corte = anio != null && mes != null ? { anio, mes } : undefined;
+    let vigentes = todas;
+    if (corte) {
+      const clave = (a: AsignacionMeta) => `${a.meta.id}:${a.usuario.id}`;
+      const mensuales = todas.filter(
+        (a) => a.metaPeriodo?.anio === anio && a.metaPeriodo?.mes === mes,
+      );
+      const conMensual = new Set(mensuales.map(clave));
+      const totales = todas.filter(
+        (a) => !a.metaPeriodo && !conMensual.has(clave(a)),
+      );
+      vigentes = [...mensuales, ...totales];
+    }
+
+    return Promise.all(
+      vigentes.map((a) =>
+        this.enriquecerAsignacion(
+          a,
+          a.meta.proceso.subactividad.actividad.proyecto.id,
+          corte,
+        ),
+      ),
+    );
   }
 }
