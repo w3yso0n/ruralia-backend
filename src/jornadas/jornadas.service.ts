@@ -24,12 +24,14 @@ import { PlantillaFormulario } from '../formularios/entities/plantilla-formulari
 import { RespuestaFormulario } from '../formularios/entities/respuesta-formulario.entity';
 import { TipoPlantilla } from '../formularios/enums/tipo-plantilla.enum';
 import { TipoCampo } from '../formularios/enums/tipo-campo.enum';
+import { Geocerca } from '../proyectos/entities/geocerca.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
 import {
   usuarioEsCoordinacion,
   usuarioTieneAccesoTotal,
 } from '../usuarios/utils/permisos-usuario';
+import { Vereda } from '../territorios/entities/vereda.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActividadJornadaDto,
@@ -89,6 +91,8 @@ export class JornadasService {
     private readonly metaRepository: Repository<Meta>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    @InjectRepository(Geocerca)
+    private readonly geocercaRepository: Repository<Geocerca>,
     @InjectRepository(Actividad)
     private readonly actividadRepository: Repository<Actividad>,
     @InjectRepository(Subactividad)
@@ -189,6 +193,12 @@ export class JornadasService {
 
     this.validarAsignacionExclusiva(dto.beneficiarioIds, dto.asociacionIds);
 
+    const lugar = await this.resolverLugarJornada(
+      dto.proyectoId,
+      dto.veredaId,
+      dto.geocercaId,
+    );
+
     const participantes = await this.resolverParticipantesDeProyecto(
       dto.proyectoId,
       dto.beneficiarioIds,
@@ -217,7 +227,8 @@ export class JornadasService {
           plantillaFormulario: plantilla
             ? ({ id: plantilla.id } as PlantillaFormulario)
             : null,
-          vereda: { id: dto.veredaId },
+          vereda: lugar.vereda,
+          geocerca: lugar.geocerca,
           tecnicoResponsable: { id: tecnicoId },
           tecnicoResponsableNombre: tecnico.nombreCompleto,
           equipo: [{ id: tecnicoId }],
@@ -254,6 +265,35 @@ export class JornadasService {
     );
 
     return { grupoJornadaId, jornadas };
+  }
+
+  private async resolverLugarJornada(
+    proyectoId: string,
+    veredaId?: string | null,
+    geocercaId?: string | null,
+  ): Promise<{ vereda: Vereda | null; geocerca: Geocerca | null }> {
+    const vereda = veredaId || null;
+    const geocerca = geocercaId || null;
+
+    if ((vereda && geocerca) || (!vereda && !geocerca)) {
+      throw new BadRequestException(
+        'La jornada debe ligarse a una vereda o a una geocerca del proyecto',
+      );
+    }
+
+    if (geocerca) {
+      const encontrada = await this.geocercaRepository.findOne({
+        where: { id: geocerca, proyectoId },
+      });
+      if (!encontrada) {
+        throw new BadRequestException(
+          'La geocerca no pertenece a este proyecto',
+        );
+      }
+      return { vereda: null, geocerca: { id: geocerca } as Geocerca };
+    }
+
+    return { vereda: { id: vereda! } as Vereda, geocerca: null };
   }
 
   private resolverTecnicoIds(
@@ -431,6 +471,7 @@ export class JornadasService {
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
       .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.geocerca', 'geocerca')
       .leftJoinAndSelect('jornada.meta', 'meta')
       .leftJoinAndSelect('meta.proceso', 'proceso')
       .leftJoinAndSelect('proceso.subactividad', 'subactividad')
@@ -504,6 +545,7 @@ export class JornadasService {
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
       .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.geocerca', 'geocerca')
       .leftJoinAndSelect('jornada.meta', 'meta')
       .leftJoinAndSelect('meta.proceso', 'proceso')
       .leftJoinAndSelect('proceso.subactividad', 'subactividad')
@@ -547,6 +589,7 @@ export class JornadasService {
         },
         jornadaActividades: { actividad: true, subactividad: true },
         vereda: true,
+        geocerca: true,
         tecnicoResponsable: true,
         beneficiarios: true,
         asociaciones: true,
@@ -667,6 +710,15 @@ export class JornadasService {
         ? await this.resolverPlantillaOpcional(dto.plantillaFormularioId)
         : undefined;
 
+    const lugar =
+      dto.veredaId !== undefined || dto.geocercaId !== undefined
+        ? await this.resolverLugarJornada(
+            jornada.proyecto.id,
+            dto.veredaId,
+            dto.geocercaId,
+          )
+        : null;
+
     for (const objetivo of objetivos) {
       if (dto.fecha !== undefined) {
         this.validarFechaDentroDelProyecto(dto.fecha, objetivo.proyecto);
@@ -681,8 +733,9 @@ export class JornadasService {
       if (dto.latitud !== undefined) objetivo.latitud = dto.latitud;
       if (dto.longitud !== undefined) objetivo.longitud = dto.longitud;
       if (dto.tipo !== undefined) objetivo.tipo = dto.tipo;
-      if (dto.veredaId !== undefined) {
-        objetivo.vereda = { id: dto.veredaId } as Jornada['vereda'];
+      if (lugar) {
+        objetivo.vereda = lugar.vereda;
+        objetivo.geocerca = lugar.geocerca;
       }
       if (plantillaNueva !== undefined) {
         objetivo.plantillaFormulario = plantillaNueva;
@@ -1194,6 +1247,7 @@ export class JornadasService {
       relations: {
         proyecto: true,
         vereda: true,
+        geocerca: true,
         meta: { proceso: true },
         tecnicoResponsable: true,
         plantillaFormulario: { campos: true },
@@ -1252,7 +1306,7 @@ export class JornadasService {
       proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
       plantillaNombre: plantilla.nombre,
       fecha: jornada.fecha,
-      veredaNombre: jornada.vereda?.nombre,
+      veredaNombre: jornada.geocerca?.nombre ?? jornada.vereda?.nombre,
       metaNombre: jornada.meta?.nombre,
       unidadMedida: jornada.meta?.unidadMedida ?? null,
       cantidadEjecutada:
@@ -1362,6 +1416,7 @@ export class JornadasService {
       relations: {
         proyecto: true,
         vereda: true,
+        geocerca: true,
         meta: { proceso: true },
         tecnicoResponsable: true,
       },
@@ -1387,7 +1442,7 @@ export class JornadasService {
       proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
       tituloDocumento: 'REPORTE DE FORMULARIO',
       fecha: jornada.fecha,
-      veredaNombre: jornada.vereda?.nombre,
+      veredaNombre: jornada.geocerca?.nombre ?? jornada.vereda?.nombre,
       metaNombre: jornada.meta?.nombre,
       unidadMedida: jornada.meta?.unidadMedida ?? null,
       cantidadEjecutada:

@@ -11,6 +11,7 @@ import {
   RespuestaGeocercaDto,
 } from './dto/geocerca.dto';
 import { Geocerca, PuntoGeocerca } from './entities/geocerca.entity';
+import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from './entities/proyecto.entity';
 import { aRespuestaGeocerca } from './utils/serializar-geocerca';
 
@@ -23,6 +24,8 @@ export class GeocercasService {
     private readonly geocercaRepository: Repository<Geocerca>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    @InjectRepository(Jornada)
+    private readonly jornadaRepository: Repository<Jornada>,
   ) {}
 
   async listar(proyectoId: string): Promise<RespuestaGeocercaDto[]> {
@@ -87,6 +90,14 @@ export class GeocercasService {
 
   async eliminar(proyectoId: string, geocercaId: string): Promise<void> {
     const geocerca = await this.buscarEnProyecto(proyectoId, geocercaId);
+    const jornadas = await this.jornadaRepository.count({
+      where: { geocerca: { id: geocercaId } },
+    });
+    if (jornadas > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar: hay jornadas ligadas a esta geocerca',
+      );
+    }
     await this.geocercaRepository.remove(geocerca);
   }
 

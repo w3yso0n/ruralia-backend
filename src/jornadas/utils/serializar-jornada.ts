@@ -74,6 +74,12 @@ export function aRespuestaJornada(
             nombre: jornada.vereda.nombre,
           } as RespuestaResumenDto)
         : undefined,
+      geocerca: jornada.geocerca
+        ? ({
+            id: jornada.geocerca.id,
+            nombre: jornada.geocerca.nombre,
+          } as RespuestaResumenDto)
+        : undefined,
       tecnicoResponsable: {
         id: jornada.tecnicoResponsable?.id ?? '',
         nombre:

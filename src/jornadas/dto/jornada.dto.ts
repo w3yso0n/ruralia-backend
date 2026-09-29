@@ -83,9 +83,21 @@ export class CrearJornadaDto {
   @IsOptional()
   actividades?: ActividadJornadaDto[];
 
-  @ApiProperty({ description: 'ID de la vereda' })
+  @ApiPropertyOptional({
+    description:
+      'ID de la vereda del proyecto. Obligatorio si no se envía geocercaId.',
+  })
   @IsUUID('4')
-  veredaId: string;
+  @IsOptional()
+  veredaId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de una geocerca del proyecto. Obligatorio si no se envía veredaId. No se combina con vereda.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  geocercaId?: string | null;
 
   @ApiPropertyOptional({
     enum: TipoJornada,
@@ -193,10 +205,21 @@ export class ActualizarJornadaDto {
   @IsOptional()
   actividades?: ActividadJornadaDto[];
 
-  @ApiPropertyOptional({ description: 'ID de la vereda' })
+  @ApiPropertyOptional({
+    description:
+      'ID de la vereda. Enviar null si el lugar pasa a ser una geocerca.',
+  })
   @IsUUID('4')
   @IsOptional()
-  veredaId?: string;
+  veredaId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de una geocerca del proyecto. Enviar null si el lugar pasa a ser una vereda.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  geocercaId?: string | null;
 
   @ApiPropertyOptional({
     description:

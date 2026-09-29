@@ -14,6 +14,7 @@ import {
 import { Meta } from '../../actividades/entities/meta.entity';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Asociacion } from '../../asociaciones/entities/asociacion.entity';
+import { Geocerca } from '../../proyectos/entities/geocerca.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
@@ -125,9 +126,14 @@ export class Jornada {
   })
   asistentes: JornadaAsistente[];
 
-  @ManyToOne(() => Vereda, { nullable: false })
+  @ManyToOne(() => Vereda, { nullable: true })
   @JoinColumn({ name: 'vereda_id' })
-  vereda: Vereda;
+  vereda: Vereda | null;
+
+  /** Zona trazada del proyecto. Excluyente con vereda. */
+  @ManyToOne(() => Geocerca, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'geocerca_id' })
+  geocerca: Geocerca | null;
 
   @ManyToOne(() => Usuario, { nullable: false })
   @JoinColumn({ name: 'tecnico_responsable_id' })

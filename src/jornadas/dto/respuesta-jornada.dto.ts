@@ -228,6 +228,14 @@ export class RespuestaJornadaDto {
   @Type(() => RespuestaResumenDto)
   vereda?: RespuestaResumenDto;
 
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Geocerca del proyecto asociada',
+  })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  geocerca?: RespuestaResumenDto;
+
   @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Técnico responsable' })
   @Expose()
   @Type(() => RespuestaResumenDto)
