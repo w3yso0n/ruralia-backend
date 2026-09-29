@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import ExcelJS from 'exceljs';
 import { TipoDocumento } from '../../beneficiarios/enums/tipo-documento.enum';
 
@@ -39,7 +41,31 @@ function normalizarEncabezado(valor: unknown): string {
 
 function celdaTexto(valor: unknown): string {
   if (valor == null) return '';
-  return String(valor).trim();
+  if (typeof valor === 'string' || typeof valor === 'number' || typeof valor === 'boolean') {
+    return String(valor).trim();
+  }
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  if (typeof valor === 'object') {
+    const objeto = valor as {
+      text?: unknown;
+      hyperlink?: unknown;
+      result?: unknown;
+      richText?: Array<{ text?: string }>;
+    };
+    if (Array.isArray(objeto.richText)) {
+      return objeto.richText.map((parte) => parte.text ?? '').join('').trim();
+    }
+    if (typeof objeto.text === 'string' || typeof objeto.text === 'number') {
+      return String(objeto.text).trim();
+    }
+    if (typeof objeto.result === 'string' || typeof objeto.result === 'number') {
+      return String(objeto.result).trim();
+    }
+    if (typeof objeto.hyperlink === 'string') {
+      return objeto.hyperlink.replace(/^mailto:/i, '').trim();
+    }
+  }
+  return '';
 }
 
 export function normalizarIdentificador(valor: string): string {
@@ -77,6 +103,49 @@ function indiceColumna(
   return encabezados.findIndex((h) => alias.includes(h));
 }
 
+function leerEncabezados(row: ExcelJS.Row): string[] {
+  const encabezados: string[] = [];
+  row.eachCell({ includeEmpty: true }, (celda, col) => {
+    encabezados[col] = normalizarEncabezado(celda.value);
+  });
+  return encabezados;
+}
+
+function buscarFilaEncabezado(hoja: ExcelJS.Worksheet): number {
+  let encontrada = 0;
+  const tope = Math.min(hoja.rowCount, 30);
+  for (let numero = 1; numero <= tope; numero += 1) {
+    const encabezados = leerEncabezados(hoja.getRow(numero));
+    if (
+      indiceColumna(encabezados, ALIAS_NOMBRE) >= 0 &&
+      indiceColumna(encabezados, ALIAS_ID) >= 0
+    ) {
+      encontrada = numero;
+      break;
+    }
+  }
+  return encontrada;
+}
+
+function cargarLogoRuralia(): Buffer | null {
+  const candidatos = [
+    join(process.cwd(), 'assets', 'logo-ruralia.png'),
+    join(process.cwd(), 'ruralia-backend', 'assets', 'logo-ruralia.png'),
+    join(__dirname, '../../../assets/logo-ruralia.png'),
+  ];
+  for (const ruta of candidatos) {
+    if (existsSync(ruta)) return readFileSync(ruta);
+  }
+  return null;
+}
+
+const NAVY = 'FF121C2D';
+const TEAL = 'FF42827A';
+const TEAL_SOFT = 'FFEEF3F2';
+const TEAL_TEXTO = 'FF2D524D';
+const BLANCO = 'FFFFFFFF';
+const ZINC = 'FFD4E4E1';
+
 export async function parsearExcelBeneficiarios(
   buffer: Buffer,
 ): Promise<FilaExcelBeneficiario[]> {
@@ -85,10 +154,14 @@ export async function parsearExcelBeneficiarios(
   const hoja = wb.worksheets[0];
   if (!hoja) return [];
 
-  const encabezados: string[] = [];
-  hoja.getRow(1).eachCell({ includeEmpty: true }, (celda, col) => {
-    encabezados[col] = normalizarEncabezado(celda.value);
-  });
+  const filaEncabezado = buscarFilaEncabezado(hoja);
+  if (filaEncabezado < 1) {
+    throw new Error(
+      'El Excel debe tener columnas de nombre (o nombres) e identificador/documento.',
+    );
+  }
+
+  const encabezados = leerEncabezados(hoja.getRow(filaEncabezado));
 
   const colNombre = indiceColumna(encabezados, ALIAS_NOMBRE);
   const colApellidos = indiceColumna(encabezados, ALIAS_APELLIDOS);
@@ -105,7 +178,7 @@ export async function parsearExcelBeneficiarios(
 
   const filas: FilaExcelBeneficiario[] = [];
   hoja.eachRow((row, numero) => {
-    if (numero === 1) return;
+    if (numero <= filaEncabezado) return;
     const identificador = normalizarIdentificador(
       celdaTexto(row.getCell(colId).value),
     );
@@ -135,18 +208,189 @@ export async function parsearExcelBeneficiarios(
 
 export async function generarPlantillaExcelBeneficiarios(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const hoja = wb.addWorksheet('Beneficiarios');
-  hoja.columns = [
-    { header: 'nombres', width: 24 },
-    { header: 'apellidos', width: 24 },
-    { header: 'identificador', width: 18 },
-    { header: 'tipo_documento', width: 16 },
-    { header: 'telefono', width: 16 },
-    { header: 'correo', width: 28 },
+  wb.creator = 'Ruralia';
+  wb.created = new Date();
+
+  const hoja = wb.addWorksheet('Beneficiarios', {
+    views: [{ state: 'frozen', ySplit: 6, showGridLines: false }],
+    properties: { tabColor: { argb: TEAL } },
+  });
+
+  const columnas = [
+    { key: 'nombres', width: 26, titulo: 'nombres' },
+    { key: 'apellidos', width: 26, titulo: 'apellidos' },
+    { key: 'identificador', width: 20, titulo: 'identificador' },
+    { key: 'tipo_documento', width: 18, titulo: 'tipo_documento' },
+    { key: 'telefono', width: 18, titulo: 'telefono' },
+    { key: 'correo', width: 32, titulo: 'correo' },
   ];
-  hoja.getRow(1).font = { bold: true };
-  hoja.addRow(['María', 'López García', '1020304050', 'CC', '3001234567', '']);
-  hoja.addRow(['Juan Carlos', 'Pérez', '1122334455', 'CC', '', '']);
+  columnas.forEach((columna, indice) => {
+    hoja.getColumn(indice + 1).width = columna.width;
+  });
+  hoja.getColumn(1).width = 18;
+
+  hoja.getRow(1).height = 22;
+  hoja.getRow(2).height = 28;
+  hoja.getRow(3).height = 22;
+  hoja.getRow(4).height = 18;
+  for (let fila = 1; fila <= 4; fila += 1) {
+    for (let col = 1; col <= 6; col += 1) {
+      const celda = hoja.getCell(fila, col);
+      celda.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: NAVY },
+      };
+    }
+  }
+
+  hoja.mergeCells('B2:F2');
+  hoja.mergeCells('B3:F3');
+  const titulo = hoja.getCell('B2');
+  titulo.value = 'Ruralia';
+  titulo.font = { name: 'Calibri', size: 20, bold: true, color: { argb: BLANCO } };
+  titulo.alignment = { vertical: 'middle', horizontal: 'left' };
+
+  const subtitulo = hoja.getCell('B3');
+  subtitulo.value = 'Plantilla de carga de beneficiarios';
+  subtitulo.font = { name: 'Calibri', size: 12, color: { argb: 'FFD4E4E1' } };
+  subtitulo.alignment = { vertical: 'middle', horizontal: 'left' };
+
+  const logo = cargarLogoRuralia();
+  if (logo) {
+    const imagen = wb.addImage({
+      buffer: logo as unknown as ExcelJS.Buffer,
+      extension: 'png',
+    });
+    hoja.addImage(imagen, {
+      tl: { col: 0.55, row: 0.18 },
+      ext: { width: 96, height: 96 },
+    });
+  }
+
+  hoja.getRow(5).height = 36;
+  hoja.mergeCells('A5:F5');
+  const ayuda = hoja.getCell('A5');
+  ayuda.value =
+    'Una fila por persona. Obligatorios: nombres e identificador. tipo_documento: CC, CE, TI o PASAPORTE. No cambies los títulos de la fila verde; escribe los datos desde la fila de abajo.';
+  ayuda.font = { name: 'Calibri', size: 10, color: { argb: TEAL_TEXTO } };
+  ayuda.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+  ayuda.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: TEAL_SOFT },
+  };
+
+  const encabezados = hoja.getRow(6);
+  encabezados.height = 22;
+  columnas.forEach((columna, indice) => {
+    const celda = encabezados.getCell(indice + 1);
+    celda.value = columna.titulo;
+    celda.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BLANCO } };
+    celda.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: TEAL },
+    };
+    celda.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  });
+
+  hoja.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: 6 } };
+  const validacionTipo: ExcelJS.DataValidation = {
+    type: 'list',
+    allowBlank: true,
+    formulae: ['"CC,CE,TI,PASAPORTE"'],
+    showErrorMessage: true,
+    errorStyle: 'warning',
+    errorTitle: 'Tipo de documento',
+    error: 'Usa CC, CE, TI o PASAPORTE.',
+  };
+  for (let fila = 7; fila <= 200; fila += 1) {
+    hoja.getCell(fila, 4).dataValidation = validacionTipo;
+  }
+
+  for (let fila = 7; fila <= 26; fila += 1) {
+    const row = hoja.getRow(fila);
+    row.height = 20;
+    for (let col = 1; col <= 6; col += 1) {
+      const celda = row.getCell(col);
+      celda.font = { name: 'Calibri', size: 11, color: { argb: 'FF171717' } };
+      celda.border = {
+        bottom: { style: 'thin', color: { argb: ZINC } },
+      };
+      celda.alignment = { vertical: 'middle', indent: 1 };
+    }
+  }
+
+  const guia = wb.addWorksheet('Como llenarla', {
+    properties: { tabColor: { argb: NAVY } },
+  });
+  guia.getColumn(1).width = 28;
+  guia.getColumn(2).width = 72;
+  guia.mergeCells('A1:B1');
+  guia.getRow(1).height = 28;
+  const tituloGuia = guia.getCell('A1');
+  tituloGuia.value = 'Ruralia · Cómo llenar la plantilla';
+  tituloGuia.font = { name: 'Calibri', size: 16, bold: true, color: { argb: BLANCO } };
+  tituloGuia.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: NAVY },
+  };
+  tituloGuia.alignment = { vertical: 'middle', indent: 1 };
+  guia.getCell('B1').fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: NAVY },
+  };
+
+  const notas = [
+    ['nombres', 'Obligatorio. Nombre o nombres de pila.'],
+    ['apellidos', 'Apellidos. Si lo dejas vacío, se toma del nombre completo.'],
+    ['identificador', 'Obligatorio. Cédula u otro documento, sin puntos ni espacios.'],
+    ['tipo_documento', 'CC, CE, TI o PASAPORTE. Si lo omites, se asume CC.'],
+    ['telefono', 'Opcional. Celular de contacto.'],
+    ['correo', 'Opcional.'],
+  ];
+  notas.forEach((nota, indice) => {
+    const fila = indice + 3;
+    guia.getCell(fila, 1).value = nota[0];
+    guia.getCell(fila, 1).font = {
+      name: 'Calibri',
+      size: 11,
+      bold: true,
+      color: { argb: TEAL_TEXTO },
+    };
+    guia.getCell(fila, 2).value = nota[1];
+    guia.getCell(fila, 2).font = { name: 'Calibri', size: 11, color: { argb: 'FF171717' } };
+    guia.getRow(fila).height = 22;
+  });
+
+  guia.getCell('A10').value =
+    'El ejemplo de abajo es solo una guía. La carga lee la hoja Beneficiarios.';
+  guia.getCell('A10').font = { name: 'Calibri', size: 11, italic: true, color: { argb: TEAL_TEXTO } };
+  guia.mergeCells('A10:B10');
+
+  const ejemploEncabezado = guia.getRow(12);
+  ['nombres', 'apellidos', 'identificador', 'tipo_documento', 'telefono', 'correo'].forEach(
+    (tituloCol, indice) => {
+      const celda = ejemploEncabezado.getCell(indice + 1);
+      celda.value = tituloCol;
+      celda.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLANCO } };
+      celda.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: TEAL },
+      };
+    },
+  );
+  guia.getColumn(3).width = 18;
+  guia.getColumn(4).width = 18;
+  guia.getColumn(5).width = 16;
+  guia.getColumn(6).width = 28;
+  guia.addRow(['María', 'López García', '1020304050', 'CC', '3001234567', '']);
+  guia.addRow(['Juan Carlos', 'Pérez', '1122334455', 'CC', '', '']);
+
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }

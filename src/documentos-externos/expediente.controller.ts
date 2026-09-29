@@ -31,7 +31,7 @@ export class ExpedienteController {
   @ApiOperation({
     summary: 'Descargar expediente filtrado en ZIP',
     description:
-      'Arma un ZIP con el PDF vigente, los adjuntos del formulario y las evidencias de cada jornada, en carpetas de actividad, subactividad, proceso, meta y jornada.',
+      'Arma un ZIP con el PDF vigente, los adjuntos del formulario y las evidencias de cada jornada, en carpetas de actividad, subactividad, proceso, meta y jornada. Con incluirExternos, agrega los documentos externos del proyecto en la carpeta documentos-externos.',
   })
   descargar(
     @Param('id', ParseUUIDPipe) id: string,

@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import {
   ActualizarAsociacionDto,
@@ -26,6 +27,8 @@ export class AsociacionesService {
   constructor(
     @InjectRepository(Asociacion)
     private readonly asociacionRepository: Repository<Asociacion>,
+    @InjectRepository(Beneficiario)
+    private readonly beneficiarioRepository: Repository<Beneficiario>,
     @InjectRepository(Vereda)
     private readonly veredaRepository: Repository<Vereda>,
   ) {}
@@ -59,21 +62,39 @@ export class AsociacionesService {
       .take(limite)
       .getManyAndCount();
 
-    const datos = asociaciones.map(aRespuestaAsociacion);
+    const conteos = await this.contarBeneficiarios(
+      asociaciones.map((a) => a.id),
+    );
+    const datos = asociaciones.map((asociacion) =>
+      aRespuestaAsociacion({
+        ...asociacion,
+        totalBeneficiarios: conteos.get(asociacion.id) ?? 0,
+      }),
+    );
     return aRespuestaPaginadaAsociaciones(datos, total, pagina, limite);
   }
 
   async obtenerUno(id: string): Promise<RespuestaAsociacionDto> {
     const asociacion = await this.asociacionRepository.findOne({
       where: { id },
-      relations: { vereda: true },
+      relations: { vereda: true, beneficiarios: { vereda: true } },
     });
 
     if (!asociacion) {
       throw new NotFoundException(`Asociación ${id} no encontrada`);
     }
 
-    return aRespuestaAsociacion(asociacion);
+    const beneficiarios = (asociacion.beneficiarios ?? [])
+      .filter((b) => b.estaActivo)
+      .sort((a, b) =>
+        `${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`),
+      );
+
+    return aRespuestaAsociacion({
+      ...asociacion,
+      beneficiarios,
+      totalBeneficiarios: beneficiarios.length,
+    });
   }
 
   async crear(dto: CrearAsociacionDto): Promise<RespuestaAsociacionDto> {
@@ -87,6 +108,7 @@ export class AsociacionesService {
       telefono: dto.telefono,
       correo: dto.correo,
       vereda: { id: dto.veredaId },
+      beneficiarios: await this.resolverBeneficiarios(dto.beneficiarioIds),
     });
 
     const guardada = await this.asociacionRepository.save(asociacion);
@@ -99,10 +121,24 @@ export class AsociacionesService {
   ): Promise<RespuestaAsociacionDto> {
     const asociacion = await this.asociacionRepository.findOne({
       where: { id },
+      relations: { beneficiarios: dto.beneficiarioIds !== undefined },
     });
 
     if (!asociacion) {
       throw new NotFoundException(`Asociación ${id} no encontrada`);
+    }
+
+    if (dto.beneficiarioIds !== undefined) {
+      // El formulario solo muestra activos: los desactivados se conservan para
+      // que vuelvan a la asociación si se reactivan.
+      const pedidos = new Set(dto.beneficiarioIds);
+      const desactivados = (asociacion.beneficiarios ?? []).filter(
+        (b) => !b.estaActivo && !b.eliminadoEn && !pedidos.has(b.id),
+      );
+      asociacion.beneficiarios = [
+        ...(await this.resolverBeneficiarios(dto.beneficiarioIds)),
+        ...desactivados,
+      ];
     }
 
     if (dto.nit && dto.nit !== asociacion.nit) {
@@ -156,6 +192,45 @@ export class AsociacionesService {
     if (existente) {
       throw new ConflictException(`Ya existe una asociación con NIT ${nit}`);
     }
+  }
+
+  private async resolverBeneficiarios(
+    beneficiarioIds?: string[],
+  ): Promise<Beneficiario[]> {
+    const ids = [...new Set(beneficiarioIds ?? [])];
+    if (!ids.length) return [];
+
+    const beneficiarios = await this.beneficiarioRepository.find({
+      where: { id: In(ids), estaActivo: true },
+    });
+
+    if (beneficiarios.length !== ids.length) {
+      const encontrados = new Set(beneficiarios.map((b) => b.id));
+      const faltantes = ids.filter((id) => !encontrados.has(id));
+      throw new NotFoundException(
+        `Beneficiarios no encontrados o inactivos: ${faltantes.join(', ')}`,
+      );
+    }
+
+    return beneficiarios;
+  }
+
+  private async contarBeneficiarios(
+    asociacionIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!asociacionIds.length) return new Map();
+
+    const filas = await this.asociacionRepository
+      .createQueryBuilder('asociacion')
+      .innerJoin('asociacion.beneficiarios', 'beneficiario')
+      .select('asociacion.id', 'id')
+      .addSelect('COUNT(beneficiario.id)', 'total')
+      .where('asociacion.id IN (:...asociacionIds)', { asociacionIds })
+      .andWhere('beneficiario.estaActivo = true')
+      .groupBy('asociacion.id')
+      .getRawMany<{ id: string; total: string }>();
+
+    return new Map(filas.map((fila) => [fila.id, Number(fila.total)]));
   }
 
   private async verificarVereda(veredaId: string): Promise<void> {

@@ -107,11 +107,25 @@ export class ActualizarBeneficiarioDto {
   fechaNacimiento?: string;
 }
 
+export enum EstadoFiltroBeneficiario {
+  ACTIVOS = 'activos',
+  DESACTIVADOS = 'desactivados',
+}
+
 export class FiltrosBeneficiarioDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   busqueda?: string;
+
+  @ApiPropertyOptional({
+    enum: EstadoFiltroBeneficiario,
+    default: EstadoFiltroBeneficiario.ACTIVOS,
+    description: 'Los eliminados nunca se listan',
+  })
+  @IsEnum(EstadoFiltroBeneficiario)
+  @IsOptional()
+  estado?: EstadoFiltroBeneficiario = EstadoFiltroBeneficiario.ACTIVOS;
 
   @ApiPropertyOptional()
   @IsUUID('4')

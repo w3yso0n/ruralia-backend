@@ -6,7 +6,7 @@ import {
 } from '../dto/respuesta-asociacion.dto';
 
 export function aRespuestaAsociacion(
-  asociacion: Asociacion,
+  asociacion: Asociacion & { totalBeneficiarios?: number },
 ): RespuestaAsociacionDto {
   return plainToInstance(RespuestaAsociacionDto, asociacion, {
     excludeExtraneousValues: true,

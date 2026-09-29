@@ -44,6 +44,14 @@ export class Beneficiario {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
+  /**
+   * Eliminación definitiva (no reversible desde la plataforma). El registro se
+   * conserva solo para no romper el historial de proyectos y jornadas; siempre
+   * va acompañado de `estaActivo = false`, así que los filtros por activos ya lo excluyen.
+   */
+  @Column({ name: 'eliminado_en', type: 'timestamptz', nullable: true })
+  eliminadoEn: Date | null;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

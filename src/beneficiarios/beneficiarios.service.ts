@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -9,17 +10,25 @@ import { Vereda } from '../territorios/entities/vereda.entity';
 import {
   ActualizarBeneficiarioDto,
   CrearBeneficiarioDto,
+  EstadoFiltroBeneficiario,
   FiltrosBeneficiarioDto,
 } from './dto/beneficiario.dto';
 import {
   RespuestaBeneficiarioDto,
   RespuestaPaginadaBeneficiariosDto,
+  RespuestaUsoBeneficiarioDto,
 } from './dto/respuesta-beneficiario.dto';
 import { Beneficiario } from './entities/beneficiario.entity';
+import {
+  normalizarIdentificador,
+  parsearExcelBeneficiarios,
+} from '../proyectos/utils/excel-beneficiarios';
+import { RespuestaCargaMasivaBeneficiariosDto } from '../proyectos/dto/carga-beneficiarios.dto';
 import {
   aRespuestaBeneficiario,
   aRespuestaPaginadaBeneficiarios,
 } from './utils/serializar-beneficiario';
+import { MENSAJE_DOCUMENTO_ELIMINADO } from './utils/mensajes-beneficiario';
 
 @Injectable()
 export class BeneficiariosService {
@@ -40,7 +49,10 @@ export class BeneficiariosService {
     const query = this.beneficiarioRepository
       .createQueryBuilder('beneficiario')
       .leftJoinAndSelect('beneficiario.vereda', 'vereda')
-      .where('beneficiario.estaActivo = true')
+      .where('beneficiario.eliminadoEn IS NULL')
+      .andWhere('beneficiario.estaActivo = :activo', {
+        activo: filtros.estado !== EstadoFiltroBeneficiario.DESACTIVADOS,
+      })
       .orderBy('beneficiario.apellidos', 'ASC');
 
     if (filtros.veredaId) {
@@ -69,11 +81,185 @@ export class BeneficiariosService {
       relations: { vereda: true },
     });
 
-    if (!beneficiario) {
+    if (!beneficiario || beneficiario.eliminadoEn) {
       throw new NotFoundException(`Beneficiario ${id} no encontrado`);
     }
 
     return aRespuestaBeneficiario(beneficiario);
+  }
+
+  /** Dónde se usa el beneficiario; alimenta las advertencias antes de eliminarlo. */
+  async obtenerUso(id: string): Promise<RespuestaUsoBeneficiarioDto> {
+    await this.buscarNoEliminado(id);
+    const contar = async (sql: string) => {
+      const [fila] = await this.beneficiarioRepository.query<
+        { total: string }[]
+      >(sql, [id]);
+      return Number(fila?.total ?? 0);
+    };
+    const [proyectos, jornadas, asociaciones, documentos] = await Promise.all([
+      contar(
+        'SELECT COUNT(DISTINCT proyecto_id) AS total FROM proyecto_beneficiarios WHERE beneficiario_id = $1',
+      ),
+      contar(
+        'SELECT COUNT(*) AS total FROM jornada_beneficiarios WHERE beneficiario_id = $1',
+      ),
+      contar(
+        'SELECT COUNT(*) AS total FROM asociacion_beneficiarios WHERE beneficiario_id = $1',
+      ),
+      contar(
+        'SELECT COUNT(*) AS total FROM documentos_externos WHERE beneficiario_id = $1',
+      ),
+    ]);
+    return { proyectos, jornadas, asociaciones, documentos };
+  }
+
+  async importarExcel(
+    archivo: Express.Multer.File,
+    veredaId: string,
+  ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
+    if (!veredaId) {
+      throw new BadRequestException(
+        'Elige la vereda de las personas nuevas antes de cargar el archivo',
+      );
+    }
+    await this.verificarVereda(veredaId);
+    const vereda = await this.veredaRepository.findOne({
+      where: { id: veredaId },
+    });
+    if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
+      throw new BadRequestException(
+        'La vereda debe ser del catálogo DANE',
+      );
+    }
+
+    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    const detalle: RespuestaCargaMasivaBeneficiariosDto['detalle'] = [];
+    const vistos = new Set<string>();
+    let creados = 0;
+    let asignadosExistentes = 0;
+    let errores = 0;
+
+    for (const fila of filas) {
+      if (!fila.identificador || !fila.nombres) {
+        errores += 1;
+        detalle.push({
+          fila: fila.fila,
+          identificador: fila.identificador,
+          nombres: fila.nombres,
+          apellidos: fila.apellidos,
+          resultado: 'error',
+          mensaje: 'Faltan nombre e identificador',
+        });
+        continue;
+      }
+      if (vistos.has(fila.identificador)) {
+        errores += 1;
+        detalle.push({
+          fila: fila.fila,
+          identificador: fila.identificador,
+          nombres: fila.nombres,
+          apellidos: fila.apellidos,
+          resultado: 'error',
+          mensaje: 'Identificador duplicado en el archivo',
+        });
+        continue;
+      }
+      vistos.add(fila.identificador);
+
+      const existente = await this.buscarPorDocumento(fila.identificador);
+      if (existente?.eliminadoEn) {
+        errores += 1;
+        detalle.push({
+          fila: fila.fila,
+          identificador: fila.identificador,
+          nombres: fila.nombres,
+          apellidos: fila.apellidos,
+          resultado: 'error',
+          mensaje: MENSAJE_DOCUMENTO_ELIMINADO,
+        });
+        continue;
+      }
+      if (existente && existente.estaActivo) {
+        asignadosExistentes += 1;
+        detalle.push({
+          fila: fila.fila,
+          identificador: fila.identificador,
+          nombres: fila.nombres,
+          apellidos: fila.apellidos,
+          resultado: 'asignado_existente',
+          beneficiarioId: existente.id,
+          mensaje: 'Ya estaba activo en el catálogo',
+        });
+        continue;
+      }
+
+      if (existente) {
+        existente.estaActivo = true;
+        existente.nombres = fila.nombres.trim();
+        existente.apellidos = fila.apellidos.trim() || fila.nombres.trim();
+        existente.tipoDocumento = fila.tipoDocumento;
+        existente.telefono = fila.telefono || existente.telefono;
+        existente.correo = fila.correo || existente.correo;
+        existente.vereda = { id: veredaId } as Beneficiario['vereda'];
+        const reactivado = await this.beneficiarioRepository.save(existente);
+        creados += 1;
+        detalle.push({
+          fila: fila.fila,
+          identificador: fila.identificador,
+          nombres: fila.nombres,
+          apellidos: fila.apellidos,
+          resultado: 'creado',
+          beneficiarioId: reactivado.id,
+          mensaje: 'Se reactivó',
+        });
+        continue;
+      }
+
+      const creado = await this.beneficiarioRepository.save(
+        this.beneficiarioRepository.create({
+          nombres: fila.nombres.trim(),
+          apellidos: fila.apellidos.trim() || fila.nombres.trim(),
+          numeroDocumento: fila.identificador,
+          tipoDocumento: fila.tipoDocumento,
+          telefono: fila.telefono || undefined,
+          correo: fila.correo || undefined,
+          vereda: { id: veredaId },
+          estaActivo: true,
+        }),
+      );
+      creados += 1;
+      detalle.push({
+        fila: fila.fila,
+        identificador: fila.identificador,
+        nombres: fila.nombres,
+        apellidos: fila.apellidos,
+        resultado: 'creado',
+        beneficiarioId: creado.id,
+      });
+    }
+
+    return {
+      totalFilas: filas.length,
+      creados,
+      asignadosExistentes,
+      yaEnProyecto: 0,
+      errores,
+      detalle,
+    };
+  }
+
+  private async buscarPorDocumento(
+    numeroDocumento: string,
+  ): Promise<Beneficiario | null> {
+    const identificador = normalizarIdentificador(numeroDocumento);
+    return this.beneficiarioRepository
+      .createQueryBuilder('b')
+      .where(
+        `REPLACE(REPLACE(REPLACE(UPPER(b.numero_documento), '.', ''), '-', ''), ' ', '') = :id`,
+        { id: identificador },
+      )
+      .getOne();
   }
 
   async crear(dto: CrearBeneficiarioDto): Promise<RespuestaBeneficiarioDto> {
@@ -102,13 +288,7 @@ export class BeneficiariosService {
     id: string,
     dto: ActualizarBeneficiarioDto,
   ): Promise<RespuestaBeneficiarioDto> {
-    const beneficiario = await this.beneficiarioRepository.findOne({
-      where: { id },
-    });
-
-    if (!beneficiario) {
-      throw new NotFoundException(`Beneficiario ${id} no encontrado`);
-    }
+    const beneficiario = await this.buscarNoEliminado(id);
 
     if (
       dto.numeroDocumento &&
@@ -141,17 +321,46 @@ export class BeneficiariosService {
     return this.obtenerUno(id);
   }
 
+  /** Reversible: deja de aparecer en listados y selectores, pero se puede reactivar. */
+  async desactivar(id: string): Promise<RespuestaBeneficiarioDto> {
+    const beneficiario = await this.buscarNoEliminado(id);
+    beneficiario.estaActivo = false;
+    await this.beneficiarioRepository.save(beneficiario);
+    return this.obtenerUno(id);
+  }
+
+  async reactivar(id: string): Promise<RespuestaBeneficiarioDto> {
+    const beneficiario = await this.buscarNoEliminado(id);
+    beneficiario.estaActivo = true;
+    await this.beneficiarioRepository.save(beneficiario);
+    return this.obtenerUno(id);
+  }
+
+  /**
+   * No reversible. Se quita de las asociaciones y deja de existir en la plataforma;
+   * el historial de proyectos, jornadas y documentos conserva la referencia.
+   */
   async eliminar(id: string): Promise<void> {
+    const beneficiario = await this.buscarNoEliminado(id);
+    await this.beneficiarioRepository.manager.transaction(async (manager) => {
+      await manager.query(
+        'DELETE FROM asociacion_beneficiarios WHERE beneficiario_id = $1',
+        [id],
+      );
+      beneficiario.estaActivo = false;
+      beneficiario.eliminadoEn = new Date();
+      await manager.save(beneficiario);
+    });
+  }
+
+  private async buscarNoEliminado(id: string): Promise<Beneficiario> {
     const beneficiario = await this.beneficiarioRepository.findOne({
       where: { id },
     });
-
-    if (!beneficiario) {
+    if (!beneficiario || beneficiario.eliminadoEn) {
       throw new NotFoundException(`Beneficiario ${id} no encontrado`);
     }
-
-    beneficiario.estaActivo = false;
-    await this.beneficiarioRepository.save(beneficiario);
+    return beneficiario;
   }
 
   private async verificarDocumentoUnico(
@@ -170,6 +379,14 @@ export class BeneficiariosService {
 
     const existente = await query.getOne();
 
+    if (existente?.eliminadoEn) {
+      throw new ConflictException(MENSAJE_DOCUMENTO_ELIMINADO);
+    }
+    if (existente && !existente.estaActivo) {
+      throw new ConflictException(
+        `Ya existe un beneficiario desactivado con documento ${numeroDocumento}. Reactívalo desde la pestaña Desactivados.`,
+      );
+    }
     if (existente) {
       throw new ConflictException(
         `Ya existe un beneficiario con documento ${numeroDocumento}`,

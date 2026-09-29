@@ -1,5 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsUUID, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsOptional,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
 
 export class DescargarExpedienteDto {
   @ApiPropertyOptional({ description: 'Fecha inicial inclusive (YYYY-MM-DD)' })
@@ -17,8 +23,18 @@ export class DescargarExpedienteDto {
   @IsUUID()
   procesoId?: string;
 
-  @ApiPropertyOptional({ description: 'Limitar al agente responsable de la jornada' })
+  @ApiPropertyOptional({
+    description: 'Limitar al agente responsable de la jornada',
+  })
   @IsOptional()
   @IsUUID()
   agenteId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Agregar los documentos externos del proyecto en una carpeta aparte, fuera de las jornadas',
+  })
+  @IsOptional()
+  @IsBoolean()
+  incluirExternos?: boolean;
 }

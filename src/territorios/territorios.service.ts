@@ -109,6 +109,10 @@ export class TerritoriosService implements OnModuleInit {
       );
     }
 
+    if (filtros.soloDane) {
+      query.andWhere(`vereda.codigo ~ '^[0-9]+$'`);
+    }
+
     const [veredas, total] = await query
       .skip(saltar)
       .take(limite)

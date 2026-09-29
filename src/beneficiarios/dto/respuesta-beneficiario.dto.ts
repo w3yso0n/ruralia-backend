@@ -64,6 +64,24 @@ export class RespuestaBeneficiarioDto {
   vereda?: RespuestaVeredaBeneficiarioDto;
 }
 
+export class RespuestaUsoBeneficiarioDto {
+  @ApiProperty({ description: 'Proyectos en los que está vinculado' })
+  @Expose()
+  proyectos: number;
+
+  @ApiProperty({ description: 'Jornadas en las que participó' })
+  @Expose()
+  jornadas: number;
+
+  @ApiProperty({ description: 'Asociaciones que lo agrupan' })
+  @Expose()
+  asociaciones: number;
+
+  @ApiProperty({ description: 'Documentos del expediente ligados a él' })
+  @Expose()
+  documentos: number;
+}
+
 export class RespuestaPaginadaBeneficiariosDto {
   @ApiProperty({ type: [RespuestaBeneficiarioDto] })
   @Expose()

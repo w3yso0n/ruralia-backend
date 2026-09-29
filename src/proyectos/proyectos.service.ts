@@ -10,6 +10,7 @@ import { In, Repository } from 'typeorm';
 import { ActividadesService } from '../actividades/actividades.service';
 import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import { MENSAJE_DOCUMENTO_ELIMINADO } from '../beneficiarios/utils/mensajes-beneficiario';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
@@ -564,18 +565,34 @@ export class ProyectosService {
     proyectoId: string,
     archivo: Express.Multer.File,
     usuarioActual: Usuario,
+    veredaIdSolicitada: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
     this.verificarPermisoGestion(proyecto, usuarioActual);
 
-    const detalle = await this.proyectoRepository.findOne({
-      where: { id: proyectoId },
-      relations: { veredas: true },
-    });
-    const veredaId = detalle?.veredas?.[0]?.id;
+    const veredaId = veredaIdSolicitada?.trim();
     if (!veredaId) {
       throw new BadRequestException(
-        'Asigna al menos una vereda al proyecto antes de cargar beneficiarios',
+        'Elige la vereda DANE a la que corresponden las personas nuevas',
+      );
+    }
+    const vereda = await this.veredaRepository.findOne({
+      where: { id: veredaId },
+    });
+    if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
+      throw new BadRequestException(
+        'La vereda debe ser del catálogo DANE del proyecto',
+      );
+    }
+    const pertenece = await this.proyectoRepository
+      .createQueryBuilder('proyecto')
+      .innerJoin('proyecto.veredas', 'vereda')
+      .where('proyecto.id = :proyectoId', { proyectoId })
+      .andWhere('vereda.id = :veredaId', { veredaId })
+      .getCount();
+    if (!pertenece) {
+      throw new BadRequestException(
+        'Esa vereda no está vinculada a este proyecto',
       );
     }
 
@@ -911,7 +928,25 @@ export class ProyectosService {
         { id: identificador },
       )
       .getOne();
-    if (existente) return { beneficiario: existente, creado: false };
+    if (existente) {
+      if (existente.eliminadoEn) {
+        throw new ConflictException(MENSAJE_DOCUMENTO_ELIMINADO);
+      }
+      if (!existente.estaActivo) {
+        existente.estaActivo = true;
+        existente.nombres = opts.nombres.trim();
+        existente.apellidos = opts.apellidos.trim() || opts.nombres.trim();
+        existente.tipoDocumento = opts.tipoDocumento;
+        existente.telefono = opts.telefono || existente.telefono;
+        existente.correo = opts.correo || existente.correo;
+        existente.vereda = { id: opts.veredaId } as Beneficiario['vereda'];
+        return {
+          beneficiario: await this.beneficiarioRepository.save(existente),
+          creado: true,
+        };
+      }
+      return { beneficiario: existente, creado: false };
+    }
 
     const creado = this.beneficiarioRepository.create({
       nombres: opts.nombres.trim(),

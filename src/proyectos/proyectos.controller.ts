@@ -49,6 +49,7 @@ import {
   RespuestaProyectoDto,
 } from './dto/respuesta-proyecto.dto';
 import { ProyectosService } from './proyectos.service';
+import { parsearExcelBeneficiarios } from './utils/excel-beneficiarios';
 
 @ApiTags('Proyectos')
 @ApiBearerAuth('bearer')
@@ -93,6 +94,26 @@ export class ProyectosController {
       'attachment; filename="plantilla-beneficiarios.xlsx"',
     );
     res.send(buffer);
+  }
+
+  @Post('beneficiarios-excel/previsualizar')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Lee el Excel de beneficiarios sin guardarlo' })
+  async previsualizarBeneficiariosExcel(
+    @UploadedFile() archivo: Express.Multer.File,
+  ) {
+    if (!archivo?.buffer) {
+      throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
+    }
+    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    return { filas };
   }
 
   @Get(':id/estadisticas')
@@ -237,6 +258,7 @@ export class ProyectosController {
   importarBeneficiarios(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() archivo: Express.Multer.File,
+    @Body('veredaId') veredaId: string,
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     if (!archivo?.buffer) {
@@ -246,6 +268,7 @@ export class ProyectosController {
       id,
       archivo,
       usuario,
+      veredaId,
     );
   }
 

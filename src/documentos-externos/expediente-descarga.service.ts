@@ -18,6 +18,7 @@ import { RespuestaFormulario } from '../formularios/entities/respuesta-formulari
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { DescargarExpedienteDto } from './dto/descargar-expediente.dto';
+import { DocumentoExterno } from './entities/documento-externo.entity';
 
 type EntradaZip =
   | { tipo: 'archivo'; rutaZip: string; rutaDisco: string }
@@ -37,6 +38,8 @@ export class ExpedienteDescargaService {
     private readonly envioRepo: Repository<EnvioFormulario>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepo: Repository<Proyecto>,
+    @InjectRepository(DocumentoExterno)
+    private readonly externoRepo: Repository<DocumentoExterno>,
   ) {}
 
   async escribirZip(
@@ -45,13 +48,20 @@ export class ExpedienteDescargaService {
     res: Response,
   ) {
     if (filtros.desde && filtros.hasta && filtros.desde > filtros.hasta) {
-      throw new BadRequestException('La fecha inicial no puede ser posterior a la final');
+      throw new BadRequestException(
+        'La fecha inicial no puede ser posterior a la final',
+      );
     }
-    if ((filtros.desde && !filtros.hasta) || (!filtros.desde && filtros.hasta)) {
+    if (
+      (filtros.desde && !filtros.hasta) ||
+      (!filtros.desde && filtros.hasta)
+    ) {
       throw new BadRequestException('Indica la fecha inicial y la final');
     }
 
-    const proyecto = await this.proyectoRepo.findOne({ where: { id: proyectoId } });
+    const proyecto = await this.proyectoRepo.findOne({
+      where: { id: proyectoId },
+    });
     if (!proyecto) {
       throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
     }
@@ -65,10 +75,11 @@ export class ExpedienteDescargaService {
       order: { fecha: 'ASC' },
     });
 
-    const elegidas = jornadas.filter((jornada) => this.cumpleFiltros(jornada, filtros));
-    const ids = new Set(elegidas.map((jornada) => jornada.id));
+    const elegidas = jornadas.filter((jornada) =>
+      this.cumpleFiltros(jornada, filtros),
+    );
 
-    const [documentos, evidencias, envios] = await Promise.all([
+    const [documentos, evidencias, envios, externos] = await Promise.all([
       this.documentoRepo.find({
         where: { proyectoId },
         relations: { versiones: true },
@@ -81,6 +92,12 @@ export class ExpedienteDescargaService {
         where: { jornada: { proyecto: { id: proyectoId } } },
         relations: { respuestas: { campoFormulario: true }, jornada: true },
       }),
+      filtros.incluirExternos
+        ? this.externoRepo.find({
+            where: { proyectoId },
+            order: { creadoEn: 'ASC' },
+          })
+        : Promise.resolve([] as DocumentoExterno[]),
     ]);
 
     const usadas = new Set<string>();
@@ -88,9 +105,13 @@ export class ExpedienteDescargaService {
 
     for (const jornada of elegidas) {
       const carpeta = this.carpetaJornada(jornada);
-      for (const documento of documentos.filter((doc) => doc.jornadaId === jornada.id)) {
+      for (const documento of documentos.filter(
+        (doc) => doc.jornadaId === jornada.id,
+      )) {
         const version = this.versionVigente(documento);
-        const disco = version?.filePath ? this.resolverRuta(version.filePath) : null;
+        const disco = version?.filePath
+          ? this.resolverRuta(version.filePath)
+          : null;
         if (!disco) continue;
         entradas.push({
           tipo: 'archivo',
@@ -103,7 +124,8 @@ export class ExpedienteDescargaService {
       }
 
       for (const evidencia of evidencias) {
-        if (evidencia.jornada?.id !== jornada.id || !evidencia.urlArchivo) continue;
+        if (evidencia.jornada?.id !== jornada.id || !evidencia.urlArchivo)
+          continue;
         const disco = this.resolverRuta(evidencia.urlArchivo);
         if (!disco) continue;
         const nombre = this.nombreConExtension(
@@ -148,7 +170,20 @@ export class ExpedienteDescargaService {
       }
     }
 
-    if (!entradas.length || !ids.size) {
+    for (const externo of externos) {
+      const disco = this.resolverRuta(externo.urlArchivo);
+      if (!disco) continue;
+      entradas.push({
+        tipo: 'archivo',
+        rutaDisco: disco,
+        rutaZip: this.rutaUnica(
+          usadas,
+          `documentos-externos/${this.nombreExterno(externo)}`,
+        ),
+      });
+    }
+
+    if (!entradas.length) {
       throw new BadRequestException(
         'No hay evidencias con esos filtros. Prueba otro rango, proceso o agente.',
       );
@@ -156,10 +191,7 @@ export class ExpedienteDescargaService {
 
     const nombreZip = `${this.segmento(proyecto.nombre)}-expediente.zip`;
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${nombreZip}"`,
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="${nombreZip}"`);
 
     const archive = new ZipArchive({ zlib: { level: 9 } });
     archive.on('error', (error) => {
@@ -183,14 +215,20 @@ export class ExpedienteDescargaService {
   private cumpleFiltros(jornada: Jornada, filtros: DescargarExpedienteDto) {
     const fecha = this.fechaIso(jornada.fecha);
     if (filtros.desde && filtros.hasta) {
-      if (fecha < filtros.desde.slice(0, 10) || fecha > filtros.hasta.slice(0, 10)) {
+      if (
+        fecha < filtros.desde.slice(0, 10) ||
+        fecha > filtros.hasta.slice(0, 10)
+      ) {
         return false;
       }
     }
     if (filtros.procesoId && jornada.meta?.proceso?.id !== filtros.procesoId) {
       return false;
     }
-    if (filtros.agenteId && jornada.tecnicoResponsable?.id !== filtros.agenteId) {
+    if (
+      filtros.agenteId &&
+      jornada.tecnicoResponsable?.id !== filtros.agenteId
+    ) {
       return false;
     }
     return true;
@@ -215,7 +253,9 @@ export class ExpedienteDescargaService {
 
   private versionVigente(documento: Documento): DocumentoVersion | undefined {
     const versiones = documento.versiones ?? [];
-    const vigente = versiones.find((version) => version.id === documento.versionVigenteId);
+    const vigente = versiones.find(
+      (version) => version.id === documento.versionVigenteId,
+    );
     if (vigente?.filePath) return vigente;
     return [...versiones]
       .sort((a, b) => b.versionNumber - a.versionNumber)
@@ -248,7 +288,8 @@ export class ExpedienteDescargaService {
   }
 
   private resolverRuta(filePath: string): string | null {
-    if (filePath.startsWith('data:') || /^https?:\/\//i.test(filePath)) return null;
+    if (filePath.startsWith('data:') || /^https?:\/\//i.test(filePath))
+      return null;
     if (path.isAbsolute(filePath) && existsSync(filePath)) return filePath;
     const enCwd = path.join(process.cwd(), filePath);
     if (existsSync(enCwd)) return enCwd;
@@ -285,6 +326,17 @@ export class ExpedienteDescargaService {
     const limpio = this.segmento(nombre || 'archivo');
     if (path.extname(limpio)) return limpio;
     return `${limpio}${this.extensionMime(mime)}`;
+  }
+
+  private nombreExterno(externo: DocumentoExterno) {
+    const nombre = this.segmento(
+      externo.nombreArchivo || externo.titulo || 'documento',
+    );
+    if (path.extname(nombre)) return nombre;
+    const extension = path.extname(externo.urlArchivo);
+    return extension
+      ? `${nombre}${extension}`
+      : `${nombre}${this.extensionMime(externo.tipoMime ?? '')}`;
   }
 
   private extensionMime(mime: string) {

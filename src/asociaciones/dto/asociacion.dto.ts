@@ -40,6 +40,15 @@ export class CrearAsociacionDto {
   @IsEmail()
   @IsOptional()
   correo?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'IDs de beneficiarios que integran la asociación',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  beneficiarioIds?: string[];
 }
 
 export class ActualizarAsociacionDto {
@@ -72,6 +81,15 @@ export class ActualizarAsociacionDto {
   @IsEmail()
   @IsOptional()
   correo?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'IDs de beneficiarios que integran la asociación',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  beneficiarioIds?: string[];
 }
 
 export class FiltrosAsociacionDto {
