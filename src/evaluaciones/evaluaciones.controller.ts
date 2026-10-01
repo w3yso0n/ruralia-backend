@@ -61,8 +61,13 @@ export class EvaluacionesController {
   listar(
     @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
     @Query() filtros: FiltrosAsignacionMetaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaAsignacionMetaDto[]> {
-    return this.evaluacionesService.listarPorProyecto(proyectoId, filtros);
+    return this.evaluacionesService.listarPorProyecto(
+      proyectoId,
+      filtros,
+      usuario,
+    );
   }
 
   @Get('proyectos/:proyectoId/sugerir-reparto')
@@ -90,8 +95,13 @@ export class EvaluacionesController {
   rankingProyecto(
     @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
     @Query() filtros: FiltrosProductividadDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<ProductividadPersonaDto[]> {
-    return this.evaluacionesService.productividadProyecto(proyectoId, filtros);
+    return this.evaluacionesService.productividadProyecto(
+      proyectoId,
+      filtros,
+      usuario,
+    );
   }
 
   @Get('ranking')
@@ -103,10 +113,14 @@ export class EvaluacionesController {
   @ApiResponse({ status: 200, type: [ProductividadPersonaDto] })
   rankingGlobal(
     @Query() filtros: FiltrosProductividadDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<ProductividadPersonaDto[]> {
     return this.evaluacionesService.cumplimientoEquipoGlobal(
       filtros.anio,
       filtros.mes,
+      undefined,
+      undefined,
+      usuario,
     );
   }
 
@@ -125,6 +139,7 @@ export class EvaluacionesController {
     const pdf = await this.evaluacionesService.generarPdfReporte(
       filtros,
       usuario.nombreCompleto,
+      usuario,
     );
     const anio = filtros.anio ?? new Date().getFullYear();
     const mes = filtros.mes ?? new Date().getMonth() + 1;

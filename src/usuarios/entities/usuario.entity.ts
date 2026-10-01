@@ -28,6 +28,10 @@ export class Usuario {
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
 
+  /** Baja definitiva: deja de listarse y no se puede reactivar. El historial conserva el nombre. */
+  @Column({ name: 'eliminado_en', type: 'timestamptz', nullable: true })
+  eliminadoEn: Date | null;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

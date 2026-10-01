@@ -142,7 +142,10 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
       { accion: 'ver', descripcion: 'Ver listado y detalle de usuarios' },
       { accion: 'crear', descripcion: 'Crear usuarios' },
       { accion: 'editar', descripcion: 'Editar usuarios' },
-      { accion: 'eliminar', descripcion: 'Desactivar usuarios' },
+      {
+        accion: 'eliminar',
+        descripcion: 'Desactivar, reactivar y eliminar usuarios',
+      },
       {
         accion: 'gestionar_roles',
         descripcion: 'Asignar roles a usuarios',

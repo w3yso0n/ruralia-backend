@@ -13,10 +13,7 @@ import {
   detalleConOrigen,
 } from '../cronologia/cronologia.service';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
-import {
-  usuarioEsCoordinacion,
-  usuarioTieneAccesoTotal,
-} from '../usuarios/utils/permisos-usuario';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   ActualizarActividadDto,
@@ -61,6 +58,7 @@ export class ActividadesService {
     @InjectRepository(Jornada)
     private readonly jornadaRepository: Repository<Jornada>,
     private readonly cronologiaService: CronologiaService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   async crearActividad(
@@ -69,7 +67,7 @@ export class ActividadesService {
     usuarioActual: Usuario,
   ): Promise<RespuestaActividadDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const actividad = this.actividadRepository.create({
       nombre: dto.nombre,
@@ -89,7 +87,7 @@ export class ActividadesService {
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividad(id);
     const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (dto.nombre !== undefined) {
       actividad.nombre = dto.nombre;
@@ -108,7 +106,7 @@ export class ActividadesService {
   async eliminarActividad(id: string, usuarioActual: Usuario): Promise<void> {
     const actividad = await this.buscarActividad(id);
     const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     actividad.estaActivo = false;
     await this.actividadRepository.save(actividad);
@@ -121,7 +119,7 @@ export class ActividadesService {
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividadConSubactividades(id);
     const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const subsActivas =
       actividad.subactividades?.filter((sub) => sub.estaActivo) ?? [];
@@ -158,7 +156,7 @@ export class ActividadesService {
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividad(id);
     const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     actividad.estadoAvance = EstadoAvanceActividad.PENDIENTE;
     actividad.notaCompletado = undefined;
@@ -176,7 +174,7 @@ export class ActividadesService {
   ): Promise<RespuestaSubactividadDto> {
     const actividad = await this.buscarActividad(actividadId);
     const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (actividad.estadoAvance === EstadoAvanceActividad.COMPLETADA) {
       actividad.estadoAvance = EstadoAvanceActividad.PENDIENTE;
@@ -207,7 +205,7 @@ export class ActividadesService {
     const proyecto = await this.buscarProyectoConPersonal(
       subactividad.actividad.proyecto.id,
     );
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (dto.nombre !== undefined) {
       subactividad.nombre = dto.nombre;
@@ -231,7 +229,7 @@ export class ActividadesService {
     const proyecto = await this.buscarProyectoConPersonal(
       subactividad.actividad.proyecto.id,
     );
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     subactividad.estaActivo = false;
     await this.subactividadRepository.save(subactividad);
@@ -246,7 +244,7 @@ export class ActividadesService {
     const proyecto = await this.buscarProyectoConPersonal(
       subactividad.actividad.proyecto.id,
     );
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     subactividad.estadoAvance = EstadoAvanceActividad.COMPLETADA;
     subactividad.notaCompletado = dto.notaCompletado;
@@ -276,7 +274,7 @@ export class ActividadesService {
     const proyecto = await this.buscarProyectoConPersonal(
       subactividad.actividad.proyecto.id,
     );
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     subactividad.estadoAvance = EstadoAvanceActividad.PENDIENTE;
     subactividad.notaCompletado = undefined;
@@ -491,22 +489,13 @@ export class ActividadesService {
     return subactividad;
   }
 
-  private verificarPermisoGestion(
+  private async verificarPermisoGestion(
     proyecto: Proyecto,
     usuarioActual: Usuario,
-  ): void {
-    if (usuarioTieneAccesoTotal(usuarioActual)) {
-      return;
-    }
-
-    const esCoordinadorAsignado =
-      usuarioEsCoordinacion(usuarioActual) &&
-      proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
-
-    if (!esCoordinadorAsignado) {
-      throw new ForbiddenException(
-        'No tiene permisos para gestionar el plan de este proyecto',
-      );
-    }
+  ): Promise<void> {
+    await this.alcanceTerritorialService.assertPuedeGestionarProyecto(
+      usuarioActual,
+      proyecto.id,
+    );
   }
 }

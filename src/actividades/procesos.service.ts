@@ -9,10 +9,7 @@ import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
-import {
-  usuarioEsCoordinacion,
-  usuarioTieneAccesoTotal,
-} from '../usuarios/utils/permisos-usuario';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import {
   ActualizarMetaDto,
   ActualizarMetaPeriodoDto,
@@ -48,6 +45,7 @@ export class ProcesosService {
     private readonly jornadaRepository: Repository<Jornada>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   async crearProceso(
@@ -465,23 +463,14 @@ export class ProcesosService {
     proyectoId: string,
     usuarioActual: Usuario,
   ): Promise<void> {
-    if (usuarioTieneAccesoTotal(usuarioActual)) return;
-
-    const proyecto = await this.proyectoRepository.findOne({
+    const existe = await this.proyectoRepository.exists({
       where: { id: proyectoId },
-      relations: { personal: true },
     });
+    if (!existe) throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
 
-    if (!proyecto) throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
-
-    const esCoordinadorAsignado =
-      usuarioEsCoordinacion(usuarioActual) &&
-      proyecto.personal?.some((u) => u.id === usuarioActual.id);
-
-    if (!esCoordinadorAsignado) {
-      throw new ForbiddenException(
-        'No tiene permisos para gestionar el plan de este proyecto',
-      );
-    }
+    await this.alcanceTerritorialService.assertPuedeGestionarProyecto(
+      usuarioActual,
+      proyectoId,
+    );
   }
 }

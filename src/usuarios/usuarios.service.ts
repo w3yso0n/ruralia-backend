@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, IsNull, Repository } from 'typeorm';
 import { FirebaseAdminService } from '../autenticacion/firebase-admin.service';
 import { ActualizarUsuarioDto } from './dto/actualizar-usuario.dto';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto';
@@ -54,6 +54,8 @@ export class UsuariosService {
         { busqueda: `%${filtros.busqueda}%` },
       );
     }
+
+    query.andWhere('usuario.eliminadoEn IS NULL');
 
     if (filtros.estaActivo !== undefined) {
       query.andWhere('usuario.estaActivo = :estaActivo', {
@@ -153,9 +155,12 @@ export class UsuariosService {
     return this.obtenerUno(id);
   }
 
-  async eliminar(id: string, usuarioActual: Usuario): Promise<void> {
+  async desactivar(
+    id: string,
+    usuarioActual: Usuario,
+  ): Promise<RespuestaUsuarioDto> {
     if (usuarioActual.id === id) {
-      throw new ForbiddenException('No puedes eliminar tu propia cuenta');
+      throw new ForbiddenException('No puedes desactivar tu propia cuenta');
     }
 
     const usuario = await this.buscarUsuario(id);
@@ -166,6 +171,60 @@ export class UsuariosService {
     await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
       deshabilitado: true,
     });
+    return this.obtenerUno(id);
+  }
+
+  async reactivar(id: string): Promise<RespuestaUsuarioDto> {
+    const usuario = await this.buscarUsuario(id);
+    if (!usuario.estaActivo) {
+      await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
+        deshabilitado: false,
+      });
+      usuario.estaActivo = true;
+      await this.usuarioRepository.save(usuario);
+    }
+    return this.obtenerUno(id);
+  }
+
+  /**
+   * Baja no reversible. El usuario desaparece del listado y pierde el acceso,
+   * pero proyectos, jornadas y documentos conservan su nombre.
+   */
+  async eliminar(id: string, usuarioActual: Usuario): Promise<void> {
+    if (usuarioActual.id === id) {
+      throw new ForbiddenException('No puedes eliminar tu propia cuenta');
+    }
+
+    const usuario = await this.buscarUsuario(id);
+    await this.validarNoOrfandadAdmin(usuario, false, []);
+
+    const firebaseUid = usuario.firebaseUid;
+    const correoPrevio = usuario.correo;
+    const activoPrevio = usuario.estaActivo;
+    const rolesPrevios = [...(usuario.roles ?? [])];
+
+    usuario.estaActivo = false;
+    usuario.eliminadoEn = new Date();
+    usuario.correo = `eliminado.${usuario.id}@usuarios.invalid`;
+    usuario.firebaseUid = `eliminado:${usuario.id}`;
+    usuario.roles = [];
+
+    await this.usuarioRepository.manager.transaction(async (manager) => {
+      await manager.save(usuario);
+      await this.desvincularMembresias(usuario.id, manager);
+    });
+
+    try {
+      await this.borrarCuentaFirebase(firebaseUid);
+    } catch (error) {
+      usuario.estaActivo = activoPrevio;
+      usuario.eliminadoEn = null;
+      usuario.correo = correoPrevio;
+      usuario.firebaseUid = firebaseUid;
+      usuario.roles = rolesPrevios;
+      await this.usuarioRepository.save(usuario);
+      throw error;
+    }
   }
 
   private async buscarUsuario(id: string): Promise<Usuario> {
@@ -174,11 +233,43 @@ export class UsuariosService {
       relations: { roles: { permisos: true } },
     });
 
-    if (!usuario) {
+    if (!usuario || usuario.eliminadoEn) {
       throw new NotFoundException(`Usuario con id ${id} no encontrado`);
     }
 
     return usuario;
+  }
+
+  private async borrarCuentaFirebase(uid: string): Promise<void> {
+    if (uid.startsWith('eliminado:')) return;
+    try {
+      await this.firebaseAdmin.eliminarUsuario(uid);
+    } catch (error) {
+      const codigo = (error as { code?: string }).code;
+      if (codigo === 'auth/user-not-found') return;
+      throw new BadRequestException(
+        'No se pudo borrar el acceso de inicio de sesión. El usuario sigue en la plataforma.',
+      );
+    }
+  }
+
+  /** Lo saca de equipos y territorios. El historial (proyectos, jornadas, documentos) no se toca. */
+  private async desvincularMembresias(
+    usuarioId: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    const tablas = [
+      'proyecto_personal',
+      'jornada_equipo',
+      'plantilla_formulario_usuarios',
+      'usuario_alcance_territorial',
+      'usuario_roles',
+    ];
+    for (const tabla of tablas) {
+      await manager.query(`DELETE FROM ${tabla} WHERE usuario_id = $1`, [
+        usuarioId,
+      ]);
+    }
   }
 
   private async obtenerRolesPorIds(rolIds: string[]): Promise<Rol[]> {
@@ -218,7 +309,7 @@ export class UsuariosService {
     if (!pierdeGestion) return;
 
     const otros = await this.usuarioRepository.find({
-      where: { estaActivo: true },
+      where: { estaActivo: true, eliminadoEn: IsNull() },
       relations: { roles: { permisos: true } },
     });
     const quedaAlguien = otros.some(

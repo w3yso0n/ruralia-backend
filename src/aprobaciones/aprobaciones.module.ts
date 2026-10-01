@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 import { CronologiaModule } from '../cronologia/cronologia.module';
 import { DocumentosModule } from '../documentos/documentos.module';
 import { Documento } from '../documentos/entities/documento.entity';
@@ -23,6 +24,7 @@ import { Rejection } from './entities/rejection.entity';
       DocumentoVersion,
     ]),
     AuditoriaModule,
+    UsuariosModule,
     CronologiaModule,
     forwardRef(() => DocumentosModule),
   ],

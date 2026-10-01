@@ -6,6 +6,7 @@ import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { Rejection } from '../aprobaciones/entities/rejection.entity';
 import { AsignacionMeta } from './entities/asignacion-meta.entity';
@@ -14,6 +15,7 @@ import { EvaluacionesService } from './evaluaciones.service';
 
 @Module({
   imports: [
+    UsuariosModule,
     TypeOrmModule.forFeature([
       AsignacionMeta,
       Meta,

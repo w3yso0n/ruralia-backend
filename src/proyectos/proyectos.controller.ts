@@ -74,8 +74,9 @@ export class ProyectosController {
   @ApiResponse({ status: 200, type: RespuestaPaginadaProyectosDto })
   listar(
     @Query() filtros: FiltrosProyectoDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPaginadaProyectosDto> {
-    return this.proyectosService.listar(filtros);
+    return this.proyectosService.listar(filtros, usuario);
   }
 
   @Get('plantilla-beneficiarios-excel')
@@ -132,8 +133,9 @@ export class ProyectosController {
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   obtenerUno(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaProyectoDto> {
-    return this.proyectosService.obtenerUno(id);
+    return this.proyectosService.obtenerUno(id, usuario);
   }
 
   @Patch(':id')

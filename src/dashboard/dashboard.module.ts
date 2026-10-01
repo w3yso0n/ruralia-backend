@@ -6,6 +6,7 @@ import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 import { Rol } from '../usuarios/entities/rol.entity';
 import { ConfiguracionDashboardService } from './configuracion-dashboard.service';
 import { DashboardController } from './dashboard.controller';
@@ -23,6 +24,7 @@ import { WidgetsDashboardSeedService } from './widgets-dashboard-seed.service';
   imports: [
     ActividadesModule,
     EvaluacionesModule,
+    UsuariosModule,
     TypeOrmModule.forFeature([
       Proyecto,
       Jornada,

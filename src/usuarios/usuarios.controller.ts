@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -27,13 +28,18 @@ import {
   RespuestaUsuarioDto,
 } from './dto/respuesta-usuario.dto';
 import { Usuario } from './entities/usuario.entity';
+import { AlcanceTerritorialService } from './alcance-territorial.service';
+import { ReemplazarAlcanceTerritorialDto } from './dto/alcance-territorial.dto';
 import { UsuariosService } from './usuarios.service';
 
 @ApiTags('Usuarios')
 @ApiBearerAuth('bearer')
 @Controller('usuarios')
 export class UsuariosController {
-  constructor(private readonly usuariosService: UsuariosService) {}
+  constructor(
+    private readonly usuariosService: UsuariosService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
+  ) {}
 
   @Get()
   @RequierePermisos('usuarios.ver')
@@ -53,6 +59,25 @@ export class UsuariosController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<RespuestaUsuarioDto> {
     return this.usuariosService.obtenerUno(id);
+  }
+
+  @Get(':id/alcance')
+  @RequierePermisos('usuarios.ver')
+  @ApiOperation({ summary: 'Territorio asignado a un coordinador' })
+  listarAlcance(@Param('id', ParseUUIDPipe) id: string) {
+    return this.alcanceTerritorialService.listar(id);
+  }
+
+  @Put(':id/alcance')
+  @RequierePermisos('usuarios.editar')
+  @ApiOperation({
+    summary: 'Reemplaza el territorio asignado a un coordinador',
+  })
+  reemplazarAlcance(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReemplazarAlcanceTerritorialDto,
+  ) {
+    return this.alcanceTerritorialService.reemplazar(id, dto.items);
   }
 
   @Post()
@@ -75,11 +100,40 @@ export class UsuariosController {
     return this.usuariosService.actualizar(id, dto, usuario);
   }
 
+  @Post(':id/desactivar')
+  @RequierePermisos('usuarios.eliminar')
+  @ApiOperation({
+    summary: 'Desactivar un usuario (reversible)',
+    description:
+      'Impide el inicio de sesión. Se puede volver a activar desde el listado.',
+  })
+  @ApiResponse({ status: 201, type: RespuestaUsuarioDto })
+  desactivar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaUsuarioDto> {
+    return this.usuariosService.desactivar(id, usuario);
+  }
+
+  @Post(':id/reactivar')
+  @RequierePermisos('usuarios.eliminar')
+  @ApiOperation({ summary: 'Volver a activar un usuario desactivado' })
+  @ApiResponse({ status: 201, type: RespuestaUsuarioDto })
+  reactivar(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RespuestaUsuarioDto> {
+    return this.usuariosService.reactivar(id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequierePermisos('usuarios.eliminar')
-  @ApiOperation({ summary: 'Desactivar un usuario' })
-  @ApiResponse({ status: 204, description: 'Usuario desactivado' })
+  @ApiOperation({
+    summary: 'Eliminar un usuario de forma definitiva',
+    description:
+      'Deja de aparecer en el listado y pierde el acceso. No se puede reactivar. El historial de proyectos y jornadas conserva su nombre.',
+  })
+  @ApiResponse({ status: 204, description: 'Usuario eliminado' })
   eliminar(
     @Param('id', ParseUUIDPipe) id: string,
     @UsuarioActual() usuario: Usuario,

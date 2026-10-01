@@ -54,10 +54,12 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: DashboardCompletoDto })
   obtenerCompleto(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<DashboardCompletoDto> {
     return this.dashboardService.obtenerCompleto(
       filtros.meses ?? 6,
       filtros.proyectoId,
+      usuario,
     );
   }
 
@@ -67,8 +69,10 @@ export class DashboardController {
     summary: 'Listado liviano de proyectos para filtrar el dashboard',
   })
   @ApiResponse({ status: 200, type: [ProyectoFiltroDashboardDto] })
-  listarProyectosFiltro(): Promise<ProyectoFiltroDashboardDto[]> {
-    return this.dashboardService.listarProyectosFiltro();
+  listarProyectosFiltro(
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<ProyectoFiltroDashboardDto[]> {
+    return this.dashboardService.listarProyectosFiltro(usuario);
   }
 
   @Get('reporte/pdf')
@@ -87,6 +91,7 @@ export class DashboardController {
     const pdf = await this.dashboardService.generarPdf(
       filtros.proyectoId,
       usuario.nombreCompleto,
+      usuario,
     );
     const sufijo = filtros.proyectoId
       ? filtros.proyectoId.slice(0, 8)
@@ -104,8 +109,9 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: ResumenDashboardDto })
   obtenerResumen(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<ResumenDashboardDto> {
-    return this.dashboardService.obtenerResumen(filtros.proyectoId);
+    return this.dashboardService.obtenerResumen(filtros.proyectoId, usuario);
   }
 
   @Get('cumplimiento')
@@ -114,8 +120,12 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: CumplimientoDashboardDto })
   obtenerCumplimiento(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<CumplimientoDashboardDto> {
-    return this.dashboardService.obtenerCumplimiento(filtros.proyectoId);
+    return this.dashboardService.obtenerCumplimiento(
+      filtros.proyectoId,
+      usuario,
+    );
   }
 
   @Get('actividad-mensual')
@@ -124,10 +134,12 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: [SerieMensualDashboardDto] })
   obtenerActividadMensual(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<SerieMensualDashboardDto[]> {
     return this.dashboardService.obtenerActividadMensual(
       filtros.meses ?? 6,
       filtros.proyectoId,
+      usuario,
     );
   }
 
@@ -137,8 +149,12 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: [VeredaCoberturaDto] })
   obtenerMapaCobertura(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<VeredaCoberturaDto[]> {
-    return this.dashboardService.obtenerMapaCobertura(filtros.proyectoId);
+    return this.dashboardService.obtenerMapaCobertura(
+      filtros.proyectoId,
+      usuario,
+    );
   }
 
   @Get('jornadas-recientes')
@@ -147,10 +163,12 @@ export class DashboardController {
   @ApiResponse({ status: 200, type: [JornadaRecienteDashboardDto] })
   obtenerJornadasRecientes(
     @Query() filtros: FiltrosDashboardDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<JornadaRecienteDashboardDto[]> {
     return this.dashboardService.obtenerJornadasRecientes(
       filtros.limite ?? 5,
       filtros.proyectoId,
+      usuario,
     );
   }
 

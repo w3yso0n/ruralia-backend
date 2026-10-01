@@ -24,6 +24,7 @@ import { Jornada } from '../jornadas/entities/jornada.entity';
 import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { RolSistema } from '../usuarios/catalogo-permisos';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { usuarioTieneAccesoTotal } from '../usuarios/utils/permisos-usuario';
 import {
   AprobarDto,
@@ -62,6 +63,7 @@ export class AprobacionesService {
     private readonly auditoriaService: AuditoriaService,
     private readonly documentosService: DocumentosService,
     private readonly cronologiaService: CronologiaService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   private nombresRol(usuario: Usuario): string[] {
@@ -861,6 +863,30 @@ export class AprobacionesService {
               EstadoFuncional.APROBADO,
             ],
       });
+    }
+
+    if (vista !== 'tecnico') {
+      const visibles =
+        await this.alcanceTerritorialService.idsProyectosVisibles(usuario);
+      if (visibles) {
+        if (!visibles.length) {
+          return {
+            vista,
+            contadores: {
+              borradores: 0,
+              enRevision: 0,
+              rechazadas: 0,
+              enCorreccion: 0,
+              aprobadas: 0,
+              pendientesRevision: 0,
+            },
+            items: [],
+          };
+        }
+        qb.andWhere('proyecto.id IN (:...proyectosVisibles)', {
+          proyectosVisibles: visibles,
+        });
+      }
     }
 
     const jornadas = await qb.getMany();

@@ -25,7 +25,7 @@ import { normalizarClavePrivadaFirebase } from '../autenticacion/normalizar-clav
 
 const MARCA = '[seed-plataforma]';
 const DISPOSITIVO = 'seed-plataforma-s6';
-const PASSWORD = 'RuraliaSeed2026!';
+const PASSWORD = '12345678';
 
 const PROYECTO_NOMBRE = 'Proyecto Semilla Ruralia S6';
 const BENEFICIARIO_DOC = '1098765432';
@@ -33,62 +33,65 @@ const BENEFICIARIO_DOC_2 = '1098765433';
 const FIRMA_MINIMA =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
+/**
+ * Un usuario por perfil para la demo de roles y alcance:
+ * - Administrador: ve todos los proyectos.
+ * - Coordinador departamental: alcance DEPARTAMENTO (el de la vereda A).
+ * - Coordinador de zona: alcance MUNICIPIO (el de la vereda E); revisa y aprueba.
+ * - Campo / Visualizador: solo los proyectos donde están en el equipo.
+ * `correosPrevios` renombra usuarios de versiones anteriores del seed.
+ */
 const USUARIOS = {
   admin: {
     correo: 'admin.seed@ruralia.local',
     nombre: 'Admin Semilla Ruralia',
     rol: 'ADMINISTRADOR',
     firebaseUidFallback: 'seed-plataforma-admin',
-  },
-  cuantiva: {
-    correo: 'cuantiva.seed@ruralia.local',
-    nombre: 'Cuantiva Semilla',
-    rol: 'CUANTIVA',
-    firebaseUidFallback: 'seed-plataforma-cuantiva',
+    correosPrevios: [] as string[],
   },
   coordDepto: {
     correo: 'coord.depto.seed@ruralia.local',
     nombre: 'Coordinadora Departamental Semilla',
     rol: 'COORDINADOR_DEPARTAMENTAL',
     firebaseUidFallback: 'seed-plataforma-coord-depto',
+    correosPrevios: [] as string[],
   },
-  supervisor: {
-    correo: 'supervisor.seed@ruralia.local',
-    nombre: 'Supervisor Zona Semilla',
+  coordZona: {
+    correo: 'coord.zona.seed@ruralia.local',
+    nombre: 'Coordinador de Zona Semilla',
     rol: 'COORDINADOR_ZONA',
     firebaseUidFallback: 'seed-plataforma-supervisor',
-  },
-  supervisor2: {
-    correo: 'supervisor2.seed@ruralia.local',
-    nombre: 'Supervisor Zona Norte',
-    rol: 'COORDINADOR_ZONA',
-    firebaseUidFallback: 'seed-plataforma-supervisor2',
+    correosPrevios: ['supervisor.seed@ruralia.local'],
   },
   campo: {
     correo: 'campo.seed@ruralia.local',
     nombre: 'Técnico Campo Semilla',
     rol: 'CAMPO',
     firebaseUidFallback: 'seed-plataforma-campo',
+    correosPrevios: [] as string[],
   },
   campo2: {
     correo: 'campo2.seed@ruralia.local',
     nombre: 'Técnica Campo Laura Méndez',
     rol: 'CAMPO',
     firebaseUidFallback: 'seed-plataforma-campo2',
-  },
-  campo3: {
-    correo: 'campo3.seed@ruralia.local',
-    nombre: 'Técnico Campo Julián Rocha',
-    rol: 'CAMPO',
-    firebaseUidFallback: 'seed-plataforma-campo3',
+    correosPrevios: [] as string[],
   },
   visualizador: {
     correo: 'visualizador.seed@ruralia.local',
     nombre: 'Visualizador Semilla',
     rol: 'VISUALIZADOR',
     firebaseUidFallback: 'seed-plataforma-visualizador',
+    correosPrevios: [] as string[],
   },
 } as const;
+
+/** Usuarios de versiones anteriores del seed que ya no forman parte de la demo. */
+const CORREOS_SEED_RETIRADOS = [
+  'cuantiva.seed@ruralia.local',
+  'supervisor2.seed@ruralia.local',
+  'campo3.seed@ruralia.local',
+];
 
 const PROYECTOS_EXTRA = [
   {
@@ -418,10 +421,16 @@ async function main(): Promise<void> {
         def.nombre,
         def.firebaseUidFallback,
       );
-      const porCorreo = await client.query(
+      let porCorreo = await client.query(
         `SELECT id FROM usuarios WHERE correo = $1 LIMIT 1`,
         [def.correo],
       );
+      if (!porCorreo.rows[0] && def.correosPrevios.length) {
+        porCorreo = await client.query(
+          `SELECT id FROM usuarios WHERE correo = ANY($1::text[]) LIMIT 1`,
+          [def.correosPrevios],
+        );
+      }
       const porUid = await client.query(
         `SELECT id FROM usuarios WHERE firebase_uid = $1 LIMIT 1`,
         [fb.uid],
@@ -463,6 +472,11 @@ async function main(): Promise<void> {
         id = creado.rows[0].id as string;
       }
       const rid = await rolId(def.rol);
+      // Un solo rol por usuario semilla para que cada perfil se vea tal cual.
+      await client.query(
+        `DELETE FROM usuario_roles WHERE usuario_id = $1 AND rol_id <> $2`,
+        [id, rid],
+      );
       await client.query(
         `INSERT INTO usuario_roles (usuario_id, rol_id)
          SELECT $1, $2 WHERE NOT EXISTS (
@@ -479,14 +493,43 @@ async function main(): Promise<void> {
     }
 
     const admin = await upsertUsuario(USUARIOS.admin);
-    const cuantiva = await upsertUsuario(USUARIOS.cuantiva);
     const coordDepto = await upsertUsuario(USUARIOS.coordDepto);
-    const supervisor = await upsertUsuario(USUARIOS.supervisor);
-    const supervisor2 = await upsertUsuario(USUARIOS.supervisor2);
+    // El coordinador de zona es quien revisa y aprueba las jornadas del seed.
+    const supervisor = await upsertUsuario(USUARIOS.coordZona);
     const campo = await upsertUsuario(USUARIOS.campo);
     const campo2 = await upsertUsuario(USUARIOS.campo2);
-    const campo3 = await upsertUsuario(USUARIOS.campo3);
     const visualizador = await upsertUsuario(USUARIOS.visualizador);
+    const idsUsuariosSeed = [
+      admin.id,
+      coordDepto.id,
+      supervisor.id,
+      campo.id,
+      campo2.id,
+      visualizador.id,
+    ];
+
+    const retirados = await client.query(
+      `UPDATE usuarios SET esta_activo = false
+       WHERE correo = ANY($1::text[])
+       RETURNING id, correo`,
+      [CORREOS_SEED_RETIRADOS],
+    );
+    if (retirados.rows.length) {
+      const idsRetirados = retirados.rows.map((r: { id: string }) => r.id);
+      await client.query(
+        `DELETE FROM proyecto_personal WHERE usuario_id = ANY($1::uuid[])`,
+        [idsRetirados],
+      );
+      await client.query(
+        `DELETE FROM plantilla_formulario_usuarios WHERE usuario_id = ANY($1::uuid[])`,
+        [idsRetirados],
+      );
+      console.log(
+        `✓ Usuarios semilla retirados (desactivados): ${retirados.rows
+          .map((r: { correo: string }) => r.correo)
+          .join(', ')}`,
+      );
+    }
 
     async function tablaExiste(nombre: string): Promise<boolean> {
       const r = await client.query(
@@ -797,7 +840,15 @@ async function main(): Promise<void> {
       proyectoId = p.rows[0].id as string;
     }
 
+    /** Deja en el equipo solo los usuarios semilla indicados (no toca usuarios reales). */
     async function vincularPersonal(pid: string, uids: string[]) {
+      await client.query(
+        `DELETE FROM proyecto_personal
+         WHERE proyecto_id = $1
+           AND usuario_id = ANY($2::uuid[])
+           AND usuario_id <> ALL($3::uuid[])`,
+        [pid, idsUsuariosSeed, uids],
+      );
       for (const uid of uids) {
         await client.query(
           `INSERT INTO proyecto_personal (proyecto_id, usuario_id)
@@ -852,15 +903,13 @@ async function main(): Promise<void> {
       }
     }
 
+    // Proyecto principal: abarca todas las zonas, lo ven todos los perfiles.
     await vincularPersonal(proyectoId, [
       admin.id,
-      cuantiva.id,
       coordDepto.id,
       supervisor.id,
-      supervisor2.id,
       campo.id,
       campo2.id,
-      campo3.id,
       visualizador.id,
     ]);
     await vincularVeredas(proyectoId, [
@@ -951,13 +1000,8 @@ async function main(): Promise<void> {
     const suspendidoId = proyectosExtraIds.suspendido;
     const borradorId = proyectosExtraIds.borrador;
 
-    await vincularPersonal(ambientalId, [
-      admin.id,
-      coordDepto.id,
-      supervisor2.id,
-      campo2.id,
-      campo3.id,
-    ]);
+    // Zona del coordinador de zona (vereda E).
+    await vincularPersonal(ambientalId, [admin.id, supervisor.id, campo2.id]);
     await vincularVeredas(ambientalId, [veredaC, veredaD, veredaE]);
     await vincularBeneficiarios(
       ambientalId,
@@ -966,10 +1010,11 @@ async function main(): Promise<void> {
     );
     await vincularAsociaciones(ambientalId, [asociacionIds[1]], asociacionIds[1]);
 
+    // Zona del coordinador de zona (vereda E).
     await vincularPersonal(turismoId, [
       admin.id,
       supervisor.id,
-      campo3.id,
+      campo.id,
       visualizador.id,
     ]);
     await vincularVeredas(turismoId, [veredaE, veredaF]);
@@ -980,9 +1025,10 @@ async function main(): Promise<void> {
     );
     await vincularAsociaciones(turismoId, [asociacionIds[3]], asociacionIds[3]);
 
+    // Departamento del coordinador departamental (vereda A).
     await vincularPersonal(completadoId, [
       admin.id,
-      supervisor.id,
+      coordDepto.id,
       campo.id,
       campo2.id,
     ]);
@@ -994,12 +1040,72 @@ async function main(): Promise<void> {
     );
     await vincularAsociaciones(completadoId, [asociacionIds[0]], asociacionIds[0]);
 
-    await vincularPersonal(suspendidoId, [admin.id, supervisor2.id, campo3.id]);
+    // Fuera del alcance de ambos coordinadores: solo lo ven admin y el técnico.
+    await vincularPersonal(suspendidoId, [admin.id, campo.id]);
     await vincularVeredas(suspendidoId, [veredaF]);
     await vincularBeneficiarios(suspendidoId, [beneficiarioIds[11]], beneficiarioIds[11]);
 
+    // Departamento del coordinador departamental (vereda A).
     await vincularPersonal(borradorId, [admin.id, coordDepto.id, campo2.id]);
     await vincularVeredas(borradorId, [veredaA, veredaC]);
+
+    // —— Alcance territorial de los coordinadores ——
+    // Departamental: el departamento de la vereda A (principal, cerrado, borrador).
+    // Zona: el municipio de la vereda E (principal, ambiental, turismo).
+    // El suspendido (vereda F) queda fuera de ambos: solo admin y su equipo.
+    const territorioA = await client.query(
+      `SELECT d.id AS departamento_id, d.nombre AS departamento
+       FROM veredas v
+       JOIN municipios m ON m.id = v.municipio_id
+       JOIN departamentos d ON d.id = m.departamento_id
+       WHERE v.id = $1`,
+      [veredaA],
+    );
+    const territorioE = await client.query(
+      `SELECT m.id AS municipio_id, m.nombre AS municipio, d.nombre AS departamento
+       FROM veredas v
+       JOIN municipios m ON m.id = v.municipio_id
+       JOIN departamentos d ON d.id = m.departamento_id
+       WHERE v.id = $1`,
+      [veredaE],
+    );
+    const zonaDepto = territorioA.rows[0] as
+      | { departamento_id: string; departamento: string }
+      | undefined;
+    const zonaMunicipio = territorioE.rows[0] as
+      | { municipio_id: string; municipio: string; departamento: string }
+      | undefined;
+    if (await tablaExiste('usuario_alcance_territorial')) {
+      await client.query(
+        `DELETE FROM usuario_alcance_territorial WHERE usuario_id = ANY($1::uuid[])`,
+        [idsUsuariosSeed],
+      );
+      if (zonaDepto) {
+        await client.query(
+          `INSERT INTO usuario_alcance_territorial (id, usuario_id, tipo, referencia_id)
+           VALUES (gen_random_uuid(), $1, 'DEPARTAMENTO', $2)`,
+          [coordDepto.id, zonaDepto.departamento_id],
+        );
+      }
+      if (zonaMunicipio) {
+        await client.query(
+          `INSERT INTO usuario_alcance_territorial (id, usuario_id, tipo, referencia_id)
+           VALUES (gen_random_uuid(), $1, 'MUNICIPIO', $2)`,
+          [supervisor.id, zonaMunicipio.municipio_id],
+        );
+      }
+      console.log(
+        `✓ Alcance: coord. departamental -> ${zonaDepto?.departamento ?? '?'}; coord. zona -> ${
+          zonaMunicipio
+            ? `${zonaMunicipio.municipio} (${zonaMunicipio.departamento})`
+            : '?'
+        }`,
+      );
+    } else {
+      console.warn(
+        '  Falta la tabla usuario_alcance_territorial: arranca el backend una vez y vuelve a correr el seed.',
+      );
+    }
     console.log(
       `✓ Proyectos extra: ambiental, turismo, completado, suspendido, borrador`,
     );
@@ -1582,7 +1688,7 @@ async function main(): Promise<void> {
          VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [plantillaId, procesoId],
       );
-      for (const uid of [campo.id, campo2.id, campo3.id, supervisor.id]) {
+      for (const uid of [campo.id, campo2.id, supervisor.id]) {
         await client.query(
           `INSERT INTO plantilla_formulario_usuarios (plantilla_formulario_id, usuario_id)
            SELECT $1, $2 WHERE NOT EXISTS (
@@ -3143,7 +3249,6 @@ async function main(): Promise<void> {
     const tecnicos = [
       { id: campo.id, nombre: USUARIOS.campo.nombre },
       { id: campo2.id, nombre: USUARIOS.campo2.nombre },
-      { id: campo3.id, nombre: USUARIOS.campo3.nombre },
     ];
     const coords: [number, number][] = [
       [4.6097, -74.0817],
@@ -3326,7 +3431,7 @@ async function main(): Promise<void> {
       dias: -20,
       veredaId: veredaD,
       beneficiarioIds: [beneficiarioIds[4]],
-      tecnico: { id: campo3.id, nombre: USUARIOS.campo3.nombre },
+      tecnico: { id: campo2.id, nombre: USUARIOS.campo2.nombre },
       cantidad: 40,
       lat: 4.22,
       lng: -74.15,
@@ -3343,7 +3448,7 @@ async function main(): Promise<void> {
       tipo: 'GRUPAL',
       veredaId: veredaE,
       beneficiarioIds: beneficiarioIds.slice(8, 12),
-      tecnico: { id: campo3.id, nombre: USUARIOS.campo3.nombre },
+      tecnico: { id: campo.id, nombre: USUARIOS.campo.nombre },
       cantidad: 8,
       lat: 5.63,
       lng: -73.52,
@@ -3375,7 +3480,7 @@ async function main(): Promise<void> {
       dias: -90,
       veredaId: veredaF,
       beneficiarioIds: [beneficiarioIds[11]],
-      tecnico: { id: campo3.id, nombre: USUARIOS.campo3.nombre },
+      tecnico: { id: campo.id, nombre: USUARIOS.campo.nombre },
       cantidad: 4,
       lat: 4.95,
       lng: -74.4,
@@ -3462,12 +3567,12 @@ async function main(): Promise<void> {
       sincronizado: false,
       conDocumento: false,
       versiones: [],
-      tecnicoId: campo3.id,
-      tecnicoNombre: USUARIOS.campo3.nombre,
+      tecnicoId: campo.id,
+      tecnicoNombre: USUARIOS.campo.nombre,
       cronos: [
         {
           accion: 'JORNADA_CANCELADA',
-          actor: campo3.id,
+          actor: campo.id,
           when: diasOffset(-13, 9, 0),
           titulo: 'Canceló la jornada por lluvia',
         },
@@ -3554,10 +3659,9 @@ async function main(): Promise<void> {
       const pKits = (periodoKits.rows[0]?.id as string) ?? null;
       await asignar(metaId, campo.id, 15, 'Cuota mensual de predios — técnico semilla', pPredios);
       await asignar(metaId, campo2.id, 10, 'Cuota mensual zona Sumapaz', pPredios);
-      await asignar(metaId, campo3.id, 8, 'Cuota mensual zona norte', pPredios);
       await asignar(metaKitsId, campo.id, 20, 'Kits del mes — técnico semilla', pKits);
       await asignar(metaKitsId, campo2.id, 16, 'Kits del mes — Laura Méndez', pKits);
-      await asignar(metaTallerId, campo3.id, 2, 'Talleres del mes', null);
+      await asignar(metaTallerId, campo.id, 2, 'Talleres del mes', null);
       await asignar(metaDiagId, campo2.id, 4, 'Diagnósticos del mes', null);
       console.log('✓ Asignaciones de meta para evaluaciones');
     }
@@ -3799,22 +3903,23 @@ async function main(): Promise<void> {
     console.log(` Dashboard:    /dashboard`);
     console.log('');
     console.log(' Credenciales (si Firebase OK) — contraseña: ' + PASSWORD);
-    console.log(`   Cuantiva:     ${USUARIOS.cuantiva.correo}`);
-    console.log(`   Admin:        ${USUARIOS.admin.correo}`);
-    console.log(`   Coord. depto: ${USUARIOS.coordDepto.correo}`);
-    console.log(`   Supervisor:   ${USUARIOS.supervisor.correo}`);
-    console.log(`   Supervisor 2: ${USUARIOS.supervisor2.correo}`);
-    console.log(`   Técnico:      ${USUARIOS.campo.correo}`);
-    console.log(`   Técnica 2:    ${USUARIOS.campo2.correo}`);
-    console.log(`   Técnico 3:    ${USUARIOS.campo3.correo}`);
-    console.log(`   Visualizador: ${USUARIOS.visualizador.correo}`);
+    console.log(`   Admin:        ${USUARIOS.admin.correo}  (6 proyectos)`);
+    console.log(
+      `   Coord. depto: ${USUARIOS.coordDepto.correo}  (${zonaDepto?.departamento ?? '?'}: principal, cierre caficultor, riego)`,
+    );
+    console.log(
+      `   Coord. zona:  ${USUARIOS.coordZona.correo}  (${zonaMunicipio?.municipio ?? '?'}: principal, restauración hídrica, turismo; aprueba en /revision)`,
+    );
+    console.log(`   Técnico:      ${USUARIOS.campo.correo}  (principal, turismo, cierre, apicultura)`);
+    console.log(`   Técnica 2:    ${USUARIOS.campo2.correo}  (principal, restauración hídrica, cierre, riego)`);
+    console.log(`   Visualizador: ${USUARIOS.visualizador.correo}  (principal, turismo; solo lectura)`);
     console.log('');
     console.log(' Dataset:');
     console.log('   · 6 proyectos (activo, ambiental, turismo, cerrado, suspendido, borrador)');
     console.log('   · 14 beneficiarios y 4 asociaciones');
     console.log('   · Plan con varias actividades, metas y periodos');
     console.log('   · Jornadas de bandeja + histórico de 6 meses');
-    console.log(' Qué ver en /revision (supervisor):');
+    console.log(' Qué ver en /revision (coordinador de zona):');
     console.log('   · Pendientes     → María Pérez, taller grupal, Lucía 2.ª ronda');
     console.log('   · Rechazadas     → Visita Pedro Ramírez (foto borrosa)');
     console.log('   · En corrección  → Seguimiento riego (firma faltante)');

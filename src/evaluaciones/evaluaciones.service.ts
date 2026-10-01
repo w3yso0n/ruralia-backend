@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import {
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import {
   FiltrosAsignacionMetaDto,
   FiltrosProductividadDto,
@@ -74,6 +76,7 @@ export class EvaluacionesService {
     private readonly envioRepository: Repository<EnvioFormulario>,
     @InjectRepository(Rejection)
     private readonly rejectionRepository: Repository<Rejection>,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   async upsertBatch(
@@ -148,7 +151,14 @@ export class EvaluacionesService {
   async listarPorProyecto(
     proyectoId: string,
     filtros: FiltrosAsignacionMetaDto,
+    usuario?: Usuario,
   ): Promise<RespuestaAsignacionMetaDto[]> {
+    if (usuario) {
+      await this.alcanceTerritorialService.assertProyectoVisible(
+        usuario,
+        proyectoId,
+      );
+    }
     await this.asegurarProyecto(proyectoId);
 
     const qb = this.asignacionRepository
@@ -272,7 +282,14 @@ export class EvaluacionesService {
   async productividadProyecto(
     proyectoId: string,
     filtros: FiltrosProductividadDto,
+    usuario?: Usuario,
   ): Promise<ProductividadPersonaDto[]> {
+    if (usuario) {
+      await this.alcanceTerritorialService.assertProyectoVisible(
+        usuario,
+        proyectoId,
+      );
+    }
     await this.asegurarProyecto(proyectoId);
     const anio = filtros.anio ?? new Date().getFullYear();
     const mes = filtros.mes ?? new Date().getMonth() + 1;
@@ -335,20 +352,30 @@ export class EvaluacionesService {
     anio?: number,
     mes?: number,
     limite?: number,
+    proyectoIds?: string[] | null,
+    usuario?: Usuario,
   ): Promise<ProductividadPersonaDto[]> {
-    const completo = await this.equipoGlobalCompleto(anio, mes);
+    const ids = usuario
+      ? await this.alcanceTerritorialService.idsProyectosVisibles(usuario)
+      : proyectoIds;
+    const completo = await this.equipoGlobalCompleto(anio, mes, ids);
     return limite ? completo.slice(0, limite) : completo;
   }
 
   private async equipoGlobalCompleto(
     anio?: number,
     mes?: number,
+    proyectoIds?: string[] | null,
   ): Promise<ProductividadPersonaDto[]> {
     const a = anio ?? new Date().getFullYear();
     const m = mes ?? new Date().getMonth() + 1;
 
+    if (proyectoIds && proyectoIds.length === 0) return [];
+
     const proyectos = await this.proyectoRepository.find({
-      where: { estado: EstadoProyecto.ACTIVO },
+      where: proyectoIds
+        ? { id: In(proyectoIds), estado: EstadoProyecto.ACTIVO }
+        : { estado: EstadoProyecto.ACTIVO },
       select: { id: true, nombre: true },
     });
 
@@ -997,6 +1024,7 @@ export class EvaluacionesService {
   async generarPdfReporte(
     filtros: FiltrosProductividadDto,
     generadoPor?: string,
+    usuario?: Usuario,
   ): Promise<Buffer> {
     const anio = filtros.anio ?? new Date().getFullYear();
     const mes = filtros.mes ?? new Date().getMonth() + 1;
@@ -1005,6 +1033,12 @@ export class EvaluacionesService {
     let proyectoNombre: string | null = null;
 
     if (filtros.proyectoId) {
+      if (usuario) {
+        await this.alcanceTerritorialService.assertProyectoVisible(
+          usuario,
+          filtros.proyectoId,
+        );
+      }
       const proyecto = await this.proyectoRepository.findOne({
         where: { id: filtros.proyectoId },
         select: { id: true, nombre: true },
@@ -1015,12 +1049,19 @@ export class EvaluacionesService {
         );
       }
       proyectoNombre = proyecto.nombre;
-      ranking = await this.productividadProyecto(filtros.proyectoId, {
+      ranking = await this.productividadProyecto(
+        filtros.proyectoId,
+        { anio, mes },
+        usuario,
+      );
+    } else {
+      ranking = await this.cumplimientoEquipoGlobal(
         anio,
         mes,
-      });
-    } else {
-      ranking = await this.equipoGlobalCompleto(anio, mes);
+        undefined,
+        undefined,
+        usuario,
+      );
     }
 
     return generarPdfReporteEvaluaciones({

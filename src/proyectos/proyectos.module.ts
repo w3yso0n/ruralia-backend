@@ -8,6 +8,7 @@ import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { Geocerca } from './entities/geocerca.entity';
 import { ProyectoAsociacion } from './entities/proyecto-asociacion.entity';
@@ -21,6 +22,7 @@ import { ProyectosService } from './proyectos.service';
 @Module({
   imports: [
     ActividadesModule,
+    UsuariosModule,
     TypeOrmModule.forFeature([
       Proyecto,
       ProyectoBeneficiario,

@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { usuarioTieneAccesoTotal } from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { FiltrosCronologiaDto } from './dto/filtros-cronologia.dto';
@@ -48,6 +49,7 @@ export class CronologiaService {
     private readonly eventoRepository: Repository<EventoCronologia>,
     @InjectRepository(Proyecto)
     private readonly proyectoRepository: Repository<Proyecto>,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   /** Emisión best-effort: no lanza; loguea si falla. */
@@ -101,9 +103,7 @@ export class CronologiaService {
 
     if (!usuarioTieneAccesoTotal(consultante)) {
       if (actorId !== consultante.id) {
-        const proyectosVisibles = await this.idsProyectosPersonal(
-          consultante.id,
-        );
+        const proyectosVisibles = await this.idsProyectosVisibles(consultante);
         if (proyectosVisibles.length === 0) {
           throw new ForbiddenException(
             'No tiene permisos para ver la cronología de este usuario',
@@ -247,7 +247,7 @@ export class CronologiaService {
       }));
     }
 
-    const proyectos = await this.idsProyectosPersonal(consultante.id);
+    const proyectos = await this.idsProyectosVisibles(consultante);
     if (proyectos.length === 0) {
       return [];
     }
@@ -288,15 +288,10 @@ export class CronologiaService {
     proyectoId: string,
     consultante: Usuario,
   ): Promise<void> {
-    if (usuarioTieneAccesoTotal(consultante)) {
-      return;
-    }
-    const proyectosVisibles = await this.idsProyectosPersonal(consultante.id);
-    if (!proyectosVisibles.includes(proyectoId)) {
-      throw new ForbiddenException(
-        'No tiene permisos para ver la cronología de este proyecto',
-      );
-    }
+    await this.alcanceTerritorialService.assertProyectoVisible(
+      consultante,
+      proyectoId,
+    );
   }
 
   private aplicarFiltrosListado(
@@ -326,13 +321,10 @@ export class CronologiaService {
     }
   }
 
-  private async idsProyectosPersonal(usuarioId: string): Promise<string[]> {
-    const filas: Array<{ proyecto_id: string }> =
-      await this.proyectoRepository.manager.query(
-        `SELECT proyecto_id FROM proyecto_personal WHERE usuario_id = $1`,
-        [usuarioId],
-      );
-    return filas.map((f) => f.proyecto_id);
+  private async idsProyectosVisibles(usuario: Usuario): Promise<string[]> {
+    const ids =
+      await this.alcanceTerritorialService.idsProyectosVisibles(usuario);
+    return ids ?? [];
   }
 
   private aRespuestaPaginada(

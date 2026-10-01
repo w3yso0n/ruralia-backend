@@ -21,6 +21,7 @@ import {
   usuarioTieneAccesoTotal,
 } from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import {
   AsignarAsociacionesProyectoDto,
@@ -89,6 +90,7 @@ export class ProyectosService {
     @InjectRepository(RegistroIndicador)
     private readonly registroIndicadorRepository: Repository<RegistroIndicador>,
     private readonly actividadesService: ActividadesService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   async crear(
@@ -113,6 +115,7 @@ export class ProyectosService {
 
   async listar(
     filtros: FiltrosProyectoDto,
+    usuario?: Usuario,
   ): Promise<RespuestaPaginadaProyectosDto> {
     const pagina = filtros.pagina ?? 1;
     const limite = filtros.limite ?? 10;
@@ -163,6 +166,19 @@ export class ProyectosService {
         'EXISTS (SELECT 1 FROM proyecto_veredas pv WHERE pv.proyecto_id = proyecto.id AND pv.vereda_id = :veredaId)',
         { veredaId: filtros.veredaId },
       );
+    }
+
+    if (usuario) {
+      const alcance =
+        await this.alcanceTerritorialService.idsProyectosVisibles(usuario);
+      if (alcance) {
+        if (!alcance.length) {
+          return aRespuestaPaginada([], 0, pagina, limite);
+        }
+        query.andWhere('proyecto.id IN (:...alcanceIds)', {
+          alcanceIds: alcance,
+        });
+      }
     }
 
     switch (filtros.orden ?? OrdenProyecto.CREADO_DESC) {
@@ -232,7 +248,13 @@ export class ProyectosService {
     return aRespuestaPaginada(datos, total, pagina, limite);
   }
 
-  async obtenerUno(id: string): Promise<RespuestaProyectoDto> {
+  async obtenerUno(
+    id: string,
+    usuario?: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    if (usuario) {
+      await this.alcanceTerritorialService.assertProyectoVisible(usuario, id);
+    }
     const proyecto = await this.proyectoRepository.findOne({
       where: { id },
       relations: {
@@ -290,7 +312,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const nombre = dto.nombre ?? proyecto.nombre;
     const tipo = dto.tipo ?? proyecto.tipo;
@@ -325,7 +347,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<void> {
     const proyecto = await this.buscarProyectoConPersonal(id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const jornadas = await this.jornadaRepository.count({
       where: { proyecto: { id } },
@@ -362,7 +384,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(id);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (proyecto.estado !== EstadoProyecto.BORRADOR) {
       throw new BadRequestException(
@@ -418,7 +440,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const veredas = await this.veredaRepository.findBy({
       id: In(dto.veredaIds),
@@ -439,7 +461,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const usuarios = await this.usuarioRepository.findBy({
       id: In(dto.usuarioIds),
@@ -460,7 +482,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const ids = [...new Set(dto.beneficiarios.map((item) => item.beneficiarioId))];
     if (ids.length) {
@@ -518,7 +540,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const ids = [...new Set(dto.asociaciones.map((item) => item.asociacionId))];
     if (ids.length) {
@@ -568,7 +590,7 @@ export class ProyectosService {
     veredaIdSolicitada: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const veredaId = veredaIdSolicitada?.trim();
     if (!veredaId) {
@@ -689,7 +711,7 @@ export class ProyectosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaProyectoDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
-    this.verificarPermisoGestion(proyecto, usuarioActual);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const vinculoAnterior = await this.proyectoBeneficiarioRepository.findOne({
       where: {
@@ -1068,23 +1090,14 @@ export class ProyectosService {
     }
   }
 
-  private verificarPermisoGestion(
+  private async verificarPermisoGestion(
     proyecto: Proyecto,
     usuarioActual: Usuario,
-  ): void {
-    if (usuarioTieneAccesoTotal(usuarioActual)) {
-      return;
-    }
-
-    const esCoordinadorAsignado =
-      usuarioEsCoordinacion(usuarioActual) &&
-      proyecto.personal?.some((usuario) => usuario.id === usuarioActual.id);
-
-    if (!esCoordinadorAsignado) {
-      throw new ForbiddenException(
-        'No tiene permisos para gestionar este proyecto',
-      );
-    }
+  ): Promise<void> {
+    await this.alcanceTerritorialService.assertPuedeGestionarProyecto(
+      usuarioActual,
+      proyecto.id,
+    );
   }
 
   private async buscarProyecto(id: string): Promise<Proyecto> {
