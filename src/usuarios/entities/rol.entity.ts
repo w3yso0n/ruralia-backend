@@ -5,6 +5,7 @@ import {
   ManyToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { NivelAccesoRol } from '../enums/nivel-acceso-rol.enum';
 import { Permiso } from './permiso.entity';
 import { Usuario } from './usuario.entity';
 
@@ -24,6 +25,14 @@ export class Rol {
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
+
+  @Column({
+    name: 'nivel_acceso',
+    type: 'enum',
+    enum: NivelAccesoRol,
+    default: NivelAccesoRol.PROYECTOS_ASIGNADOS,
+  })
+  nivelAcceso: NivelAccesoRol;
 
   @ManyToMany(() => Usuario, (usuario) => usuario.roles)
   usuarios: Usuario[];

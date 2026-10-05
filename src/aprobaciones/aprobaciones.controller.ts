@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
@@ -11,16 +19,22 @@ import {
   RechazarDto,
   ReenviarRevisionDto,
 } from './dto/aprobaciones.dto';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 
 @ApiTags('Aprobaciones')
 @ApiBearerAuth('bearer')
 @Controller()
 export class AprobacionesController {
-  constructor(private readonly aprobacionesService: AprobacionesService) {}
+  constructor(
+    private readonly aprobacionesService: AprobacionesService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
+  ) {}
 
   @Post('jornadas/:id/enviar-revision')
   @RequierePermisos('jornadas.enviar_revision')
-  @ApiOperation({ summary: 'Enviar jornada a revisión (genera documento v1 si aplica)' })
+  @ApiOperation({
+    summary: 'Enviar jornada a revisión (genera documento v1 si aplica)',
+  })
   enviarRevision(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: EnviarRevisionDto,
@@ -45,7 +59,9 @@ export class AprobacionesController {
 
   @Post('jornadas/:id/reenviar-revision')
   @RequierePermisos('jornadas.enviar_revision')
-  @ApiOperation({ summary: 'Reenviar jornada corregida a revisión (nueva versión)' })
+  @ApiOperation({
+    summary: 'Reenviar jornada corregida a revisión (nueva versión)',
+  })
   reenviarRevision(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReenviarRevisionDto,
@@ -57,7 +73,8 @@ export class AprobacionesController {
   @Post('aprobaciones/aprobar')
   @RequierePermisos('jornadas.aprobar')
   @ApiOperation({
-    summary: 'Aprobar jornada, documento o evidencia (approvedBy solo del token)',
+    summary:
+      'Aprobar jornada, documento o evidencia (approvedBy solo del token)',
   })
   aprobar(@Body() dto: AprobarDto, @UsuarioActual() usuario: Usuario) {
     return this.aprobacionesService.aprobar(dto, usuario);
@@ -91,13 +108,27 @@ export class AprobacionesController {
 
   @Get('aprobaciones/jornada/:jornadaId/rechazos')
   @RequierePermisos('jornadas.ver')
-  listarRechazos(@Param('jornadaId', ParseUUIDPipe) jornadaId: string) {
+  async listarRechazos(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      jornadaId,
+    );
     return this.aprobacionesService.rechazosDeJornada(jornadaId);
   }
 
   @Get('aprobaciones/jornada/:jornadaId/aprobaciones')
   @RequierePermisos('jornadas.ver')
-  listarAprobaciones(@Param('jornadaId', ParseUUIDPipe) jornadaId: string) {
+  async listarAprobaciones(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      jornadaId,
+    );
     return this.aprobacionesService.aprobacionesDeJornada(jornadaId);
   }
 }

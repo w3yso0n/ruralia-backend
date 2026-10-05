@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NivelAccesoRol } from '../enums/nivel-acceso-rol.enum';
 
 export class RespuestaPermisoDto {
   @ApiProperty()
@@ -43,6 +44,9 @@ export class RespuestaRolDetalleDto {
 
   @ApiProperty()
   estaActivo: boolean;
+
+  @ApiProperty({ enum: NivelAccesoRol })
+  nivelAcceso: NivelAccesoRol;
 
   @ApiProperty({ type: [String] })
   permisoIds: string[];

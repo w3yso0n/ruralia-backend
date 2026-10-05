@@ -13,7 +13,10 @@ import {
 import { estadoEditable } from '../common/workflow/maquina-estados';
 import { JornadasService } from '../jornadas/jornadas.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
-import { EnviarFormularioDto, ActualizarEnvioFormularioDto } from './dto/formulario.dto';
+import {
+  EnviarFormularioDto,
+  ActualizarEnvioFormularioDto,
+} from './dto/formulario.dto';
 import {
   RespuestaDetalleRespuestaDto,
   RespuestaEnvioFormularioDto,
@@ -95,7 +98,11 @@ export class EnviosFormularioService {
         },
       });
       if (existente) {
-        return this.actualizar(existente.id, { respuestas: dto.respuestas }, usuarioActual);
+        return this.actualizar(
+          existente.id,
+          { respuestas: dto.respuestas },
+          usuarioActual,
+        );
       }
     }
 
@@ -191,7 +198,9 @@ export class EnviosFormularioService {
   }
 
   async eliminar(envioId: string): Promise<void> {
-    const envio = await this.envioRepository.findOne({ where: { id: envioId } });
+    const envio = await this.envioRepository.findOne({
+      where: { id: envioId },
+    });
     if (!envio) {
       throw new NotFoundException(`Envío ${envioId} no encontrado`);
     }
@@ -253,7 +262,7 @@ export class EnviosFormularioService {
     }
 
     if (jornadaId) {
-      await this.jornadasService.obtenerUna(jornadaId);
+      await this.jornadasService.assertAccesoJornada(jornadaId, usuario);
     }
 
     const qb = this.envioRepository
@@ -467,7 +476,12 @@ export class EnviosFormularioService {
     if (valor === false || valor === 0) return false;
     if (typeof valor === 'string') {
       const texto = valor.trim().toLowerCase();
-      if (texto === 'si' || texto === 'sí' || texto === 'true' || texto === '1') {
+      if (
+        texto === 'si' ||
+        texto === 'sí' ||
+        texto === 'true' ||
+        texto === '1'
+      ) {
         return true;
       }
       if (texto === 'no' || texto === 'false' || texto === '0') {
@@ -543,9 +557,7 @@ export class EnviosFormularioService {
         return manager.create(RespuestaFormulario, {
           ...base,
           valorJson:
-            valor == null
-              ? { filas: [] }
-              : this.normalizarValorTabla(valor),
+            valor == null ? { filas: [] } : this.normalizarValorTabla(valor),
         });
       case TipoCampo.GPS:
       case TipoCampo.SELECCION_MULTIPLE:

@@ -27,8 +27,10 @@ import { TipoCampo } from '../formularios/enums/tipo-campo.enum';
 import { Geocerca } from '../proyectos/entities/geocerca.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { EstadoProyecto } from '../proyectos/enums/estado-proyecto.enum';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import {
   usuarioEsCoordinacion,
+  usuarioSoloJornadasAsignadas,
   usuarioTieneAccesoTotal,
 } from '../usuarios/utils/permisos-usuario';
 import { Vereda } from '../territorios/entities/vereda.entity';
@@ -71,11 +73,15 @@ import {
 import { sumarEjecutadoPorMeta } from './utils/calcular-ejecutado-meta';
 import { generarPdfAsistenciaJornada } from './utils/generar-pdf-asistencia';
 
-const TRANSICIONES_VALIDAS: Partial<
-  Record<EstadoJornada, EstadoJornada[]>
-> = {
-  [EstadoJornada.PLANIFICADA]: [EstadoJornada.EN_PROGRESO, EstadoJornada.CANCELADA],
-  [EstadoJornada.EN_PROGRESO]: [EstadoJornada.COMPLETADA, EstadoJornada.CANCELADA],
+const TRANSICIONES_VALIDAS: Partial<Record<EstadoJornada, EstadoJornada[]>> = {
+  [EstadoJornada.PLANIFICADA]: [
+    EstadoJornada.EN_PROGRESO,
+    EstadoJornada.CANCELADA,
+  ],
+  [EstadoJornada.EN_PROGRESO]: [
+    EstadoJornada.COMPLETADA,
+    EstadoJornada.CANCELADA,
+  ],
 };
 
 @Injectable()
@@ -108,6 +114,7 @@ export class JornadasService {
     @InjectRepository(Evidencia)
     private readonly evidenciaRepository: Repository<Evidencia>,
     private readonly cronologiaService: CronologiaService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -123,6 +130,8 @@ export class JornadasService {
     if (!proyecto) {
       throw new NotFoundException(`Proyecto ${dto.proyectoId} no encontrado`);
     }
+
+    await this.assertPuedeOperarProyecto(usuarioActual, proyecto.id);
 
     if (proyecto.estado !== EstadoProyecto.ACTIVO) {
       throw new BadRequestException(
@@ -462,6 +471,7 @@ export class JornadasService {
 
   async listar(
     filtros: FiltrosJornadaDto,
+    usuarioActual?: Usuario,
   ): Promise<RespuestaPaginadaJornadasDto> {
     const pagina = filtros.pagina ?? 1;
     const limite = filtros.limite ?? 10;
@@ -520,7 +530,30 @@ export class JornadasService {
       );
     }
 
-    const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    if (usuarioActual && !usuarioTieneAccesoTotal(usuarioActual)) {
+      if (usuarioSoloJornadasAsignadas(usuarioActual)) {
+        query.andWhere(
+          '(jornada.tecnico_responsable_id = :actualId OR EXISTS (SELECT 1 FROM jornada_equipo jea WHERE jea.jornada_id = jornada.id AND jea.usuario_id = :actualId))',
+          { actualId: usuarioActual.id },
+        );
+      } else {
+        const visibles =
+          (await this.alcanceTerritorialService.idsProyectosVisibles(
+            usuarioActual,
+          )) ?? [];
+        if (!visibles.length) {
+          return aRespuestaPaginadaJornadas([], 0, pagina, limite);
+        }
+        query.andWhere('jornada.proyecto_id IN (:...visiblesIds)', {
+          visiblesIds: visibles,
+        });
+      }
+    }
+
+    const [jornadas, total] = await query
+      .skip(skip)
+      .take(limite)
+      .getManyAndCount();
     await this.adjuntarParticipantes(jornadas);
     const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
     const datos = jornadas.map((j) =>
@@ -535,7 +568,12 @@ export class JornadasService {
 
   async listarAsignadasAUsuario(
     usuario: Usuario,
-    filtros?: { estado?: EstadoJornada; proyectoId?: string; pagina?: number; limite?: number },
+    filtros?: {
+      estado?: EstadoJornada;
+      proyectoId?: string;
+      pagina?: number;
+      limite?: number;
+    },
   ): Promise<RespuestaPaginadaJornadasDto> {
     const pagina = filtros?.pagina ?? 1;
     const limite = filtros?.limite ?? 50;
@@ -555,7 +593,9 @@ export class JornadasService {
         '(jornada.tecnico_responsable_id = :usuarioId OR EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = jornada.id AND je.usuario_id = :usuarioId))',
         { usuarioId: usuario.id },
       )
-      .andWhere('jornada.estado != :cancelada', { cancelada: EstadoJornada.CANCELADA })
+      .andWhere('jornada.estado != :cancelada', {
+        cancelada: EstadoJornada.CANCELADA,
+      })
       .orderBy('jornada.fecha', 'ASC');
 
     if (filtros?.estado) {
@@ -563,10 +603,15 @@ export class JornadasService {
     }
 
     if (filtros?.proyectoId) {
-      query.andWhere('jornada.proyecto_id = :proyectoId', { proyectoId: filtros.proyectoId });
+      query.andWhere('jornada.proyecto_id = :proyectoId', {
+        proyectoId: filtros.proyectoId,
+      });
     }
 
-    const [jornadas, total] = await query.skip(skip).take(limite).getManyAndCount();
+    const [jornadas, total] = await query
+      .skip(skip)
+      .take(limite)
+      .getManyAndCount();
     await this.adjuntarParticipantes(jornadas);
     const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
     const datos = jornadas.map((j) =>
@@ -579,7 +624,10 @@ export class JornadasService {
     return aRespuestaPaginadaJornadas(datos, total, pagina, limite);
   }
 
-  async obtenerUna(id: string): Promise<RespuestaJornadaDto> {
+  async obtenerUna(
+    id: string,
+    usuarioActual?: Usuario,
+  ): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
       relations: {
@@ -605,6 +653,10 @@ export class JornadasService {
 
     if (!jornada) {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
+
+    if (usuarioActual) {
+      await this.assertPuedeVerJornada(jornada, usuarioActual);
     }
 
     const envios = await this.envioRepository.find({
@@ -758,9 +810,7 @@ export class JornadasService {
 
     if (dto.beneficiarioIds !== undefined || dto.asociacionIds !== undefined) {
       const beneficiarioIds =
-        dto.beneficiarioIds ??
-        jornada.beneficiarios?.map((b) => b.id) ??
-        [];
+        dto.beneficiarioIds ?? jornada.beneficiarios?.map((b) => b.id) ?? [];
       const asociacionIds =
         dto.asociacionIds ?? jornada.asociaciones?.map((a) => a.id) ?? [];
       this.validarAsignacionExclusiva(beneficiarioIds, asociacionIds);
@@ -977,14 +1027,14 @@ export class JornadasService {
   ): Promise<RespuestaJornadaDto> {
     const jornada = await this.jornadaRepository.findOne({
       where: { id },
-      relations: { equipo: true, tecnicoResponsable: true },
+      relations: { equipo: true, tecnicoResponsable: true, proyecto: true },
     });
 
     if (!jornada) {
       throw new NotFoundException(`Jornada ${id} no encontrada`);
     }
 
-    this.verificarPermisoEstado(jornada, usuarioActual);
+    await this.verificarPermisoEstado(jornada, usuarioActual);
 
     const transiciones = TRANSICIONES_VALIDAS[jornada.estado] ?? [];
 
@@ -1265,19 +1315,18 @@ export class JornadasService {
     }
 
     const procesoId = jornada.meta?.proceso?.id;
-    const plantilla =
-      jornada.plantillaFormulario?.estaActivo
-        ? jornada.plantillaFormulario
-        : procesoId
-          ? await this.plantillaRepository.findOne({
-              where: {
-                procesos: { id: procesoId },
-                estaActivo: true,
-                tipoPlantilla: TipoPlantilla.GRUPAL,
-              },
-              relations: { campos: true },
-            })
-          : null;
+    const plantilla = jornada.plantillaFormulario?.estaActivo
+      ? jornada.plantillaFormulario
+      : procesoId
+        ? await this.plantillaRepository.findOne({
+            where: {
+              procesos: { id: procesoId },
+              estaActivo: true,
+              tipoPlantilla: TipoPlantilla.GRUPAL,
+            },
+            relations: { campos: true },
+          })
+        : null;
 
     if (!plantilla) {
       throw new BadRequestException(
@@ -1292,7 +1341,9 @@ export class JornadasService {
       .sort((a, b) => a.orden - b.orden);
 
     const camposTabla = campos.filter((c) => c.tipoCampo === TipoCampo.TABLA);
-    const camposCabecera = campos.filter((c) => c.tipoCampo !== TipoCampo.TABLA);
+    const camposCabecera = campos.filter(
+      (c) => c.tipoCampo !== TipoCampo.TABLA,
+    );
 
     const envios = await this.envioRepository.find({
       where: {
@@ -1511,9 +1562,7 @@ export class JornadasService {
       for (const campo of camposSimples) {
         const resp = respuestas.find((r) => r.claveCampo === campo.clave);
         cabecera.push({
-          etiqueta: prefijo
-            ? `${prefijo} · ${campo.etiqueta}`
-            : campo.etiqueta,
+          etiqueta: prefijo ? `${prefijo} · ${campo.etiqueta}` : campo.etiqueta,
           valor: resp ? this.valorRespuestaTexto(resp) : null,
           esFirma: campo.tipoCampo === TipoCampo.FIRMA,
           tipoCampo: campo.tipoCampo,
@@ -1612,7 +1661,10 @@ export class JornadasService {
         try {
           const parsed = JSON.parse(texto) as unknown;
           if (Array.isArray(parsed)) {
-            return parsed.map((v) => String(v)).filter(Boolean).join(', ');
+            return parsed
+              .map((v) => String(v))
+              .filter(Boolean)
+              .join(', ');
           }
         } catch {
           // texto plano
@@ -1621,10 +1673,14 @@ export class JornadasService {
       return resp.valorTexto;
     }
     if (resp.valorNumero != null) return String(resp.valorNumero);
-    if (resp.valorFecha != null) return resp.valorFecha.toISOString().slice(0, 10);
+    if (resp.valorFecha != null)
+      return resp.valorFecha.toISOString().slice(0, 10);
     if (resp.valorJson != null) {
       if (Array.isArray(resp.valorJson)) {
-        return resp.valorJson.map((v) => String(v)).filter(Boolean).join(', ');
+        return resp.valorJson
+          .map((v) => String(v))
+          .filter(Boolean)
+          .join(', ');
       }
       return JSON.stringify(resp.valorJson);
     }
@@ -1687,7 +1743,10 @@ export class JornadasService {
 
       if (item.subactividadId) {
         const sub = await this.subactividadRepository.findOne({
-          where: { id: item.subactividadId, actividad: { id: item.actividadId } },
+          where: {
+            id: item.subactividadId,
+            actividad: { id: item.actividadId },
+          },
         });
 
         if (!sub) {
@@ -1710,22 +1769,120 @@ export class JornadasService {
     return lineas;
   }
 
-  private verificarPermisoEstado(
+  private esParticipanteJornada(jornada: Jornada, usuario: Usuario): boolean {
+    return (
+      jornada.tecnicoResponsable?.id === usuario.id ||
+      (jornada.equipo ?? []).some((u) => u.id === usuario.id)
+    );
+  }
+
+  /** Crear jornadas: gestiona el proyecto o al menos está asignado a él. */
+  private async assertPuedeOperarProyecto(
+    usuario: Usuario,
+    proyectoId: string,
+  ): Promise<void> {
+    if (
+      await this.alcanceTerritorialService.puedeGestionarProyecto(
+        usuario,
+        proyectoId,
+      )
+    ) {
+      return;
+    }
+    await this.alcanceTerritorialService.assertProyectoVisible(
+      usuario,
+      proyectoId,
+    );
+  }
+
+  /** Carga la jornada y valida que el usuario pueda consultarla u operarla. */
+  async assertAccesoJornada(id: string, usuario: Usuario): Promise<void> {
+    const jornada = await this.jornadaRepository.findOne({
+      where: { id },
+      relations: { proyecto: true, tecnicoResponsable: true, equipo: true },
+    });
+    if (!jornada) {
+      throw new NotFoundException(`Jornada ${id} no encontrada`);
+    }
+    await this.assertPuedeVerJornada(jornada, usuario);
+  }
+
+  /**
+   * El técnico solo registra la ejecución de su jornada (cantidad,
+   * observaciones, coordenadas). Programación, lugar, meta, formulario,
+   * beneficiarios y equipo los define quien coordina el proyecto.
+   */
+  assertEdicionPermitida(dto: ActualizarJornadaDto, usuario: Usuario): void {
+    if (!usuarioSoloJornadasAsignadas(usuario)) return;
+    const permitidos = new Set([
+      'cantidadEjecutada',
+      'observaciones',
+      'latitud',
+      'longitud',
+    ]);
+    const bloqueados = Object.entries(dto)
+      .filter(([clave, valor]) => valor !== undefined && !permitidos.has(clave))
+      .map(([clave]) => clave);
+    if (bloqueados.length) {
+      throw new ForbiddenException(
+        'Tu rol solo puede registrar la ejecución de la jornada (cantidad, observaciones y ubicación)',
+      );
+    }
+  }
+
+  /** Asignar equipo o beneficiarios es tarea de coordinación, no del técnico. */
+  assertNoTecnico(usuario: Usuario): void {
+    if (usuarioSoloJornadasAsignadas(usuario)) {
+      throw new ForbiddenException(
+        'Tu rol no puede modificar la asignación de la jornada',
+      );
+    }
+  }
+
+  /** Técnico: solo sus jornadas. Resto: jornadas de proyectos a su alcance. */
+  private async assertPuedeVerJornada(
+    jornada: Jornada,
+    usuario: Usuario,
+  ): Promise<void> {
+    if (usuarioTieneAccesoTotal(usuario)) return;
+    if (this.esParticipanteJornada(jornada, usuario)) return;
+    if (!usuarioSoloJornadasAsignadas(usuario) && jornada.proyecto?.id) {
+      const visibles =
+        await this.alcanceTerritorialService.idsProyectosVisibles(usuario);
+      if (!visibles || visibles.includes(jornada.proyecto.id)) return;
+      if (
+        await this.alcanceTerritorialService.puedeGestionarProyecto(
+          usuario,
+          jornada.proyecto.id,
+        )
+      ) {
+        return;
+      }
+    }
+    throw new ForbiddenException('No tiene acceso a esta jornada');
+  }
+
+  private async verificarPermisoEstado(
     jornada: Jornada,
     usuarioActual: Usuario,
-  ): void {
+  ): Promise<void> {
     if (
       usuarioTieneAccesoTotal(usuarioActual) ||
-      usuarioEsCoordinacion(usuarioActual)
+      usuarioEsCoordinacion(usuarioActual) ||
+      this.esParticipanteJornada(jornada, usuarioActual)
     ) {
       return;
     }
 
-    const esCampoAsignado =
-      jornada.tecnicoResponsable?.id === usuarioActual.id ||
-      jornada.equipo?.some((u) => u.id === usuarioActual.id);
+    const proyectoId = jornada.proyecto?.id;
+    const gestiona =
+      !!proyectoId &&
+      (await this.alcanceTerritorialService.puedeGestionarProyecto(
+        usuarioActual,
+        proyectoId,
+      ));
 
-    if (!esCampoAsignado) {
+    if (!gestiona) {
       throw new ForbiddenException(
         'Solo el personal de campo asignado, coordinador o administrador puede cambiar el estado',
       );

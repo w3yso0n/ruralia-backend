@@ -11,6 +11,7 @@ import {
   CATALOGO_PERMISOS,
   DESCRIPCIONES_ROL_SISTEMA,
   MIGRACION_NOMBRES_ROL_LEGACY,
+  NIVEL_ACCESO_POR_ROL_SISTEMA,
   PERMISOS_CRITICOS_CUANTIVA,
   PERMISOS_POR_ROL_SISTEMA,
   RolSistema,
@@ -109,11 +110,20 @@ export class PermisosSeedService implements OnModuleInit {
           descripcion: DESCRIPCIONES_ROL_SISTEMA[nombre],
           esSistema: true,
           estaActivo: true,
+          nivelAcceso: NIVEL_ACCESO_POR_ROL_SISTEMA[nombre],
           permisos: [],
         });
       } else {
         rol.esSistema = true;
         rol.descripcion = DESCRIPCIONES_ROL_SISTEMA[nombre] ?? rol.descripcion;
+        // El nivel de acceso de un rol de sistema es fijo: se reaplica siempre.
+        if (rol.nivelAcceso !== NIVEL_ACCESO_POR_ROL_SISTEMA[nombre]) {
+          rol.nivelAcceso = NIVEL_ACCESO_POR_ROL_SISTEMA[nombre];
+          await this.rolRepository.update(rol.id, {
+            nivelAcceso: rol.nivelAcceso,
+            descripcion: rol.descripcion,
+          });
+        }
       }
 
       const esNuevo = !rol.id;

@@ -4,9 +4,10 @@ import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { ArchivosController } from './archivos.controller';
 import { ArchivosService } from './archivos.service';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Evidencia, Jornada])],
+  imports: [UsuariosModule, TypeOrmModule.forFeature([Evidencia, Jornada])],
   controllers: [ArchivosController],
   providers: [ArchivosService],
   exports: [ArchivosService],

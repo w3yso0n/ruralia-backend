@@ -21,7 +21,11 @@ export class FiltrosUsuarioDto {
   @IsOptional()
   estaActivo?: boolean;
 
-  @ApiPropertyOptional({ description: 'Número de página', default: 1, minimum: 1 })
+  @ApiPropertyOptional({
+    description: 'Número de página',
+    default: 1,
+    minimum: 1,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)

@@ -73,8 +73,9 @@ export class JornadasController {
   @ApiResponse({ status: 200, type: RespuestaPaginadaJornadasDto })
   listar(
     @Query() filtros: FiltrosJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPaginadaJornadasDto> {
-    return this.jornadasService.listar(filtros);
+    return this.jornadasService.listar(filtros, usuario);
   }
 
   @Get('asignadas')
@@ -106,9 +107,11 @@ export class JornadasController {
   @RequierePermisos('jornadas.ver')
   @ApiOperation({ summary: 'Obtener resumen de una jornada' })
   @ApiResponse({ status: 200, type: ResumenJornadaDto })
-  obtenerResumen(
+  async obtenerResumen(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<ResumenJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.obtenerResumen(id);
   }
 
@@ -122,7 +125,9 @@ export class JornadasController {
   async descargarPdfAsistencia(
     @Param('id', ParseUUIDPipe) id: string,
     @Res({ passthrough: true }) res: Response,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<StreamableFile> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     const pdf = await this.jornadasService.generarPdfAsistencia(id);
     res.set({
       'Content-Type': 'application/pdf',
@@ -134,15 +139,16 @@ export class JornadasController {
   @Get(':id/formulario/pdf')
   @RequierePermisos('jornadas.ver')
   @ApiOperation({
-    summary:
-      'Descargar PDF con respuestas del formulario (jornada individual)',
+    summary: 'Descargar PDF con respuestas del formulario (jornada individual)',
   })
   @ApiProduces('application/pdf')
   @ApiResponse({ status: 200, description: 'PDF de formulario' })
   async descargarPdfFormulario(
     @Param('id', ParseUUIDPipe) id: string,
     @Res({ passthrough: true }) res: Response,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<StreamableFile> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     const pdf = await this.jornadasService.generarPdfFormulario(id);
     res.set({
       'Content-Type': 'application/pdf',
@@ -155,9 +161,11 @@ export class JornadasController {
   @RequierePermisos('jornadas.ver')
   @ApiOperation({ summary: 'Listar asistentes de una jornada grupal' })
   @ApiResponse({ status: 200, type: [RespuestaAsistenteJornadaDto] })
-  listarAsistencia(
+  async listarAsistencia(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaAsistenteJornadaDto[]> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.listarAsistencia(id);
   }
 
@@ -167,10 +175,12 @@ export class JornadasController {
     summary: 'Reemplazar la lista completa de asistencia de una jornada grupal',
   })
   @ApiResponse({ status: 200, type: [RespuestaAsistenteJornadaDto] })
-  guardarAsistencia(
+  async guardarAsistencia(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: GuardarAsistenciaJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaAsistenteJornadaDto[]> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.guardarAsistencia(id, dto);
   }
 
@@ -178,10 +188,12 @@ export class JornadasController {
   @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Agregar un asistente a la lista de asistencia' })
   @ApiResponse({ status: 201, type: RespuestaAsistenteJornadaDto })
-  agregarAsistente(
+  async agregarAsistente(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CrearAsistenteJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaAsistenteJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.agregarAsistente(id, dto);
   }
 
@@ -191,11 +203,13 @@ export class JornadasController {
     summary: 'Actualizar nombre, documento o firma de un asistente',
   })
   @ApiResponse({ status: 200, type: RespuestaAsistenteJornadaDto })
-  actualizarAsistente(
+  async actualizarAsistente(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('asistenteId', ParseUUIDPipe) asistenteId: string,
     @Body() dto: ActualizarAsistenteJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaAsistenteJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.actualizarAsistente(id, asistenteId, dto);
   }
 
@@ -204,10 +218,12 @@ export class JornadasController {
   @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Eliminar un asistente de la lista' })
   @ApiResponse({ status: 204 })
-  eliminarAsistente(
+  async eliminarAsistente(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('asistenteId', ParseUUIDPipe) asistenteId: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<void> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
     return this.jornadasService.eliminarAsistente(id, asistenteId);
   }
 
@@ -217,18 +233,22 @@ export class JornadasController {
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
   obtenerUna(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaJornadaDto> {
-    return this.jornadasService.obtenerUna(id);
+    return this.jornadasService.obtenerUna(id, usuario);
   }
 
   @Patch(':id')
   @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Actualizar datos de una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
-  actualizar(
+  async actualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
+    this.jornadasService.assertEdicionPermitida(dto, usuario);
     return this.jornadasService.actualizar(id, dto);
   }
 
@@ -248,10 +268,13 @@ export class JornadasController {
   @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Agregar beneficiarios a una jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
-  agregarBeneficiarios(
+  async agregarBeneficiarios(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AgregarBeneficiariosDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
+    this.jornadasService.assertNoTecnico(usuario);
     return this.jornadasService.agregarBeneficiarios(id, dto);
   }
 
@@ -259,10 +282,13 @@ export class JornadasController {
   @RequierePermisos('jornadas.editar')
   @ApiOperation({ summary: 'Agregar un miembro al equipo de la jornada' })
   @ApiResponse({ status: 200, type: RespuestaJornadaDto })
-  agregarMiembroEquipo(
+  async agregarMiembroEquipo(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AgregarMiembroEquipoDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaJornadaDto> {
+    await this.jornadasService.assertAccesoJornada(id, usuario);
+    this.jornadasService.assertNoTecnico(usuario);
     return this.jornadasService.agregarMiembroEquipo(id, dto);
   }
 

@@ -17,12 +17,16 @@ import {
 } from './dto/respuesta-usuario.dto';
 import { Rol } from './entities/rol.entity';
 import { Usuario } from './entities/usuario.entity';
+import { AlcanceTerritorialService } from './alcance-territorial.service';
 import { PermisosSeedService } from './permisos-seed.service';
 import {
   aRespuestaPaginadaUsuarios,
   aRespuestaUsuario,
 } from './utils/serializar-usuario';
-import { usuarioTienePermisos } from './utils/permisos-usuario';
+import {
+  usuarioSoloJornadasAsignadas,
+  usuarioTienePermisos,
+} from './utils/permisos-usuario';
 
 @Injectable()
 export class UsuariosService {
@@ -33,6 +37,7 @@ export class UsuariosService {
     private readonly rolRepository: Repository<Rol>,
     private readonly firebaseAdmin: FirebaseAdminService,
     private readonly permisosSeed: PermisosSeedService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   async listar(
@@ -63,7 +68,10 @@ export class UsuariosService {
       });
     }
 
-    const [usuarios, total] = await query.skip(skip).take(limite).getManyAndCount();
+    const [usuarios, total] = await query
+      .skip(skip)
+      .take(limite)
+      .getManyAndCount();
     const datos = usuarios.map((usuario) => aRespuestaUsuario(usuario));
     return aRespuestaPaginadaUsuarios(datos, total, pagina, limite);
   }
@@ -80,6 +88,13 @@ export class UsuariosService {
 
     if (existente) {
       throw new ConflictException('Ya existe un usuario con ese correo');
+    }
+
+    const proyectoIds = [...new Set(dto.proyectoIds ?? [])];
+    await this.asegurarProyectos(proyectoIds);
+    if (proyectoIds.length) {
+      const roles = await this.obtenerRolesPorIds(dto.rolIds);
+      this.asegurarAsignacionManual({ roles } as Usuario);
     }
 
     const firebaseUser = await this.firebaseAdmin.crearUsuario(
@@ -100,6 +115,9 @@ export class UsuariosService {
       });
 
       const guardado = await this.usuarioRepository.save(usuario);
+      if (proyectoIds.length) {
+        await this.reemplazarProyectosAsignados(guardado.id, proyectoIds);
+      }
       return this.obtenerUno(guardado.id);
     } catch (error) {
       await this.firebaseAdmin.eliminarUsuario(firebaseUser.uid);
@@ -129,18 +147,13 @@ export class UsuariosService {
         ? await this.obtenerRolesPorIds(dto.rolIds)
         : undefined;
 
-    await this.validarNoOrfandadAdmin(
-      usuario,
-      dto.estaActivo,
-      rolesNuevos,
-    );
+    await this.validarNoOrfandadAdmin(usuario, dto.estaActivo, rolesNuevos);
 
     await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
       correo: dto.correo,
       contrasena: dto.contrasena,
       nombreCompleto: dto.nombreCompleto,
-      deshabilitado:
-        dto.estaActivo !== undefined ? !dto.estaActivo : undefined,
+      deshabilitado: dto.estaActivo !== undefined ? !dto.estaActivo : undefined,
     });
 
     if (dto.nombreCompleto !== undefined) {
@@ -272,6 +285,83 @@ export class UsuariosService {
     }
   }
 
+  /**
+   * Proyectos a los que accede el usuario: los asignados como personal o,
+   * si es técnico, los que salen de sus jornadas.
+   */
+  async listarProyectosAsignados(
+    usuarioId: string,
+  ): Promise<Array<{ id: string; nombre: string }>> {
+    const usuario = await this.buscarUsuario(usuarioId);
+    if (usuarioSoloJornadasAsignadas(usuario)) {
+      const ids =
+        await this.alcanceTerritorialService.idsProyectosPorJornadas(usuarioId);
+      if (!ids.length) return [];
+      return this.usuarioRepository.manager.query(
+        `SELECT id, nombre FROM proyectos
+         WHERE id = ANY($1::uuid[])
+         ORDER BY nombre ASC`,
+        [ids],
+      );
+    }
+    return this.usuarioRepository.manager.query(
+      `SELECT p.id, p.nombre
+       FROM proyecto_personal pp
+       JOIN proyectos p ON p.id = pp.proyecto_id
+       WHERE pp.usuario_id = $1
+       ORDER BY p.nombre ASC`,
+      [usuarioId],
+    );
+  }
+
+  /** Reemplaza la lista de proyectos donde el usuario es personal. */
+  async reemplazarProyectosAsignados(
+    usuarioId: string,
+    proyectoIds: string[],
+  ): Promise<Array<{ id: string; nombre: string }>> {
+    const usuario = await this.buscarUsuario(usuarioId);
+    this.asegurarAsignacionManual(usuario);
+    const unicos = [...new Set(proyectoIds)];
+    await this.asegurarProyectos(unicos);
+
+    await this.usuarioRepository.manager.transaction(async (manager) => {
+      await manager.query(
+        `DELETE FROM proyecto_personal WHERE usuario_id = $1`,
+        [usuarioId],
+      );
+      if (unicos.length) {
+        await manager.query(
+          `INSERT INTO proyecto_personal (proyecto_id, usuario_id)
+           SELECT unnest($1::uuid[]), $2
+           ON CONFLICT DO NOTHING`,
+          [unicos, usuarioId],
+        );
+      }
+    });
+    return this.listarProyectosAsignados(usuarioId);
+  }
+
+  /** Al técnico no se le asignan proyectos: salen de sus jornadas. */
+  private asegurarAsignacionManual(usuario: Usuario): void {
+    if (usuarioSoloJornadasAsignadas(usuario)) {
+      throw new BadRequestException(
+        'Los proyectos del técnico se toman automáticamente de sus jornadas asignadas',
+      );
+    }
+  }
+
+  private async asegurarProyectos(proyectoIds: string[]): Promise<void> {
+    if (!proyectoIds.length) return;
+    const filas: Array<{ id: string }> =
+      await this.usuarioRepository.manager.query(
+        `SELECT id FROM proyectos WHERE id = ANY($1::uuid[])`,
+        [proyectoIds],
+      );
+    if (filas.length !== proyectoIds.length) {
+      throw new BadRequestException('Uno o más proyectos no existen');
+    }
+  }
+
   private async obtenerRolesPorIds(rolIds: string[]): Promise<Rol[]> {
     await this.permisosSeed.asegurarCatalogoYRoles();
     const unicos = [...new Set(rolIds)];
@@ -304,8 +394,7 @@ export class UsuariosService {
       ['roles.editar'],
     );
 
-    const pierdeGestion =
-      teniaGestion && (!quedaraActivo || !tendraGestion);
+    const pierdeGestion = teniaGestion && (!quedaraActivo || !tendraGestion);
     if (!pierdeGestion) return;
 
     const otros = await this.usuarioRepository.find({
@@ -313,8 +402,7 @@ export class UsuariosService {
       relations: { roles: { permisos: true } },
     });
     const quedaAlguien = otros.some(
-      (u) =>
-        u.id !== usuario.id && usuarioTienePermisos(u, ['roles.editar']),
+      (u) => u.id !== usuario.id && usuarioTienePermisos(u, ['roles.editar']),
     );
     if (!quedaAlguien) {
       throw new BadRequestException(

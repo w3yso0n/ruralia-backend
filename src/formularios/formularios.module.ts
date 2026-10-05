@@ -13,9 +13,11 @@ import { RespuestaFormulario } from './entities/respuesta-formulario.entity';
 import { EnviosFormularioService } from './envios-formulario.service';
 import { FormulariosController } from './formularios.controller';
 import { PlantillasFormularioService } from './plantillas-formulario.service';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 
 @Module({
   imports: [
+    UsuariosModule,
     JornadasModule,
     CronologiaModule,
     TypeOrmModule.forFeature([

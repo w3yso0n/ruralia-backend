@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { PERMISOS_CRITICOS_CUANTIVA, RolSistema } from './catalogo-permisos';
+import { NivelAccesoRol } from './enums/nivel-acceso-rol.enum';
 import { ActualizarRolDto } from './dto/actualizar-rol.dto';
 import { CrearRolDto } from './dto/crear-rol.dto';
 import {
@@ -81,6 +82,7 @@ export class RolesService {
       descripcion: dto.descripcion,
       esSistema: false,
       estaActivo: true,
+      nivelAcceso: dto.nivelAcceso ?? NivelAccesoRol.PROYECTOS_ASIGNADOS,
       permisos,
     });
     const guardado = await this.rolRepository.save(rol);
@@ -120,6 +122,15 @@ export class RolesService {
         throw new BadRequestException('No se puede desactivar el rol CUANTIVA');
       }
       rol.estaActivo = dto.estaActivo;
+    }
+
+    if (dto.nivelAcceso !== undefined && dto.nivelAcceso !== rol.nivelAcceso) {
+      if (rol.esSistema) {
+        throw new BadRequestException(
+          'El nivel de acceso de un rol de sistema no se puede cambiar. Clónalo para crear una variante.',
+        );
+      }
+      rol.nivelAcceso = dto.nivelAcceso;
     }
 
     if (dto.permisoIds !== undefined) {
@@ -163,6 +174,7 @@ export class RolesService {
     return this.crear({
       nombre,
       descripcion: original.descripcion ?? undefined,
+      nivelAcceso: original.nivelAcceso,
       permisoIds: (original.permisos ?? []).map((p) => p.id),
     });
   }
@@ -234,6 +246,7 @@ export class RolesService {
       descripcion: rol.descripcion,
       esSistema: rol.esSistema,
       estaActivo: rol.estaActivo,
+      nivelAcceso: rol.nivelAcceso,
       permisoIds,
       permisoClaves,
       conteoPermisos: permisoClaves.length,

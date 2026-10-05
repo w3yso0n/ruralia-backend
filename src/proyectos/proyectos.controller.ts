@@ -28,6 +28,7 @@ import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import { AsignarPersonalDto } from './dto/asignar-personal.dto';
@@ -55,7 +56,10 @@ import { parsearExcelBeneficiarios } from './utils/excel-beneficiarios';
 @ApiBearerAuth('bearer')
 @Controller('proyectos')
 export class ProyectosController {
-  constructor(private readonly proyectosService: ProyectosService) {}
+  constructor(
+    private readonly proyectosService: ProyectosService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
+  ) {}
 
   @Post()
   @RequierePermisos('proyectos.crear')
@@ -121,9 +125,14 @@ export class ProyectosController {
   @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Obtener estadísticas de un proyecto' })
   @ApiResponse({ status: 200, type: EstadisticasProyectoDto })
-  obtenerEstadisticas(
+  async obtenerEstadisticas(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<EstadisticasProyectoDto> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      id,
+    );
     return this.proyectosService.obtenerEstadisticas(id);
   }
 
@@ -210,7 +219,8 @@ export class ProyectosController {
   @Post(':id/beneficiarios')
   @RequierePermisos('proyectos.gestionar_vinculos')
   @ApiOperation({
-    summary: 'Asignar beneficiarios al proyecto (varios, no excluye asociaciones)',
+    summary:
+      'Asignar beneficiarios al proyecto (varios, no excluye asociaciones)',
   })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarBeneficiarios(
@@ -302,10 +312,15 @@ export class ProyectosController {
       'Historial del cupo: jornadas propias y las heredadas de quien fue reemplazado',
   })
   @ApiResponse({ status: 200, type: RespuestaHistorialBeneficiarioProyectoDto })
-  historialBeneficiario(
+  async historialBeneficiario(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('beneficiarioId', ParseUUIDPipe) beneficiarioId: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaHistorialBeneficiarioProyectoDto> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      id,
+    );
     return this.proyectosService.historialBeneficiarioProyecto(
       id,
       beneficiarioId,

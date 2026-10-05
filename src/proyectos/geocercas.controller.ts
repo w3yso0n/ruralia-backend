@@ -22,13 +22,19 @@ import {
   CrearGeocercaDto,
   RespuestaGeocercaDto,
 } from './dto/geocerca.dto';
+import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
+import { Usuario } from '../usuarios/entities/usuario.entity';
 import { GeocercasService } from './geocercas.service';
 
 @ApiTags('Proyectos')
 @ApiBearerAuth('bearer')
 @Controller('proyectos/:proyectoId/geocercas')
 export class GeocercasController {
-  constructor(private readonly geocercasService: GeocercasService) {}
+  constructor(
+    private readonly geocercasService: GeocercasService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
+  ) {}
 
   @Get()
   @RequierePermisos('proyectos.ver')
@@ -38,9 +44,14 @@ export class GeocercasController {
       'Zonas poligonales trazadas con puntos de latitud/longitud, propias de cada proyecto.',
   })
   @ApiResponse({ status: 200, type: [RespuestaGeocercaDto] })
-  listar(
+  async listar(
     @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaGeocercaDto[]> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      proyectoId,
+    );
     return this.geocercasService.listar(proyectoId);
   }
 
@@ -48,10 +59,15 @@ export class GeocercasController {
   @RequierePermisos('proyectos.ver')
   @ApiOperation({ summary: 'Obtener una geocerca del proyecto' })
   @ApiResponse({ status: 200, type: RespuestaGeocercaDto })
-  obtenerUno(
+  async obtenerUno(
     @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
     @Param('geocercaId', ParseUUIDPipe) geocercaId: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaGeocercaDto> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      proyectoId,
+    );
     return this.geocercasService.obtenerUno(proyectoId, geocercaId);
   }
 

@@ -40,4 +40,15 @@ export class CrearUsuarioDto {
   @ArrayUnique()
   @IsUUID('4', { each: true })
   rolIds: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Proyectos donde queda asignado como personal (define su acceso si su rol es por proyecto asignado)',
+  })
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  proyectoIds?: string[];
 }

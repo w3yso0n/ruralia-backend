@@ -48,3 +48,27 @@ export function aEstadisticasProyecto(
     excludeExtraneousValues: true,
   });
 }
+
+/**
+ * Vista de consulta para el técnico: solo los datos generales del proyecto.
+ * Sin equipo, beneficiarios, asociaciones, territorio, plan ni avance.
+ */
+export function aVistaLimitadaProyecto(
+  dto: RespuestaProyectoDto,
+): RespuestaProyectoDto {
+  return plainToInstance(
+    RespuestaProyectoDto,
+    {
+      id: dto.id,
+      nombre: dto.nombre,
+      descripcion: dto.descripcion,
+      tipo: dto.tipo,
+      estado: dto.estado,
+      fechaInicio: dto.fechaInicio,
+      fechaFin: dto.fechaFin,
+      creadoEn: dto.creadoEn,
+      actualizadoEn: dto.actualizadoEn,
+    },
+    { excludeExtraneousValues: true },
+  );
+}

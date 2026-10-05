@@ -8,9 +8,11 @@ import { DocumentosController } from './documentos.controller';
 import { DocumentosService } from './documentos.service';
 import { Documento } from './entities/documento.entity';
 import { DocumentoVersion } from './entities/documento-version.entity';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 
 @Module({
   imports: [
+    UsuariosModule,
     TypeOrmModule.forFeature([
       Documento,
       DocumentoVersion,

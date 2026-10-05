@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
+import { NivelAccesoRol } from '../enums/nivel-acceso-rol.enum';
 
 export class RespuestaRolDto {
   @ApiProperty({ description: 'ID del rol' })
@@ -17,6 +18,13 @@ export class RespuestaRolDto {
   @ApiPropertyOptional({ description: 'Indica si es un rol de sistema' })
   @Expose()
   esSistema?: boolean;
+
+  @ApiPropertyOptional({
+    enum: NivelAccesoRol,
+    description: 'Proyectos que alcanza el rol',
+  })
+  @Expose()
+  nivelAcceso?: NivelAccesoRol;
 }
 
 export class RespuestaUsuarioDto {
@@ -65,7 +73,10 @@ export class RespuestaUsuarioDto {
 }
 
 export class RespuestaPaginadaUsuariosDto {
-  @ApiProperty({ type: [RespuestaUsuarioDto], description: 'Lista de usuarios' })
+  @ApiProperty({
+    type: [RespuestaUsuarioDto],
+    description: 'Lista de usuarios',
+  })
   @Expose()
   @Type(() => RespuestaUsuarioDto)
   datos: RespuestaUsuarioDto[];

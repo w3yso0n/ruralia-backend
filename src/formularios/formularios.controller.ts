@@ -39,6 +39,7 @@ import {
 } from './dto/respuesta-formulario.dto';
 import { EnviosFormularioService } from './envios-formulario.service';
 import { PlantillasFormularioService } from './plantillas-formulario.service';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 
 @ApiTags('Formularios')
 @ApiBearerAuth('bearer')
@@ -47,6 +48,7 @@ export class FormulariosController {
   constructor(
     private readonly plantillasService: PlantillasFormularioService,
     private readonly enviosService: EnviosFormularioService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
 
   @Post('plantillas')
@@ -70,8 +72,7 @@ export class FormulariosController {
   @Get('plantillas/proceso/:procesoId/asignacion')
   @RequierePermisos('formularios.ver')
   @ApiOperation({
-    summary:
-      'Obtener formulario individual y grupal asignados a un proceso',
+    summary: 'Obtener formulario individual y grupal asignados a un proceso',
   })
   @ApiResponse({ status: 200, type: RespuestaAsignacionPlantillasProcesoDto })
   obtenerAsignacionProceso(
@@ -143,7 +144,8 @@ export class FormulariosController {
   @Get('plantillas/documentos-generales')
   @RequierePermisos('formularios.ver')
   @ApiOperation({
-    summary: 'Listar plantillas asignadas directamente al usuario (documentos generales)',
+    summary:
+      'Listar plantillas asignadas directamente al usuario (documentos generales)',
   })
   @ApiResponse({ status: 200, type: [RespuestaPlantillaFormularioDto] })
   listarDocumentosGenerales(
@@ -200,7 +202,9 @@ export class FormulariosController {
 
   @Post('plantillas/:id/clonar')
   @RequierePermisos('formularios.crear')
-  @ApiOperation({ summary: 'Clonar una plantilla (sin subactividades asignadas)' })
+  @ApiOperation({
+    summary: 'Clonar una plantilla (sin subactividades asignadas)',
+  })
   @ApiResponse({ status: 201, type: RespuestaPlantillaFormularioDto })
   clonarPlantilla(
     @Param('id', ParseUUIDPipe) id: string,
@@ -278,9 +282,14 @@ export class FormulariosController {
   @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Listar envíos de formulario por jornada' })
   @ApiResponse({ status: 200, type: [RespuestaEnvioFormularioDto] })
-  listarEnviosPorJornada(
+  async listarEnviosPorJornada(
     @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaEnvioFormularioDto[]> {
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      jornadaId,
+    );
     return this.enviosService.listarPorJornada(jornadaId);
   }
 
@@ -288,18 +297,34 @@ export class FormulariosController {
   @RequierePermisos('formularios.ver')
   @ApiOperation({ summary: 'Obtener respuestas de un envío de formulario' })
   @ApiResponse({ status: 200, type: [RespuestaDetalleRespuestaDto] })
-  obtenerRespuestas(
+  async obtenerRespuestas(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaDetalleRespuestaDto[]> {
+    await this.alcanceTerritorialService.assertTecnicoEnRegistroDeJornada(
+      usuario,
+      'envios_formulario',
+      id,
+    );
     return this.enviosService.obtenerRespuestas(id);
   }
 
   @Delete('envios/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequierePermisos('formularios.enviar')
-  @ApiOperation({ summary: 'Eliminar un envío (p. ej. quitar asistente de lista grupal)' })
+  @ApiOperation({
+    summary: 'Eliminar un envío (p. ej. quitar asistente de lista grupal)',
+  })
   @ApiResponse({ status: 204 })
-  eliminarEnvio(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+  async eliminarEnvio(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<void> {
+    await this.alcanceTerritorialService.assertTecnicoEnRegistroDeJornada(
+      usuario,
+      'envios_formulario',
+      id,
+    );
     return this.enviosService.eliminar(id);
   }
 }

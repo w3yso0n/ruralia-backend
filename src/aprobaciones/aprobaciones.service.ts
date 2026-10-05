@@ -25,7 +25,14 @@ import { EstadoJornada } from '../jornadas/enums/estado-jornada.enum';
 import { RolSistema } from '../usuarios/catalogo-permisos';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
-import { usuarioTieneAccesoTotal } from '../usuarios/utils/permisos-usuario';
+import { NivelAccesoRol } from '../usuarios/enums/nivel-acceso-rol.enum';
+import {
+  nivelAccesoUsuario,
+  usuarioGestionaProyectos,
+  usuarioSoloJornadasAsignadas,
+  usuarioTieneAccesoTotal,
+  usuarioTieneAlgunPermiso,
+} from '../usuarios/utils/permisos-usuario';
 import {
   AprobarDto,
   FiltrosBandejaDto,
@@ -33,10 +40,7 @@ import {
   ReenviarRevisionDto,
 } from './dto/aprobaciones.dto';
 import { Approval } from './entities/approval.entity';
-import {
-  EstadoRechazo,
-  Rejection,
-} from './entities/rejection.entity';
+import { EstadoRechazo, Rejection } from './entities/rejection.entity';
 
 const ROLES_APROBADORES: RolSistema[] = [
   RolSistema.COORDINADOR_ZONA,
@@ -72,17 +76,41 @@ export class AprobacionesService {
 
   private esAprobador(usuario: Usuario): boolean {
     if (usuarioTieneAccesoTotal(usuario)) return true;
-    return this.nombresRol(usuario).some((n) =>
-      ROLES_APROBADORES.includes(n as RolSistema),
+    if (
+      this.nombresRol(usuario).some((n) =>
+        ROLES_APROBADORES.includes(n as RolSistema),
+      )
+    ) {
+      return true;
+    }
+    // Roles por nivel de acceso (p. ej. Coordinador de proyecto o roles
+    // personalizados): aprueban si gestionan proyectos y la matriz lo permite.
+    return (
+      usuarioGestionaProyectos(usuario) &&
+      usuarioTieneAlgunPermiso(usuario, [
+        'jornadas.aprobar',
+        'jornadas.rechazar',
+      ])
     );
   }
 
   private esCampo(usuario: Usuario): boolean {
-    const roles = this.nombresRol(usuario);
-    return (
-      roles.includes(RolSistema.CAMPO) &&
-      !roles.some((n) => ROLES_APROBADORES.includes(n as RolSistema)) &&
-      !usuarioTieneAccesoTotal(usuario)
+    return usuarioSoloJornadasAsignadas(usuario) && !this.esAprobador(usuario);
+  }
+
+  /** Quien opera por proyectos asignados solo revisa jornadas de esos proyectos. */
+  private async assertAlcanceRevision(
+    jornada: Jornada | null | undefined,
+    usuario: Usuario,
+  ): Promise<void> {
+    if (nivelAccesoUsuario(usuario) !== NivelAccesoRol.PROYECTOS_ASIGNADOS) {
+      return;
+    }
+    const proyectoId = jornada?.proyecto?.id;
+    if (!proyectoId) return;
+    await this.alcanceTerritorialService.assertPuedeGestionarProyecto(
+      usuario,
+      proyectoId,
     );
   }
 
@@ -183,7 +211,9 @@ export class AprobacionesService {
     }
 
     if (jornada.estadoFuncional === EstadoFuncional.APROBADO) {
-      throw new BadRequestException('La jornada ya está confirmada en el proyecto');
+      throw new BadRequestException(
+        'La jornada ya está confirmada en el proyecto',
+      );
     }
 
     const estadosPermitidos = [
@@ -276,9 +306,7 @@ export class AprobacionesService {
     const jornada = await this.cargarJornada(jornadaId);
 
     if (!jornada.requiereRevision) {
-      throw new BadRequestException(
-        'Esta jornada no usa flujo de revisión',
-      );
+      throw new BadRequestException('Esta jornada no usa flujo de revisión');
     }
 
     if (
@@ -318,10 +346,7 @@ export class AprobacionesService {
       where: {
         jornadaId,
         status: EstadoRechazo.OPEN,
-        entityType: In([
-          EntidadRevisable.JORNADA,
-          EntidadRevisable.DOCUMENTO,
-        ]),
+        entityType: In([EntidadRevisable.JORNADA, EntidadRevisable.DOCUMENTO]),
       },
     });
     for (const r of abiertos) {
@@ -413,6 +438,7 @@ export class AprobacionesService {
     dto: AprobarDto,
   ) {
     const jornada = await this.cargarJornada(jornadaId);
+    await this.assertAlcanceRevision(jornada, usuario);
     this.bloquearAutoAprobacion(jornada, usuario);
 
     const evidenciasAbiertas = await this.rejectionRepo.count({
@@ -445,7 +471,9 @@ export class AprobacionesService {
             })
           : null);
       if (!vigente) {
-        throw new BadRequestException('No hay versión de documento para aprobar');
+        throw new BadRequestException(
+          'No hay versión de documento para aprobar',
+        );
       }
       versionId = vigente.id;
       vigente.status = EstadoVersionDocumento.APROBADO;
@@ -520,6 +548,7 @@ export class AprobacionesService {
       relations: { jornada: { proyecto: true, tecnicoResponsable: true } },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
+    await this.assertAlcanceRevision(doc.jornada, usuario);
     this.bloquearAutoAprobacion(doc.jornada, usuario);
 
     const version =
@@ -571,7 +600,11 @@ export class AprobacionesService {
       documentVersionId: version.id,
     });
 
-    return { approval, estadoFuncional: doc.estadoFuncional, versionId: version.id };
+    return {
+      approval,
+      estadoFuncional: doc.estadoFuncional,
+      versionId: version.id,
+    };
   }
 
   private async aprobarEvidencia(
@@ -584,6 +617,7 @@ export class AprobacionesService {
       relations: { jornada: { proyecto: true, tecnicoResponsable: true } },
     });
     if (!evidencia) throw new NotFoundException('Evidencia no encontrada');
+    await this.assertAlcanceRevision(evidencia.jornada, usuario);
     this.bloquearAutoAprobacion(evidencia.jornada, usuario);
 
     const anterior = evidencia.estadoFuncional;
@@ -619,6 +653,7 @@ export class AprobacionesService {
 
   private async rechazarJornada(dto: RechazarDto, usuario: Usuario) {
     const jornada = await this.cargarJornada(dto.entityId);
+    await this.assertAlcanceRevision(jornada, usuario);
     const anterior = jornada.estadoFuncional;
     jornada.estadoFuncional = transicionarEstado(
       anterior,
@@ -691,6 +726,7 @@ export class AprobacionesService {
       relations: { jornada: { proyecto: true } },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
+    await this.assertAlcanceRevision(doc.jornada, usuario);
 
     const anterior = doc.estadoFuncional;
     doc.estadoFuncional = EstadoFuncional.RECHAZADO;
@@ -745,6 +781,7 @@ export class AprobacionesService {
       relations: { jornada: { proyecto: true } },
     });
     if (!evidencia) throw new NotFoundException('Evidencia no encontrada');
+    await this.assertAlcanceRevision(evidencia.jornada, usuario);
 
     const anterior = evidencia.estadoFuncional;
     evidencia.estadoFuncional = EstadoFuncional.RECHAZADO;
@@ -802,13 +839,11 @@ export class AprobacionesService {
   }
 
   async bandeja(usuario: Usuario, filtros: FiltrosBandejaDto) {
-    const vista =
-      filtros.vista ??
-      (this.esCampo(usuario)
-        ? 'tecnico'
-        : this.esAprobador(usuario)
-          ? 'supervisor'
-          : 'tecnico');
+    // El técnico siempre ve su propia bandeja, aunque pida otra vista.
+    const vista = this.esCampo(usuario)
+      ? 'tecnico'
+      : (filtros.vista ??
+        (this.esAprobador(usuario) ? 'supervisor' : 'tecnico'));
 
     const qb = this.jornadaRepo
       .createQueryBuilder('j')
@@ -908,15 +943,18 @@ export class AprobacionesService {
       pendientesRevision: 0,
     };
     for (const j of jornadas) {
-      if (j.estadoFuncional === EstadoFuncional.BORRADOR) contadores.borradores++;
+      if (j.estadoFuncional === EstadoFuncional.BORRADOR)
+        contadores.borradores++;
       if (j.estadoFuncional === EstadoFuncional.EN_REVISION) {
         contadores.enRevision++;
         contadores.pendientesRevision++;
       }
-      if (j.estadoFuncional === EstadoFuncional.RECHAZADO) contadores.rechazadas++;
+      if (j.estadoFuncional === EstadoFuncional.RECHAZADO)
+        contadores.rechazadas++;
       if (j.estadoFuncional === EstadoFuncional.EN_CORRECCION)
         contadores.enCorreccion++;
-      if (j.estadoFuncional === EstadoFuncional.APROBADO) contadores.aprobadas++;
+      if (j.estadoFuncional === EstadoFuncional.APROBADO)
+        contadores.aprobadas++;
     }
 
     return {
@@ -1009,10 +1047,16 @@ export class AprobacionesService {
       }
       if (
         jornada.tecnicoResponsable?.id === usuario.id &&
+        nivelAccesoUsuario(usuario) === NivelAccesoRol.PROYECTOS_ASIGNADOS
+      ) {
+        throw new ForbiddenException(
+          'No puede aprobar una jornada de la que es técnico responsable',
+        );
+      }
+      if (
+        jornada.tecnicoResponsable?.id === usuario.id &&
         this.nombresRol(usuario).includes(RolSistema.COORDINADOR_ZONA) &&
-        !this.nombresRol(usuario).includes(
-          RolSistema.COORDINADOR_DEPARTAMENTAL,
-        )
+        !this.nombresRol(usuario).includes(RolSistema.COORDINADOR_DEPARTAMENTAL)
       ) {
         throw new ForbiddenException(
           'No puede aprobar una jornada de la que es técnico responsable',

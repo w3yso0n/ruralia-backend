@@ -17,7 +17,9 @@ export class ActualizarUsuarioDto {
   @IsOptional()
   correo?: string;
 
-  @ApiPropertyOptional({ description: 'Nueva contraseña (mínimo 6 caracteres)' })
+  @ApiPropertyOptional({
+    description: 'Nueva contraseña (mínimo 6 caracteres)',
+  })
   @IsString()
   @MinLength(6)
   @IsOptional()

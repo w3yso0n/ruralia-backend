@@ -12,6 +12,7 @@ import { RespuestaFormulario } from '../formularios/entities/respuesta-formulari
 import { Geocerca } from '../proyectos/entities/geocerca.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { UsuariosModule } from '../usuarios/usuarios.module';
 import { CronologiaModule } from '../cronologia/cronologia.module';
 import { JornadaActividad } from './entities/jornada-actividad.entity';
 import { JornadaAsistente } from './entities/jornada-asistente.entity';
@@ -22,6 +23,7 @@ import { JornadasService } from './jornadas.service';
 @Module({
   imports: [
     CronologiaModule,
+    UsuariosModule,
     TypeOrmModule.forFeature([
       Jornada,
       JornadaActividad,

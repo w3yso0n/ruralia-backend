@@ -14,8 +14,11 @@ import { Vereda } from '../territorios/entities/vereda.entity';
 import { TipoAlcanceTerritorial } from './enums/tipo-alcance-territorial.enum';
 import { UsuarioAlcanceTerritorial } from './entities/usuario-alcance-territorial.entity';
 import { Usuario } from './entities/usuario.entity';
+import { NivelAccesoRol } from './enums/nivel-acceso-rol.enum';
 import {
+  nivelAccesoUsuario,
   usuarioEsCoordinacion,
+  usuarioSoloJornadasAsignadas,
   usuarioTieneAccesoTotal,
 } from './utils/permisos-usuario';
 
@@ -55,6 +58,10 @@ export class AlcanceTerritorialService {
       return this.idsProyectosPorAlcance(usuario.id);
     }
 
+    if (usuarioSoloJornadasAsignadas(usuario)) {
+      return this.idsProyectosPorJornadas(usuario.id);
+    }
+
     const filas: Array<{ proyecto_id: string }> =
       await this.proyectoRepository.manager.query(
         `SELECT proyecto_id FROM proyecto_personal WHERE usuario_id = $1`,
@@ -75,19 +82,80 @@ export class AlcanceTerritorialService {
   }
 
   /**
-   * Acceso total: cualquier proyecto.
-   * Coordinación: proyectos de su territorio o de su equipo.
-   * Resto: nunca gestiona, aunque tenga el permiso de la matriz.
+   * El técnico solo accede a lo que cuelga de sus jornadas (documentos,
+   * envíos, evidencias, rechazos). Para el resto de niveles no restringe.
+   */
+  async assertTecnicoEnJornada(
+    usuario: Usuario,
+    jornadaId: string | null | undefined,
+  ): Promise<void> {
+    if (!usuarioSoloJornadasAsignadas(usuario)) return;
+    const filas: Array<{ existe: number }> = jornadaId
+      ? await this.proyectoRepository.manager.query(
+          `SELECT 1 AS existe FROM jornadas j
+           WHERE j.id = $1
+             AND (j.tecnico_responsable_id = $2
+               OR EXISTS (SELECT 1 FROM jornada_equipo je
+                          WHERE je.jornada_id = j.id AND je.usuario_id = $2))
+           LIMIT 1`,
+          [jornadaId, usuario.id],
+        )
+      : [];
+    if (!filas.length) {
+      throw new ForbiddenException('No tiene acceso a esta jornada');
+    }
+  }
+
+  /** Igual que assertTecnicoEnJornada, partiendo de una fila con jornada_id. */
+  async assertTecnicoEnRegistroDeJornada(
+    usuario: Usuario,
+    tabla: 'documents' | 'envios_formulario' | 'evidencias',
+    registroId: string,
+  ): Promise<void> {
+    if (!usuarioSoloJornadasAsignadas(usuario)) return;
+    const filas: Array<{ jornada_id: string | null }> =
+      await this.proyectoRepository.manager.query(
+        `SELECT jornada_id FROM ${tabla} WHERE id = $1`,
+        [registroId],
+      );
+    await this.assertTecnicoEnJornada(usuario, filas[0]?.jornada_id);
+  }
+
+  /**
+   * Datos de proyecto más allá de la ficha básica (estadísticas, territorio,
+   * historial de beneficiarios). El técnico nunca los consulta.
+   */
+  async assertConsultaCompletaProyecto(
+    usuario: Usuario,
+    proyectoId: string,
+  ): Promise<void> {
+    if (usuarioSoloJornadasAsignadas(usuario)) {
+      throw new ForbiddenException(
+        'Tu rol solo consulta la información de tus jornadas',
+      );
+    }
+    await this.assertProyectoVisible(usuario, proyectoId);
+  }
+
+  /**
+   * Según el nivel de acceso del rol:
+   * - TOTAL: cualquier proyecto.
+   * - TERRITORIAL: proyectos de su territorio o de su equipo.
+   * - PROYECTOS_ASIGNADOS: solo proyectos donde está en el personal.
+   * - JORNADAS_ASIGNADAS: nunca gestiona, aunque tenga el permiso de la matriz.
    */
   async puedeGestionarProyecto(
     usuario: Usuario,
     proyectoId: string,
   ): Promise<boolean> {
-    if (usuarioTieneAccesoTotal(usuario)) return true;
-    if (!usuarioEsCoordinacion(usuario)) return false;
+    const nivel = nivelAccesoUsuario(usuario);
+    if (nivel === NivelAccesoRol.TOTAL) return true;
+    if (nivel === NivelAccesoRol.JORNADAS_ASIGNADAS) return false;
 
-    const enTerritorio = await this.idsProyectosPorAlcance(usuario.id);
-    if (enTerritorio.includes(proyectoId)) return true;
+    if (nivel === NivelAccesoRol.TERRITORIAL) {
+      const enTerritorio = await this.idsProyectosPorAlcance(usuario.id);
+      if (enTerritorio.includes(proyectoId)) return true;
+    }
 
     const filas: Array<{ existe: number }> =
       await this.proyectoRepository.manager.query(
@@ -103,10 +171,13 @@ export class AlcanceTerritorialService {
     proyectoId: string,
   ): Promise<void> {
     if (await this.puedeGestionarProyecto(usuario, proyectoId)) return;
+    const nivel = nivelAccesoUsuario(usuario);
     throw new ForbiddenException(
-      usuarioEsCoordinacion(usuario)
+      nivel === NivelAccesoRol.TERRITORIAL
         ? 'Este proyecto no está en tu territorio ni en tu equipo'
-        : 'Tu rol no puede gestionar proyectos',
+        : nivel === NivelAccesoRol.PROYECTOS_ASIGNADOS
+          ? 'No estás asignado a este proyecto'
+          : 'Tu rol no puede gestionar proyectos',
     );
   }
 
@@ -155,6 +226,24 @@ export class AlcanceTerritorialService {
       );
     }
     return this.listar(usuarioId);
+  }
+
+  /**
+   * Técnico: los proyectos salen solos de las jornadas donde es responsable
+   * o parte del equipo (sin contar las canceladas). No se asignan a mano.
+   */
+  async idsProyectosPorJornadas(usuarioId: string): Promise<string[]> {
+    const filas: Array<{ proyecto_id: string }> =
+      await this.proyectoRepository.manager.query(
+        `SELECT DISTINCT j.proyecto_id
+         FROM jornadas j
+         WHERE j.estado <> 'CANCELADA'
+           AND (j.tecnico_responsable_id = $1
+             OR EXISTS (SELECT 1 FROM jornada_equipo je
+                        WHERE je.jornada_id = j.id AND je.usuario_id = $1))`,
+        [usuarioId],
+      );
+    return filas.map((fila) => fila.proyecto_id);
   }
 
   private async idsProyectosPorAlcance(usuarioId: string): Promise<string[]> {

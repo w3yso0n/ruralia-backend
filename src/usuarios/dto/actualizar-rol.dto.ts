@@ -3,11 +3,13 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { NivelAccesoRol } from '../enums/nivel-acceso-rol.enum';
 
 export class ActualizarRolDto {
   @ApiPropertyOptional({ description: 'Nombre único del rol' })
@@ -26,6 +28,15 @@ export class ActualizarRolDto {
   @IsBoolean()
   @IsOptional()
   estaActivo?: boolean;
+
+  @ApiPropertyOptional({
+    enum: NivelAccesoRol,
+    description:
+      'Proyectos que alcanza el rol: TOTAL, TERRITORIAL, PROYECTOS_ASIGNADOS o JORNADAS_ASIGNADAS',
+  })
+  @IsEnum(NivelAccesoRol)
+  @IsOptional()
+  nivelAcceso?: NivelAccesoRol;
 
   @ApiPropertyOptional({
     type: [String],

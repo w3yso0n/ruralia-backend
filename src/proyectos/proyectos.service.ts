@@ -16,10 +16,7 @@ import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
-import {
-  usuarioEsCoordinacion,
-  usuarioTieneAccesoTotal,
-} from '../usuarios/utils/permisos-usuario';
+import { usuarioSoloJornadasAsignadas } from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
@@ -51,6 +48,7 @@ import {
   aEstadisticasProyecto,
   aRespuestaPaginada,
   aRespuestaProyecto,
+  aVistaLimitadaProyecto,
 } from './utils/serializar-proyecto';
 import {
   generarPlantillaExcelBeneficiarios,
@@ -245,7 +243,13 @@ export class ProyectosService {
       }),
     );
 
-    return aRespuestaPaginada(datos, total, pagina, limite);
+    const vistaLimitada = !!usuario && usuarioSoloJornadasAsignadas(usuario);
+    return aRespuestaPaginada(
+      vistaLimitada ? datos.map(aVistaLimitadaProyecto) : datos,
+      total,
+      pagina,
+      limite,
+    );
   }
 
   async obtenerUno(
@@ -273,6 +277,10 @@ export class ProyectosService {
 
     if (!proyecto) {
       throw new NotFoundException(`Proyecto con id ${id} no encontrado`);
+    }
+
+    if (usuario && usuarioSoloJornadasAsignadas(usuario)) {
+      return aVistaLimitadaProyecto(aRespuestaProyecto(proyecto, {}));
     }
 
     const progreso = await this.actividadesService.obtenerProgreso(id);
@@ -342,10 +350,7 @@ export class ProyectosService {
     return this.obtenerUno(id);
   }
 
-  async eliminar(
-    id: string,
-    usuarioActual: Usuario,
-  ): Promise<void> {
+  async eliminar(id: string, usuarioActual: Usuario): Promise<void> {
     const proyecto = await this.buscarProyectoConPersonal(id);
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
@@ -484,7 +489,9 @@ export class ProyectosService {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
-    const ids = [...new Set(dto.beneficiarios.map((item) => item.beneficiarioId))];
+    const ids = [
+      ...new Set(dto.beneficiarios.map((item) => item.beneficiarioId)),
+    ];
     if (ids.length) {
       const beneficiarios = await this.beneficiarioRepository.findBy({
         id: In(ids),
@@ -833,7 +840,9 @@ export class ProyectosService {
       return {
         beneficiario: resumenDeBeneficiario(vinculo.beneficiario)!,
         reemplazaA: resumenDeBeneficiario(vinculo.reemplazaA ?? undefined),
-        reemplazadoPor: resumenDeBeneficiario(vinculo.reemplazadoPor ?? undefined),
+        reemplazadoPor: resumenDeBeneficiario(
+          vinculo.reemplazadoPor ?? undefined,
+        ),
         reemplazadoEn: vinculo.reemplazadoEn,
         notaReemplazo: vinculo.notaReemplazo,
         cadenaReemplazos: [],
@@ -853,7 +862,9 @@ export class ProyectosService {
     return {
       beneficiario: resumenDeBeneficiario(vinculo.beneficiario)!,
       reemplazaA: resumenDeBeneficiario(vinculo.reemplazaA ?? undefined),
-      reemplazadoPor: resumenDeBeneficiario(vinculo.reemplazadoPor ?? undefined),
+      reemplazadoPor: resumenDeBeneficiario(
+        vinculo.reemplazadoPor ?? undefined,
+      ),
       reemplazadoEn: vinculo.reemplazadoEn,
       notaReemplazo: vinculo.notaReemplazo,
       cadenaReemplazos: cadena.map((b) => resumenDeBeneficiario(b)!),
@@ -985,7 +996,6 @@ export class ProyectosService {
       creado: true,
     };
   }
-
 
   async obtenerEstadisticas(
     proyectoId: string,

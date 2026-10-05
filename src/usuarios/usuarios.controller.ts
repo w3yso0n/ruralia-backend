@@ -30,6 +30,10 @@ import {
 import { Usuario } from './entities/usuario.entity';
 import { AlcanceTerritorialService } from './alcance-territorial.service';
 import { ReemplazarAlcanceTerritorialDto } from './dto/alcance-territorial.dto';
+import {
+  ProyectoAsignadoUsuarioDto,
+  ReemplazarProyectosUsuarioDto,
+} from './dto/proyectos-usuario.dto';
 import { UsuariosService } from './usuarios.service';
 
 @ApiTags('Usuarios')
@@ -78,6 +82,30 @@ export class UsuariosController {
     @Body() dto: ReemplazarAlcanceTerritorialDto,
   ) {
     return this.alcanceTerritorialService.reemplazar(id, dto.items);
+  }
+
+  @Get(':id/proyectos')
+  @RequierePermisos('usuarios.ver')
+  @ApiOperation({ summary: 'Proyectos donde el usuario está asignado' })
+  @ApiResponse({ status: 200, type: [ProyectoAsignadoUsuarioDto] })
+  listarProyectos(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usuariosService.listarProyectosAsignados(id);
+  }
+
+  @Put(':id/proyectos')
+  @RequierePermisos('usuarios.editar')
+  @ApiOperation({
+    summary: 'Reemplaza los proyectos donde el usuario está asignado',
+  })
+  @ApiResponse({ status: 200, type: [ProyectoAsignadoUsuarioDto] })
+  reemplazarProyectos(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReemplazarProyectosUsuarioDto,
+  ) {
+    return this.usuariosService.reemplazarProyectosAsignados(
+      id,
+      dto.proyectoIds,
+    );
   }
 
   @Post()

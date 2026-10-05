@@ -22,6 +22,9 @@ import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto'
 import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { SubirEvidenciaDto } from './dto/subir-evidencia.dto';
+import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
+import { Usuario } from '../usuarios/entities/usuario.entity';
+import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
 
 class SubirEvidenciaJornadaDto {
   @IsUUID('4')
@@ -49,7 +52,9 @@ function filtrarArchivo(
   file: Express.Multer.File,
   callback: (error: Error | null, acceptFile: boolean) => void,
 ): void {
-  const permitido = TIPOS_PERMITIDOS.some((patron) => patron.test(file.mimetype));
+  const permitido = TIPOS_PERMITIDOS.some((patron) =>
+    patron.test(file.mimetype),
+  );
 
   if (!permitido) {
     callback(
@@ -68,7 +73,10 @@ function filtrarArchivo(
 @ApiBearerAuth('bearer')
 @Controller('archivos')
 export class ArchivosController {
-  constructor(private readonly archivosService: ArchivosService) {}
+  constructor(
+    private readonly archivosService: ArchivosService,
+    private readonly alcanceTerritorialService: AlcanceTerritorialService,
+  ) {}
 
   @Post('evidencia')
   @RequierePermisos('archivos.subir')
@@ -76,8 +84,7 @@ export class ArchivosController {
     FileInterceptor('archivo', {
       storage: memoryStorage(),
       limits: {
-        fileSize:
-          Number(process.env.TAMANO_MAXIMO_ARCHIVO) || 50 * 1024 * 1024,
+        fileSize: Number(process.env.TAMANO_MAXIMO_ARCHIVO) || 50 * 1024 * 1024,
       },
       fileFilter: filtrarArchivo,
     }),
@@ -93,22 +100,39 @@ export class ArchivosController {
       type: 'object',
       required: ['archivo', 'evidenciaId', 'jornadaId'],
       properties: {
-        archivo: { type: 'string', format: 'binary', description: 'Archivo de evidencia' },
-        evidenciaId: { type: 'string', format: 'uuid', description: 'ID de la evidencia' },
-        jornadaId: { type: 'string', format: 'uuid', description: 'ID de la jornada' },
+        archivo: {
+          type: 'string',
+          format: 'binary',
+          description: 'Archivo de evidencia',
+        },
+        evidenciaId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'ID de la evidencia',
+        },
+        jornadaId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'ID de la jornada',
+        },
       },
     },
   })
   @ApiResponse({ status: 201, type: RespuestaSubirEvidenciaDto })
   @ApiResponse({ status: 400, description: 'Archivo inválido o faltante' })
   @ApiResponse({ status: 404, description: 'Evidencia no encontrada' })
-  subirEvidencia(
+  async subirEvidencia(
     @UploadedFile() archivo: Express.Multer.File,
     @Body() body: SubirEvidenciaDto,
+    @UsuarioActual() usuario: Usuario,
   ) {
     if (!archivo) {
       throw new BadRequestException('El archivo es requerido');
     }
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      body.jornadaId,
+    );
 
     return this.archivosService.subirEvidencia(
       archivo,
@@ -123,8 +147,7 @@ export class ArchivosController {
     FileInterceptor('archivo', {
       storage: memoryStorage(),
       limits: {
-        fileSize:
-          Number(process.env.TAMANO_MAXIMO_ARCHIVO) || 50 * 1024 * 1024,
+        fileSize: Number(process.env.TAMANO_MAXIMO_ARCHIVO) || 50 * 1024 * 1024,
       },
       fileFilter: filtrarArchivo,
     }),
@@ -146,13 +169,18 @@ export class ArchivosController {
       },
     },
   })
-  subirEvidenciaDeJornada(
+  async subirEvidenciaDeJornada(
     @UploadedFile() archivo: Express.Multer.File,
     @Body() body: SubirEvidenciaJornadaDto,
+    @UsuarioActual() usuario: Usuario,
   ) {
     if (!archivo) {
       throw new BadRequestException('El archivo es requerido');
     }
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      body.jornadaId,
+    );
 
     return this.archivosService.subirEvidenciaDeJornada(
       archivo,
