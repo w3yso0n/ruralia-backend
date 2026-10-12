@@ -13,6 +13,10 @@ export class RespuestaResumenDto {
   @ApiProperty({ description: 'Nombre del recurso' })
   @Expose()
   nombre: string;
+
+  @ApiPropertyOptional({ enum: ['ASOCIACION', 'OAM'] })
+  @Expose()
+  tipo?: string;
 }
 
 export class RespuestaJornadaActividadDto {
@@ -227,6 +231,14 @@ export class RespuestaJornadaDto {
   @Expose()
   @Type(() => RespuestaResumenDto)
   vereda?: RespuestaResumenDto;
+
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Municipio asociado',
+  })
+  @Expose()
+  @Type(() => RespuestaResumenDto)
+  municipio?: RespuestaResumenDto;
 
   @ApiPropertyOptional({
     type: RespuestaResumenDto,

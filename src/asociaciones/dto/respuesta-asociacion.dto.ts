@@ -2,6 +2,21 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 import { RespuestaVeredaBeneficiarioDto } from '../../beneficiarios/dto/respuesta-beneficiario.dto';
 import { TipoDocumento } from '../../beneficiarios/enums/tipo-documento.enum';
+import { TipoAsociacion } from '../enums/tipo-asociacion.enum';
+
+export class RespuestaOrganizacionResumenDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  nombre: string;
+
+  @ApiPropertyOptional()
+  @Expose()
+  nit?: string;
+}
 
 export class RespuestaBeneficiarioAsociacionDto {
   @ApiProperty()
@@ -35,6 +50,10 @@ export class RespuestaAsociacionDto {
   @Expose()
   id: string;
 
+  @ApiProperty({ enum: TipoAsociacion })
+  @Expose()
+  tipo: TipoAsociacion;
+
   @ApiProperty()
   @Expose()
   nombre: string;
@@ -63,6 +82,20 @@ export class RespuestaAsociacionDto {
   @Expose()
   @Type(() => RespuestaVeredaBeneficiarioDto)
   vereda?: RespuestaVeredaBeneficiarioDto;
+
+  @ApiPropertyOptional({ type: RespuestaOrganizacionResumenDto })
+  @Expose()
+  @Type(() => RespuestaOrganizacionResumenDto)
+  oam?: RespuestaOrganizacionResumenDto | null;
+
+  @ApiPropertyOptional({ description: 'Asociaciones agrupadas cuando es una OAM' })
+  @Expose()
+  totalAsociaciones?: number;
+
+  @ApiPropertyOptional({ type: [RespuestaOrganizacionResumenDto] })
+  @Expose()
+  @Type(() => RespuestaOrganizacionResumenDto)
+  asociaciones?: RespuestaOrganizacionResumenDto[];
 
   @ApiPropertyOptional({ description: 'Cantidad de beneficiarios activos agrupados' })
   @Expose()

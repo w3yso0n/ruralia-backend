@@ -33,6 +33,7 @@ import {
   usuarioSoloJornadasAsignadas,
   usuarioTieneAccesoTotal,
 } from '../usuarios/utils/permisos-usuario';
+import { Municipio } from '../territorios/entities/municipio.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -206,6 +207,7 @@ export class JornadasService {
       dto.proyectoId,
       dto.veredaId,
       dto.geocercaId,
+      dto.municipioId,
     );
 
     const participantes = await this.resolverParticipantesDeProyecto(
@@ -237,6 +239,7 @@ export class JornadasService {
             ? ({ id: plantilla.id } as PlantillaFormulario)
             : null,
           vereda: lugar.vereda,
+          municipio: lugar.municipio,
           geocerca: lugar.geocerca,
           tecnicoResponsable: { id: tecnicoId },
           tecnicoResponsableNombre: tecnico.nombreCompleto,
@@ -280,13 +283,25 @@ export class JornadasService {
     proyectoId: string,
     veredaId?: string | null,
     geocercaId?: string | null,
-  ): Promise<{ vereda: Vereda | null; geocerca: Geocerca | null }> {
+    municipioId?: string | null,
+  ): Promise<{
+    vereda: Vereda | null;
+    geocerca: Geocerca | null;
+    municipio: Municipio | null;
+  }> {
     const vereda = veredaId || null;
     const geocerca = geocercaId || null;
+    const municipio = municipioId || null;
 
-    if ((vereda && geocerca) || (!vereda && !geocerca)) {
+    if (geocerca && (vereda || municipio)) {
       throw new BadRequestException(
-        'La jornada debe ligarse a una vereda o a una geocerca del proyecto',
+        'La geocerca no se combina con municipio ni vereda',
+      );
+    }
+
+    if (!geocerca && !vereda && !municipio) {
+      throw new BadRequestException(
+        'La jornada debe ligarse a un municipio, una vereda o una geocerca del proyecto',
       );
     }
 
@@ -299,10 +314,32 @@ export class JornadasService {
           'La geocerca no pertenece a este proyecto',
         );
       }
-      return { vereda: null, geocerca: { id: geocerca } as Geocerca };
+      return {
+        vereda: null,
+        geocerca: { id: geocerca } as Geocerca,
+        municipio: null,
+      };
     }
 
-    return { vereda: { id: vereda! } as Vereda, geocerca: null };
+    if (municipio) {
+      const pertenece = await this.proyectoRepository
+        .createQueryBuilder('proyecto')
+        .innerJoin('proyecto.municipios', 'municipio')
+        .where('proyecto.id = :proyectoId', { proyectoId })
+        .andWhere('municipio.id = :municipioId', { municipioId: municipio })
+        .getCount();
+      if (!pertenece) {
+        throw new BadRequestException(
+          'El municipio no está asignado a este proyecto',
+        );
+      }
+    }
+
+    return {
+      vereda: vereda ? ({ id: vereda } as Vereda) : null,
+      geocerca: null,
+      municipio: municipio ? ({ id: municipio } as Municipio) : null,
+    };
   }
 
   private resolverTecnicoIds(
@@ -330,7 +367,7 @@ export class JornadasService {
 
     if (tieneBeneficiarios && tieneAsociaciones) {
       throw new BadRequestException(
-        'La jornada se asigna a beneficiarios o a asociaciones, no a ambos a la vez',
+        'La jornada se asigna a beneficiarios o a asociaciones y OAM, no a ambos a la vez',
       );
     }
   }
@@ -379,7 +416,7 @@ export class JornadasService {
     }
     if (asociacionesUnicas.some((id) => !asociados.has(id))) {
       throw new BadRequestException(
-        'Solo se pueden atender en la jornada asociaciones vinculadas a este proyecto',
+        'Solo se pueden atender en la jornada asociaciones u OAM vinculadas a este proyecto',
       );
     }
 
@@ -481,6 +518,7 @@ export class JornadasService {
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
       .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.municipio', 'municipio')
       .leftJoinAndSelect('jornada.geocerca', 'geocerca')
       .leftJoinAndSelect('jornada.meta', 'meta')
       .leftJoinAndSelect('meta.proceso', 'proceso')
@@ -583,6 +621,7 @@ export class JornadasService {
       .createQueryBuilder('jornada')
       .leftJoinAndSelect('jornada.proyecto', 'proyecto')
       .leftJoinAndSelect('jornada.vereda', 'vereda')
+      .leftJoinAndSelect('jornada.municipio', 'municipio')
       .leftJoinAndSelect('jornada.geocerca', 'geocerca')
       .leftJoinAndSelect('jornada.meta', 'meta')
       .leftJoinAndSelect('meta.proceso', 'proceso')
@@ -637,6 +676,7 @@ export class JornadasService {
         },
         jornadaActividades: { actividad: true, subactividad: true },
         vereda: true,
+        municipio: true,
         geocerca: true,
         tecnicoResponsable: true,
         beneficiarios: true,
@@ -763,11 +803,14 @@ export class JornadasService {
         : undefined;
 
     const lugar =
-      dto.veredaId !== undefined || dto.geocercaId !== undefined
+      dto.veredaId !== undefined ||
+      dto.geocercaId !== undefined ||
+      dto.municipioId !== undefined
         ? await this.resolverLugarJornada(
             jornada.proyecto.id,
             dto.veredaId,
             dto.geocercaId,
+            dto.municipioId,
           )
         : null;
 
@@ -787,6 +830,7 @@ export class JornadasService {
       if (dto.tipo !== undefined) objetivo.tipo = dto.tipo;
       if (lugar) {
         objetivo.vereda = lugar.vereda;
+        objetivo.municipio = lugar.municipio;
         objetivo.geocerca = lugar.geocerca;
       }
       if (plantillaNueva !== undefined) {
@@ -1297,6 +1341,7 @@ export class JornadasService {
       relations: {
         proyecto: true,
         vereda: true,
+        municipio: true,
         geocerca: true,
         meta: { proceso: true },
         tecnicoResponsable: true,
@@ -1357,7 +1402,12 @@ export class JornadasService {
       proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
       plantillaNombre: plantilla.nombre,
       fecha: jornada.fecha,
-      veredaNombre: jornada.geocerca?.nombre ?? jornada.vereda?.nombre,
+      veredaNombre:
+        jornada.geocerca?.nombre ??
+        ([jornada.vereda?.nombre, jornada.municipio?.nombre]
+          .filter(Boolean)
+          .join(' · ') ||
+          undefined),
       metaNombre: jornada.meta?.nombre,
       unidadMedida: jornada.meta?.unidadMedida ?? null,
       cantidadEjecutada:
@@ -1467,6 +1517,7 @@ export class JornadasService {
       relations: {
         proyecto: true,
         vereda: true,
+        municipio: true,
         geocerca: true,
         meta: { proceso: true },
         tecnicoResponsable: true,
@@ -1493,7 +1544,12 @@ export class JornadasService {
       proyectoNombre: jornada.proyecto?.nombre ?? 'Proyecto',
       tituloDocumento: 'REPORTE DE FORMULARIO',
       fecha: jornada.fecha,
-      veredaNombre: jornada.geocerca?.nombre ?? jornada.vereda?.nombre,
+      veredaNombre:
+        jornada.geocerca?.nombre ??
+        ([jornada.vereda?.nombre, jornada.municipio?.nombre]
+          .filter(Boolean)
+          .join(' · ') ||
+          undefined),
       metaNombre: jornada.meta?.nombre,
       unidadMedida: jornada.meta?.unidadMedida ?? null,
       cantidadEjecutada:

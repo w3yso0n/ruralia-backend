@@ -13,6 +13,7 @@ import {
 } from 'typeorm';
 import { Actividad } from '../../actividades/entities/actividad.entity';
 import { Indicador } from '../../indicadores/entities/indicador.entity';
+import { Municipio } from '../../territorios/entities/municipio.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoProyecto } from '../enums/estado-proyecto.enum';
@@ -78,6 +79,14 @@ export class Proyecto {
     inverseJoinColumn: { name: 'vereda_id', referencedColumnName: 'id' },
   })
   veredas: Vereda[];
+
+  @ManyToMany(() => Municipio)
+  @JoinTable({
+    name: 'proyecto_municipios',
+    joinColumn: { name: 'proyecto_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'municipio_id', referencedColumnName: 'id' },
+  })
+  municipios: Municipio[];
 
   @ManyToMany(() => Usuario)
   @JoinTable({

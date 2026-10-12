@@ -20,8 +20,11 @@ import {
 } from './dto/respuesta-beneficiario.dto';
 import { Beneficiario } from './entities/beneficiario.entity';
 import {
+  asignarFilaABeneficiario,
+  mensajeFilaNoCargada,
   normalizarIdentificador,
   parsearExcelBeneficiarios,
+  sqlCedulaIgual,
 } from '../proyectos/utils/excel-beneficiarios';
 import { RespuestaCargaMasivaBeneficiariosDto } from '../proyectos/dto/carga-beneficiarios.dto';
 import {
@@ -61,7 +64,7 @@ export class BeneficiariosService {
 
     if (filtros.busqueda) {
       query.andWhere(
-        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda)',
+        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda OR beneficiario.municipio ILIKE :busqueda OR beneficiario.nombreAsociacion ILIKE :busqueda OR beneficiario.lineaProductiva ILIKE :busqueda)',
         { busqueda: `%${filtros.busqueda}%` },
       );
     }
@@ -116,21 +119,19 @@ export class BeneficiariosService {
 
   async importarExcel(
     archivo: Express.Multer.File,
-    veredaId: string,
+    veredaId?: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
-    if (!veredaId) {
-      throw new BadRequestException(
-        'Elige la vereda de las personas nuevas antes de cargar el archivo',
-      );
-    }
-    await this.verificarVereda(veredaId);
-    const vereda = await this.veredaRepository.findOne({
-      where: { id: veredaId },
-    });
-    if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
-      throw new BadRequestException(
-        'La vereda debe ser del catálogo DANE',
-      );
+    const veredaSeleccionada = veredaId?.trim();
+    if (veredaSeleccionada) {
+      await this.verificarVereda(veredaSeleccionada);
+      const vereda = await this.veredaRepository.findOne({
+        where: { id: veredaSeleccionada },
+      });
+      if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
+        throw new BadRequestException(
+          'La vereda debe ser del catálogo DANE',
+        );
+      }
     }
 
     const filas = await parsearExcelBeneficiarios(archivo.buffer);
@@ -149,7 +150,7 @@ export class BeneficiariosService {
           nombres: fila.nombres,
           apellidos: fila.apellidos,
           resultado: 'error',
-          mensaje: 'Faltan nombre e identificador',
+          mensaje: mensajeFilaNoCargada(fila, 'incompleta'),
         });
         continue;
       }
@@ -161,7 +162,7 @@ export class BeneficiariosService {
           nombres: fila.nombres,
           apellidos: fila.apellidos,
           resultado: 'error',
-          mensaje: 'Identificador duplicado en el archivo',
+          mensaje: mensajeFilaNoCargada(fila, 'duplicada'),
         });
         continue;
       }
@@ -181,6 +182,10 @@ export class BeneficiariosService {
         continue;
       }
       if (existente && existente.estaActivo) {
+        const documento = existente.numeroDocumento;
+        asignarFilaABeneficiario(existente, fila, veredaSeleccionada);
+        existente.numeroDocumento = documento;
+        await this.beneficiarioRepository.save(existente);
         asignadosExistentes += 1;
         detalle.push({
           fila: fila.fila,
@@ -189,19 +194,14 @@ export class BeneficiariosService {
           apellidos: fila.apellidos,
           resultado: 'asignado_existente',
           beneficiarioId: existente.id,
-          mensaje: 'Ya estaba activo en el catálogo',
+          mensaje: 'La cédula ya existía: no se duplicó el registro',
         });
         continue;
       }
 
       if (existente) {
-        existente.estaActivo = true;
-        existente.nombres = fila.nombres.trim();
-        existente.apellidos = fila.apellidos.trim() || fila.nombres.trim();
-        existente.tipoDocumento = fila.tipoDocumento;
-        existente.telefono = fila.telefono || existente.telefono;
-        existente.correo = fila.correo || existente.correo;
-        existente.vereda = { id: veredaId } as Beneficiario['vereda'];
+        asignarFilaABeneficiario(existente, fila, veredaSeleccionada);
+        if (fila.estaActivo === undefined) existente.estaActivo = true;
         const reactivado = await this.beneficiarioRepository.save(existente);
         creados += 1;
         detalle.push({
@@ -216,18 +216,11 @@ export class BeneficiariosService {
         continue;
       }
 
-      const creado = await this.beneficiarioRepository.save(
-        this.beneficiarioRepository.create({
-          nombres: fila.nombres.trim(),
-          apellidos: fila.apellidos.trim() || fila.nombres.trim(),
-          numeroDocumento: fila.identificador,
-          tipoDocumento: fila.tipoDocumento,
-          telefono: fila.telefono || undefined,
-          correo: fila.correo || undefined,
-          vereda: { id: veredaId },
-          estaActivo: true,
-        }),
-      );
+      const nuevo = this.beneficiarioRepository.create({
+        estaActivo: true,
+      });
+      asignarFilaABeneficiario(nuevo, fila, veredaSeleccionada);
+      const creado = await this.beneficiarioRepository.save(nuevo);
       creados += 1;
       detalle.push({
         fila: fila.fila,
@@ -255,28 +248,36 @@ export class BeneficiariosService {
     const identificador = normalizarIdentificador(numeroDocumento);
     return this.beneficiarioRepository
       .createQueryBuilder('b')
-      .where(
-        `REPLACE(REPLACE(REPLACE(UPPER(b.numero_documento), '.', ''), '-', ''), ' ', '') = :id`,
-        { id: identificador },
-      )
+      .where(sqlCedulaIgual('b'), { id: identificador })
       .getOne();
   }
 
   async crear(dto: CrearBeneficiarioDto): Promise<RespuestaBeneficiarioDto> {
+    if (!dto.veredaId) {
+      throw new BadRequestException('Elige la vereda del beneficiario');
+    }
     await this.verificarDocumentoUnico(dto.numeroDocumento);
     await this.verificarVereda(dto.veredaId);
 
     const beneficiario = this.beneficiarioRepository.create({
       nombres: dto.nombres,
       apellidos: dto.apellidos,
+      primerNombre: dto.primerNombre || null,
+      segundoNombre: dto.segundoNombre || null,
+      primerApellido: dto.primerApellido || null,
+      segundoApellido: dto.segundoApellido || null,
       tipoDocumento: dto.tipoDocumento,
       numeroDocumento: dto.numeroDocumento,
       telefono: dto.telefono,
       correo: dto.correo,
-      genero: dto.genero,
+      genero: dto.genero ?? null,
+      edad: dto.edad ?? null,
       fechaNacimiento: dto.fechaNacimiento
         ? new Date(dto.fechaNacimiento)
         : undefined,
+      municipio: dto.municipio || null,
+      lineaProductiva: dto.lineaProductiva || null,
+      nombreAsociacion: dto.nombreAsociacion || null,
       vereda: { id: dto.veredaId },
     });
 
@@ -304,6 +305,18 @@ export class BeneficiariosService {
 
     if (dto.nombres !== undefined) beneficiario.nombres = dto.nombres;
     if (dto.apellidos !== undefined) beneficiario.apellidos = dto.apellidos;
+    if (dto.primerNombre !== undefined) {
+      beneficiario.primerNombre = dto.primerNombre || null;
+    }
+    if (dto.segundoNombre !== undefined) {
+      beneficiario.segundoNombre = dto.segundoNombre || null;
+    }
+    if (dto.primerApellido !== undefined) {
+      beneficiario.primerApellido = dto.primerApellido || null;
+    }
+    if (dto.segundoApellido !== undefined) {
+      beneficiario.segundoApellido = dto.segundoApellido || null;
+    }
     if (dto.tipoDocumento !== undefined) {
       beneficiario.tipoDocumento = dto.tipoDocumento;
     }
@@ -313,8 +326,16 @@ export class BeneficiariosService {
     if (dto.telefono !== undefined) beneficiario.telefono = dto.telefono;
     if (dto.correo !== undefined) beneficiario.correo = dto.correo;
     if (dto.genero !== undefined) beneficiario.genero = dto.genero;
+    if (dto.edad !== undefined) beneficiario.edad = dto.edad;
     if (dto.fechaNacimiento !== undefined) {
       beneficiario.fechaNacimiento = new Date(dto.fechaNacimiento);
+    }
+    if (dto.municipio !== undefined) beneficiario.municipio = dto.municipio || null;
+    if (dto.lineaProductiva !== undefined) {
+      beneficiario.lineaProductiva = dto.lineaProductiva || null;
+    }
+    if (dto.nombreAsociacion !== undefined) {
+      beneficiario.nombreAsociacion = dto.nombreAsociacion || null;
     }
 
     await this.beneficiarioRepository.save(beneficiario);

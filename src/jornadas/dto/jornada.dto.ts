@@ -85,7 +85,15 @@ export class CrearJornadaDto {
 
   @ApiPropertyOptional({
     description:
-      'ID de la vereda del proyecto. Obligatorio si no se envía geocercaId.',
+      'ID del municipio del proyecto. Basta como lugar. Puede combinarse con una vereda.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  municipioId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de la vereda del proyecto. Opcional si se envía municipioId. Obligatorio si no hay municipio ni geocerca.',
   })
   @IsUUID('4')
   @IsOptional()
@@ -93,7 +101,7 @@ export class CrearJornadaDto {
 
   @ApiPropertyOptional({
     description:
-      'ID de una geocerca del proyecto. Obligatorio si no se envía veredaId. No se combina con vereda.',
+      'ID de una geocerca del proyecto. No se combina con municipio ni vereda.',
   })
   @IsUUID('4')
   @IsOptional()
@@ -207,7 +215,15 @@ export class ActualizarJornadaDto {
 
   @ApiPropertyOptional({
     description:
-      'ID de la vereda. Enviar null si el lugar pasa a ser una geocerca.',
+      'ID del municipio. Enviar null si el lugar pasa a ser solo una vereda o una geocerca.',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  municipioId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'ID de la vereda. Opcional junto al municipio. Enviar null para quitarla.',
   })
   @IsUUID('4')
   @IsOptional()
@@ -215,7 +231,7 @@ export class ActualizarJornadaDto {
 
   @ApiPropertyOptional({
     description:
-      'ID de una geocerca del proyecto. Enviar null si el lugar pasa a ser una vereda.',
+      'ID de una geocerca del proyecto. Enviar null si el lugar es un municipio o una vereda.',
   })
   @IsUUID('4')
   @IsOptional()

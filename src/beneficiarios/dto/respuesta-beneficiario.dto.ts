@@ -30,6 +30,22 @@ export class RespuestaBeneficiarioDto {
   @Expose()
   apellidos: string;
 
+  @ApiPropertyOptional()
+  @Expose()
+  primerNombre?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  segundoNombre?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  primerApellido?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  segundoApellido?: string | null;
+
   @ApiProperty({ enum: TipoDocumento })
   @Expose()
   tipoDocumento: TipoDocumento;
@@ -52,7 +68,23 @@ export class RespuestaBeneficiarioDto {
 
   @ApiPropertyOptional()
   @Expose()
+  edad?: number | null;
+
+  @ApiPropertyOptional()
+  @Expose()
   fechaNacimiento?: Date;
+
+  @ApiPropertyOptional()
+  @Expose()
+  municipio?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  lineaProductiva?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  nombreAsociacion?: string | null;
 
   @ApiProperty()
   @Expose()

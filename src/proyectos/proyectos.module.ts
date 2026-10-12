@@ -7,6 +7,7 @@ import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity
 import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { Municipio } from '../territorios/entities/municipio.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { UsuariosModule } from '../usuarios/usuarios.module';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -31,6 +32,7 @@ import { ProyectosService } from './proyectos.service';
       Beneficiario,
       Asociacion,
       Vereda,
+      Municipio,
       Usuario,
       Jornada,
       EnvioFormulario,

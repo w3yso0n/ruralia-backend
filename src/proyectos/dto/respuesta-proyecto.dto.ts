@@ -5,6 +5,24 @@ import { TipoProyecto } from '../enums/tipo-proyecto.enum';
 import { RespuestaUsuarioResumenDto } from './respuesta-usuario-resumen.dto';
 import { RespuestaVeredaResumenDto } from './respuesta-vereda-resumen.dto';
 
+export class RespuestaMunicipioResumenDto {
+  @ApiProperty({ description: 'ID del municipio' })
+  @Expose()
+  id: string;
+
+  @ApiProperty({ description: 'Nombre del municipio' })
+  @Expose()
+  nombre: string;
+
+  @ApiProperty({ description: 'Código DANE del municipio' })
+  @Expose()
+  codigo: string;
+
+  @ApiPropertyOptional({ description: 'Departamento del municipio' })
+  @Expose()
+  departamentoNombre?: string;
+}
+
 export class RespuestaActividadResumenDto {
   @ApiProperty({ description: 'ID de la actividad' })
   @Expose()
@@ -77,6 +95,10 @@ export class RespuestaAsociacionResumenDto {
   @ApiProperty()
   @Expose()
   nombre: string;
+
+  @ApiPropertyOptional({ enum: ['ASOCIACION', 'OAM'] })
+  @Expose()
+  tipo?: string;
 }
 
 export class RespuestaProyectoDto {
@@ -136,6 +158,14 @@ export class RespuestaProyectoDto {
   @Expose()
   @Type(() => RespuestaVeredaResumenDto)
   veredas?: RespuestaVeredaResumenDto[];
+
+  @ApiPropertyOptional({
+    type: [RespuestaMunicipioResumenDto],
+    description: 'Municipios asignados al proyecto',
+  })
+  @Expose()
+  @Type(() => RespuestaMunicipioResumenDto)
+  municipios?: RespuestaMunicipioResumenDto[];
 
   @ApiPropertyOptional({
     type: [RespuestaUsuarioResumenDto],

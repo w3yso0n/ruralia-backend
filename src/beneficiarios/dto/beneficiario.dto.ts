@@ -6,10 +6,14 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Genero } from '../enums/genero.enum';
@@ -35,9 +39,33 @@ export class CrearBeneficiarioDto {
   @IsNotEmpty()
   numeroDocumento: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Vereda DANE. Obligatoria al crear a mano. La carga de la matriz puede omitirla y guardar el municipio de cada fila.',
+  })
   @IsUUID('4')
-  veredaId: string;
+  @IsOptional()
+  veredaId?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  primerNombre?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  segundoNombre?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  primerApellido?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  segundoApellido?: string;
 
   @ApiPropertyOptional()
   @IsString()
@@ -54,10 +82,33 @@ export class CrearBeneficiarioDto {
   @IsOptional()
   genero?: Genero;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, valor) => valor !== null)
+  @IsInt()
+  @Min(0)
+  @Max(130)
+  edad?: number | null;
+
   @ApiPropertyOptional()
   @IsDateString()
   @IsOptional()
   fechaNacimiento?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  municipio?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  lineaProductiva?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  nombreAsociacion?: string;
 }
 
 export class ActualizarBeneficiarioDto {
@@ -89,6 +140,26 @@ export class ActualizarBeneficiarioDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
+  primerNombre?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  segundoNombre?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  primerApellido?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  segundoApellido?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
   telefono?: string;
 
   @ApiPropertyOptional()
@@ -101,10 +172,33 @@ export class ActualizarBeneficiarioDto {
   @IsOptional()
   genero?: Genero;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, valor) => valor !== null)
+  @IsInt()
+  @Min(0)
+  @Max(130)
+  edad?: number | null;
+
   @ApiPropertyOptional()
   @IsDateString()
   @IsOptional()
   fechaNacimiento?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  municipio?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  lineaProductiva?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  nombreAsociacion?: string;
 }
 
 export enum EstadoFiltroBeneficiario {

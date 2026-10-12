@@ -74,6 +74,12 @@ export function aRespuestaJornada(
             nombre: jornada.vereda.nombre,
           } as RespuestaResumenDto)
         : undefined,
+      municipio: jornada.municipio
+        ? ({
+            id: jornada.municipio.id,
+            nombre: jornada.municipio.nombre,
+          } as RespuestaResumenDto)
+        : undefined,
       geocerca: jornada.geocerca
         ? ({
             id: jornada.geocerca.id,
@@ -102,6 +108,7 @@ export function aRespuestaJornada(
       asociaciones: jornada.asociaciones?.map((a) => ({
         id: a.id,
         nombre: a.nombre,
+        tipo: a.tipo,
       })),
       equipo: jornada.equipo?.map((u) => ({
         id: u.id,

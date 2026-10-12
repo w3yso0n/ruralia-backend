@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -17,6 +18,7 @@ import {
   RespuestaPaginadaAsociacionesDto,
 } from './dto/respuesta-asociacion.dto';
 import { Asociacion } from './entities/asociacion.entity';
+import { TipoAsociacion } from './enums/tipo-asociacion.enum';
 import {
   aRespuestaAsociacion,
   aRespuestaPaginadaAsociaciones,
@@ -43,8 +45,13 @@ export class AsociacionesService {
     const query = this.asociacionRepository
       .createQueryBuilder('asociacion')
       .leftJoinAndSelect('asociacion.vereda', 'vereda')
+      .leftJoinAndSelect('asociacion.oam', 'oam')
       .where('asociacion.estaActivo = true')
       .orderBy('asociacion.nombre', 'ASC');
+
+    if (filtros.tipo) {
+      query.andWhere('asociacion.tipo = :tipo', { tipo: filtros.tipo });
+    }
 
     if (filtros.veredaId) {
       query.andWhere('vereda.id = :veredaId', { veredaId: filtros.veredaId });
@@ -62,13 +69,16 @@ export class AsociacionesService {
       .take(limite)
       .getManyAndCount();
 
-    const conteos = await this.contarBeneficiarios(
-      asociaciones.map((a) => a.id),
-    );
+    const ids = asociaciones.map((a) => a.id);
+    const [conteos, conteosMiembros] = await Promise.all([
+      this.contarBeneficiarios(ids),
+      this.contarMiembros(ids),
+    ]);
     const datos = asociaciones.map((asociacion) =>
       aRespuestaAsociacion({
         ...asociacion,
         totalBeneficiarios: conteos.get(asociacion.id) ?? 0,
+        totalAsociaciones: conteosMiembros.get(asociacion.id) ?? 0,
       }),
     );
     return aRespuestaPaginadaAsociaciones(datos, total, pagina, limite);
@@ -77,7 +87,12 @@ export class AsociacionesService {
   async obtenerUno(id: string): Promise<RespuestaAsociacionDto> {
     const asociacion = await this.asociacionRepository.findOne({
       where: { id },
-      relations: { vereda: true, beneficiarios: { vereda: true } },
+      relations: {
+        vereda: true,
+        beneficiarios: { vereda: true },
+        oam: true,
+        miembros: true,
+      },
     });
 
     if (!asociacion) {
@@ -90,28 +105,42 @@ export class AsociacionesService {
         `${a.nombres} ${a.apellidos}`.localeCompare(`${b.nombres} ${b.apellidos}`),
       );
 
+    const miembros = (asociacion.miembros ?? [])
+      .filter((miembro) => miembro.estaActivo)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
     return aRespuestaAsociacion({
       ...asociacion,
       beneficiarios,
+      asociaciones: miembros,
       totalBeneficiarios: beneficiarios.length,
+      totalAsociaciones: miembros.length,
     });
   }
 
   async crear(dto: CrearAsociacionDto): Promise<RespuestaAsociacionDto> {
+    const tipo = dto.tipo ?? TipoAsociacion.ASOCIACION;
     await this.verificarNitUnico(dto.nit);
     await this.verificarVereda(dto.veredaId);
+    this.verificarCoherenciaTipo(tipo, dto.oamId, dto.asociacionIds);
+    const oam = await this.resolverOam(tipo, dto.oamId);
 
     const asociacion = this.asociacionRepository.create({
+      tipo,
       nombre: dto.nombre,
       nit: dto.nit,
       nombreRepresentante: dto.nombreRepresentante,
       telefono: dto.telefono,
       correo: dto.correo,
       vereda: { id: dto.veredaId },
+      oam,
       beneficiarios: await this.resolverBeneficiarios(dto.beneficiarioIds),
     });
 
     const guardada = await this.asociacionRepository.save(asociacion);
+    if (tipo === TipoAsociacion.OAM && dto.asociacionIds) {
+      await this.reemplazarMiembros(guardada.id, dto.asociacionIds);
+    }
     return this.obtenerUno(guardada.id);
   }
 
@@ -158,7 +187,24 @@ export class AsociacionesService {
     if (dto.telefono !== undefined) asociacion.telefono = dto.telefono;
     if (dto.correo !== undefined) asociacion.correo = dto.correo;
 
+    if (dto.oamId !== undefined || dto.asociacionIds !== undefined) {
+      this.verificarCoherenciaTipo(
+        asociacion.tipo,
+        dto.oamId,
+        dto.asociacionIds,
+      );
+    }
+    if (dto.oamId !== undefined) {
+      asociacion.oam = await this.resolverOam(asociacion.tipo, dto.oamId);
+    }
+
     await this.asociacionRepository.save(asociacion);
+    if (
+      asociacion.tipo === TipoAsociacion.OAM &&
+      dto.asociacionIds !== undefined
+    ) {
+      await this.reemplazarMiembros(asociacion.id, dto.asociacionIds);
+    }
     return this.obtenerUno(id);
   }
 
@@ -171,7 +217,14 @@ export class AsociacionesService {
       throw new NotFoundException(`Asociación ${id} no encontrada`);
     }
 
+    if (asociacion.tipo === TipoAsociacion.OAM) {
+      await this.asociacionRepository.query(
+        'UPDATE asociaciones SET oam_id = NULL WHERE oam_id = $1',
+        [id],
+      );
+    }
     asociacion.estaActivo = false;
+    asociacion.oam = null;
     await this.asociacionRepository.save(asociacion);
   }
 
@@ -190,7 +243,9 @@ export class AsociacionesService {
     const existente = await query.getOne();
 
     if (existente) {
-      throw new ConflictException(`Ya existe una asociación con NIT ${nit}`);
+      throw new ConflictException(
+        `Ya existe una organización con NIT ${nit}`,
+      );
     }
   }
 
@@ -230,6 +285,83 @@ export class AsociacionesService {
       .groupBy('asociacion.id')
       .getRawMany<{ id: string; total: string }>();
 
+    return new Map(filas.map((fila) => [fila.id, Number(fila.total)]));
+  }
+
+  private verificarCoherenciaTipo(
+    tipo: TipoAsociacion,
+    oamId?: string | null,
+    asociacionIds?: string[],
+  ): void {
+    if (tipo === TipoAsociacion.OAM && oamId) {
+      throw new BadRequestException('Una OAM no pertenece a otra OAM');
+    }
+    if (tipo === TipoAsociacion.ASOCIACION && asociacionIds?.length) {
+      throw new BadRequestException(
+        'Solo una OAM puede agrupar asociaciones',
+      );
+    }
+  }
+
+  private async resolverOam(
+    tipo: TipoAsociacion,
+    oamId?: string | null,
+  ): Promise<Asociacion | null> {
+    if (tipo === TipoAsociacion.OAM || !oamId) return null;
+    const oam = await this.asociacionRepository.findOne({
+      where: { id: oamId },
+    });
+    if (!oam || !oam.estaActivo || oam.tipo !== TipoAsociacion.OAM) {
+      throw new NotFoundException('La OAM no existe o no está activa');
+    }
+    return oam;
+  }
+
+  private async reemplazarMiembros(
+    oamId: string,
+    asociacionIds: string[],
+  ): Promise<void> {
+    const ids = [...new Set(asociacionIds)].filter((id) => id !== oamId);
+    if (ids.length) {
+      const miembros = await this.asociacionRepository.find({
+        where: { id: In(ids), estaActivo: true },
+      });
+      if (miembros.length !== ids.length) {
+        throw new NotFoundException(
+          'Una o más asociaciones no existen o están inactivas',
+        );
+      }
+      if (miembros.some((miembro) => miembro.tipo !== TipoAsociacion.ASOCIACION)) {
+        throw new BadRequestException(
+          'Una OAM solo agrupa asociaciones',
+        );
+      }
+    }
+
+    await this.asociacionRepository.query(
+      'UPDATE asociaciones SET oam_id = NULL WHERE oam_id = $1',
+      [oamId],
+    );
+    if (!ids.length) return;
+    await this.asociacionRepository.query(
+      'UPDATE asociaciones SET oam_id = $1 WHERE id = ANY($2::uuid[])',
+      [oamId, ids],
+    );
+  }
+
+  private async contarMiembros(
+    organizacionIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!organizacionIds.length) return new Map();
+    const filas = await this.asociacionRepository
+      .createQueryBuilder('miembro')
+      .innerJoin('miembro.oam', 'oam')
+      .select('oam.id', 'id')
+      .addSelect('COUNT(miembro.id)', 'total')
+      .where('oam.id IN (:...organizacionIds)', { organizacionIds })
+      .andWhere('miembro.estaActivo = true')
+      .groupBy('oam.id')
+      .getRawMany<{ id: string; total: string }>();
     return new Map(filas.map((fila) => [fila.id, Number(fila.total)]));
   }
 

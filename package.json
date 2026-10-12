@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:territorios": "ts-node -r tsconfig-paths/register src/territorios/importar-veredas-csv.ts",
     "seed:cronologia-demo": "ts-node -r tsconfig-paths/register src/cronologia/seed-cronologia-demo.ts",
-    "seed:plataforma": "ts-node -r tsconfig-paths/register src/seeds/seed-plataforma.ts"
+    "seed:plataforma": "ts-node -r tsconfig-paths/register src/seeds/seed-plataforma.ts",
+    "importar:usuarios-produccion": "ts-node -r tsconfig-paths/register src/usuarios/importar-usuarios-produccion.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.4",

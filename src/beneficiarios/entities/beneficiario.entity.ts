@@ -23,6 +23,18 @@ export class Beneficiario {
   @Column()
   apellidos: string;
 
+  @Column({ name: 'primer_nombre', type: 'varchar', nullable: true })
+  primerNombre: string | null;
+
+  @Column({ name: 'segundo_nombre', type: 'varchar', nullable: true })
+  segundoNombre: string | null;
+
+  @Column({ name: 'primer_apellido', type: 'varchar', nullable: true })
+  primerApellido: string | null;
+
+  @Column({ name: 'segundo_apellido', type: 'varchar', nullable: true })
+  segundoApellido: string | null;
+
   @Column({ name: 'tipo_documento', type: 'enum', enum: TipoDocumento })
   tipoDocumento: TipoDocumento;
 
@@ -36,10 +48,22 @@ export class Beneficiario {
   correo: string;
 
   @Column({ type: 'enum', enum: Genero, nullable: true })
-  genero: Genero;
+  genero: Genero | null;
+
+  @Column({ type: 'int', nullable: true })
+  edad: number | null;
 
   @Column({ name: 'fecha_nacimiento', type: 'date', nullable: true })
   fechaNacimiento: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  municipio: string | null;
+
+  @Column({ name: 'linea_productiva', type: 'varchar', nullable: true })
+  lineaProductiva: string | null;
+
+  @Column({ name: 'nombre_asociacion', type: 'varchar', nullable: true })
+  nombreAsociacion: string | null;
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;
@@ -58,7 +82,7 @@ export class Beneficiario {
   @OneToMany(() => ProyectoBeneficiario, (pb) => pb.beneficiario)
   proyectoBeneficiarios: ProyectoBeneficiario[];
 
-  @ManyToOne(() => Vereda, { nullable: false })
+  @ManyToOne(() => Vereda, { nullable: true })
   @JoinColumn({ name: 'vereda_id' })
-  vereda: Vereda;
+  vereda: Vereda | null;
 }

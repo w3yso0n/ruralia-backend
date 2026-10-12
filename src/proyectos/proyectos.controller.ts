@@ -194,7 +194,7 @@ export class ProyectosController {
 
   @Post(':id/territorios')
   @RequierePermisos('proyectos.gestionar_vinculos')
-  @ApiOperation({ summary: 'Asignar veredas al proyecto' })
+  @ApiOperation({ summary: 'Asignar municipios y veredas al proyecto' })
   @ApiResponse({ status: 200, type: RespuestaProyectoDto })
   asignarTerritorios(
     @Param('id', ParseUUIDPipe) id: string,

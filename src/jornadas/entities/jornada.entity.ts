@@ -16,6 +16,7 @@ import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Asociacion } from '../../asociaciones/entities/asociacion.entity';
 import { Geocerca } from '../../proyectos/entities/geocerca.entity';
 import { Proyecto } from '../../proyectos/entities/proyecto.entity';
+import { Municipio } from '../../territorios/entities/municipio.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
@@ -130,7 +131,12 @@ export class Jornada {
   @JoinColumn({ name: 'vereda_id' })
   vereda: Vereda | null;
 
-  /** Zona trazada del proyecto. Excluyente con vereda. */
+  /** Municipio del proyecto. Puede ir solo o junto con una vereda. */
+  @ManyToOne(() => Municipio, { nullable: true })
+  @JoinColumn({ name: 'municipio_id' })
+  municipio: Municipio | null;
+
+  /** Zona trazada del proyecto. Excluyente con municipio y vereda. */
   @ManyToOne(() => Geocerca, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'geocerca_id' })
   geocerca: Geocerca | null;

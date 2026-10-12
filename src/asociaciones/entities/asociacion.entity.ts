@@ -11,11 +11,19 @@ import {
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { ProyectoAsociacion } from '../../proyectos/entities/proyecto-asociacion.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
+import { TipoAsociacion } from '../enums/tipo-asociacion.enum';
 
 @Entity('asociaciones')
 export class Asociacion {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({
+    type: 'enum',
+    enum: TipoAsociacion,
+    default: TipoAsociacion.ASOCIACION,
+  })
+  tipo: TipoAsociacion;
 
   @Column()
   nombre: string;
@@ -41,6 +49,17 @@ export class Asociacion {
   @ManyToOne(() => Vereda, { nullable: false })
   @JoinColumn({ name: 'vereda_id' })
   vereda: Vereda;
+
+  /** OAM que agrupa a esta asociación. Una OAM no pertenece a otra. */
+  @ManyToOne(() => Asociacion, (organizacion) => organizacion.miembros, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'oam_id' })
+  oam: Asociacion | null;
+
+  @OneToMany(() => Asociacion, (organizacion) => organizacion.oam)
+  miembros: Asociacion[];
 
   /** Beneficiarios agrupados en la asociación; un beneficiario puede pertenecer a varias. */
   @ManyToMany(() => Beneficiario)

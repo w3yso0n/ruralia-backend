@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { ActividadesService } from '../actividades/actividades.service';
 import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
@@ -15,6 +15,7 @@ import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity
 import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { Municipio } from '../territorios/entities/municipio.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { usuarioSoloJornadasAsignadas } from '../usuarios/utils/permisos-usuario';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -51,16 +52,26 @@ import {
   aVistaLimitadaProyecto,
 } from './utils/serializar-proyecto';
 import {
+  asignarFilaABeneficiario,
+  FilaExcelBeneficiario,
   generarPlantillaExcelBeneficiarios,
+  mensajeFilaNoCargada,
   normalizarIdentificador,
   parsearExcelBeneficiarios,
   partirNombreCompleto,
+  sqlCedulaIgual,
 } from './utils/excel-beneficiarios';
 import {
   partirVinculosBeneficiarios,
   resumenDeBeneficiario,
 } from './utils/mapear-vinculos-beneficiario';
 import { TipoDocumento } from '../beneficiarios/enums/tipo-documento.enum';
+
+function esLlaveDuplicada(err: unknown): boolean {
+  if (!(err instanceof QueryFailedError)) return false;
+  const codigo = (err.driverError as { code?: string } | undefined)?.code;
+  return codigo === '23505';
+}
 
 @Injectable()
 export class ProyectosService {
@@ -77,6 +88,8 @@ export class ProyectosService {
     private readonly asociacionRepository: Repository<Asociacion>,
     @InjectRepository(Vereda)
     private readonly veredaRepository: Repository<Vereda>,
+    @InjectRepository(Municipio)
+    private readonly municipioRepository: Repository<Municipio>,
     @InjectRepository(Usuario)
     private readonly usuarioRepository: Repository<Usuario>,
     @InjectRepository(Jornada)
@@ -129,7 +142,12 @@ export class ProyectosService {
       .leftJoinAndSelect('pb.reemplazadoPor', 'reemplazadoPor')
       .leftJoinAndSelect('proyecto.proyectoAsociaciones', 'pa')
       .leftJoinAndSelect('pa.asociacion', 'asociacion')
-      .leftJoinAndSelect('proyecto.veredas', 'veredas');
+      .leftJoinAndSelect('proyecto.veredas', 'veredas')
+      .leftJoinAndSelect('proyecto.municipios', 'municipiosProyecto')
+      .leftJoinAndSelect(
+        'municipiosProyecto.departamento',
+        'departamentoMunicipio',
+      );
 
     if (filtros.estado) {
       query.andWhere('proyecto.estado = :estado', { estado: filtros.estado });
@@ -239,6 +257,7 @@ export class ProyectosService {
             ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
             : undefined,
           asociaciones,
+          municipios: this.resumirMunicipios(proyecto),
         });
       }),
     );
@@ -265,6 +284,7 @@ export class ProyectosService {
         creador: true,
         actividades: true,
         veredas: true,
+        municipios: { departamento: true },
         personal: true,
         proyectoBeneficiarios: {
           beneficiario: true,
@@ -311,6 +331,7 @@ export class ProyectosService {
         ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
         : undefined,
       asociaciones,
+      municipios: this.resumirMunicipios(proyecto),
     });
   }
 
@@ -370,7 +391,12 @@ export class ProyectosService {
 
     const detalle = await this.proyectoRepository.findOne({
       where: { id },
-      relations: { veredas: true, personal: true, indicadores: true },
+      relations: {
+        veredas: true,
+        municipios: true,
+        personal: true,
+        indicadores: true,
+      },
     });
 
     if (!detalle) {
@@ -378,6 +404,7 @@ export class ProyectosService {
     }
 
     detalle.veredas = [];
+    detalle.municipios = [];
     detalle.personal = [];
     detalle.indicadores = [];
     await this.proyectoRepository.save(detalle);
@@ -401,6 +428,7 @@ export class ProyectosService {
       where: { id },
       relations: {
         veredas: true,
+        municipios: true,
         personal: true,
         proyectoBeneficiarios: true,
         proyectoAsociaciones: true,
@@ -411,9 +439,9 @@ export class ProyectosService {
       throw new NotFoundException(`Proyecto con id ${id} no encontrado`);
     }
 
-    if (!detalle.veredas?.length) {
+    if (!detalle.veredas?.length && !detalle.municipios?.length) {
       throw new BadRequestException(
-        'Asigna al menos una vereda antes de activar el proyecto',
+        'Asigna al menos un municipio antes de activar el proyecto',
       );
     }
 
@@ -447,15 +475,36 @@ export class ProyectosService {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
-    const veredas = await this.veredaRepository.findBy({
-      id: In(dto.veredaIds),
-    });
-
-    if (veredas.length !== dto.veredaIds.length) {
-      throw new NotFoundException('Una o más veredas no existen');
+    if (dto.veredaIds === undefined && dto.municipioIds === undefined) {
+      throw new BadRequestException('Indica municipios o veredas');
     }
 
-    proyecto.veredas = veredas;
+    if (dto.veredaIds !== undefined) {
+      const veredaIds = [...new Set(dto.veredaIds)];
+      const veredas = veredaIds.length
+        ? await this.veredaRepository.findBy({ id: In(veredaIds) })
+        : [];
+
+      if (veredas.length !== veredaIds.length) {
+        throw new NotFoundException('Una o más veredas no existen');
+      }
+
+      proyecto.veredas = veredas;
+    }
+
+    if (dto.municipioIds !== undefined) {
+      const municipioIds = [...new Set(dto.municipioIds)];
+      const municipios = municipioIds.length
+        ? await this.municipioRepository.findBy({ id: In(municipioIds) })
+        : [];
+
+      if (municipios.length !== municipioIds.length) {
+        throw new NotFoundException('Uno o más municipios no existen');
+      }
+
+      proyecto.municipios = municipios;
+    }
+
     await this.proyectoRepository.save(proyecto);
     return this.obtenerUno(proyectoId);
   }
@@ -599,30 +648,27 @@ export class ProyectosService {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
-    const veredaId = veredaIdSolicitada?.trim();
-    if (!veredaId) {
-      throw new BadRequestException(
-        'Elige la vereda DANE a la que corresponden las personas nuevas',
-      );
-    }
-    const vereda = await this.veredaRepository.findOne({
-      where: { id: veredaId },
-    });
-    if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
-      throw new BadRequestException(
-        'La vereda debe ser del catálogo DANE del proyecto',
-      );
-    }
-    const pertenece = await this.proyectoRepository
-      .createQueryBuilder('proyecto')
-      .innerJoin('proyecto.veredas', 'vereda')
-      .where('proyecto.id = :proyectoId', { proyectoId })
-      .andWhere('vereda.id = :veredaId', { veredaId })
-      .getCount();
-    if (!pertenece) {
-      throw new BadRequestException(
-        'Esa vereda no está vinculada a este proyecto',
-      );
+    const veredaId = veredaIdSolicitada?.trim() || undefined;
+    if (veredaId) {
+      const vereda = await this.veredaRepository.findOne({
+        where: { id: veredaId },
+      });
+      if (!vereda || !/^[0-9]+$/.test(vereda.codigo)) {
+        throw new BadRequestException(
+          'La vereda debe ser del catálogo DANE del proyecto',
+        );
+      }
+      const pertenece = await this.proyectoRepository
+        .createQueryBuilder('proyecto')
+        .innerJoin('proyecto.veredas', 'vereda')
+        .where('proyecto.id = :proyectoId', { proyectoId })
+        .andWhere('vereda.id = :veredaId', { veredaId })
+        .getCount();
+      if (!pertenece) {
+        throw new BadRequestException(
+          'Esa vereda no está vinculada a este proyecto',
+        );
+      }
     }
 
     const filas = await parsearExcelBeneficiarios(archivo.buffer);
@@ -643,7 +689,7 @@ export class ProyectosService {
           nombres: fila.nombres,
           apellidos: fila.apellidos,
           resultado: 'error',
-          mensaje: 'Faltan nombre e identificador',
+          mensaje: mensajeFilaNoCargada(fila, 'incompleta'),
         });
         continue;
       }
@@ -655,7 +701,7 @@ export class ProyectosService {
           nombres: fila.nombres,
           apellidos: fila.apellidos,
           resultado: 'error',
-          mensaje: 'Identificador duplicado en el archivo',
+          mensaje: mensajeFilaNoCargada(fila, 'duplicada'),
         });
         continue;
       }
@@ -665,13 +711,8 @@ export class ProyectosService {
         const { beneficiario, creado, yaEstaba } =
           await this.asegurarBeneficiarioEnProyecto({
             proyectoId,
-            nombres: fila.nombres,
-            apellidos: fila.apellidos,
-            numeroDocumento: fila.identificador,
-            tipoDocumento: fila.tipoDocumento,
+            fila,
             veredaId,
-            telefono: fila.telefono,
-            correo: fila.correo,
           });
         if (creado) creados += 1;
         else if (yaEstaba) yaEnProyecto += 1;
@@ -687,6 +728,11 @@ export class ProyectosService {
               ? 'ya_en_proyecto'
               : 'asignado_existente',
           beneficiarioId: beneficiario.id,
+          mensaje: creado
+            ? undefined
+            : yaEstaba
+              ? 'La cédula ya estaba en el proyecto'
+              : 'La cédula ya existía: se vinculó al proyecto sin duplicar',
         });
       } catch (err) {
         errores += 1;
@@ -757,10 +803,13 @@ export class ProyectosService {
       const nombres = dto.nombres!.trim();
       const partido = partirNombreCompleto(nombres);
       const creado = await this.buscarOCrearBeneficiario({
-        nombres: partido.nombres,
-        apellidos: (dto.apellidos ?? partido.apellidos).trim(),
-        numeroDocumento: normalizarIdentificador(dto.numeroDocumento!),
-        tipoDocumento: dto.tipoDocumento ?? TipoDocumento.CC,
+        fila: {
+          fila: 0,
+          nombres: partido.nombres,
+          apellidos: (dto.apellidos ?? partido.apellidos).trim(),
+          identificador: normalizarIdentificador(dto.numeroDocumento!),
+          tipoDocumento: dto.tipoDocumento ?? TipoDocumento.CC,
+        },
         veredaId: veredaId!,
       });
       nuevo = creado.beneficiario;
@@ -908,13 +957,8 @@ export class ProyectosService {
 
   private async asegurarBeneficiarioEnProyecto(opts: {
     proyectoId: string;
-    nombres: string;
-    apellidos: string;
-    numeroDocumento: string;
-    tipoDocumento: TipoDocumento;
-    veredaId: string;
-    telefono?: string;
-    correo?: string;
+    fila: FilaExcelBeneficiario;
+    veredaId?: string;
   }): Promise<{
     beneficiario: Beneficiario;
     creado: boolean;
@@ -934,67 +978,69 @@ export class ProyectosService {
       }
       return { beneficiario, creado, yaEstaba: true };
     }
-    await this.proyectoBeneficiarioRepository.save(
-      this.proyectoBeneficiarioRepository.create({
-        proyecto: { id: opts.proyectoId },
-        beneficiario,
-        estaActivoEnProyecto: true,
-      }),
-    );
+    try {
+      await this.proyectoBeneficiarioRepository.save(
+        this.proyectoBeneficiarioRepository.create({
+          proyecto: { id: opts.proyectoId },
+          beneficiario,
+          estaActivoEnProyecto: true,
+        }),
+      );
+    } catch (err) {
+      if (!esLlaveDuplicada(err)) throw err;
+      return { beneficiario, creado, yaEstaba: true };
+    }
     return { beneficiario, creado, yaEstaba: false };
   }
 
   private async buscarOCrearBeneficiario(opts: {
-    nombres: string;
-    apellidos: string;
-    numeroDocumento: string;
-    tipoDocumento: TipoDocumento;
-    veredaId: string;
-    telefono?: string;
-    correo?: string;
+    fila: FilaExcelBeneficiario;
+    veredaId?: string;
   }): Promise<{ beneficiario: Beneficiario; creado: boolean }> {
-    const identificador = normalizarIdentificador(opts.numeroDocumento);
-    const existente = await this.beneficiarioRepository
-      .createQueryBuilder('b')
-      .where(
-        `REPLACE(REPLACE(REPLACE(UPPER(b.numero_documento), '.', ''), '-', ''), ' ', '') = :id`,
-        { id: identificador },
-      )
-      .getOne();
+    const identificador = normalizarIdentificador(opts.fila.identificador);
+    const existente = await this.buscarBeneficiarioPorCedula(identificador);
     if (existente) {
       if (existente.eliminadoEn) {
         throw new ConflictException(MENSAJE_DOCUMENTO_ELIMINADO);
       }
-      if (!existente.estaActivo) {
+      const documento = existente.numeroDocumento;
+      asignarFilaABeneficiario(existente, opts.fila, opts.veredaId);
+      existente.numeroDocumento = documento;
+      if (!existente.estaActivo && opts.fila.estaActivo !== false) {
         existente.estaActivo = true;
-        existente.nombres = opts.nombres.trim();
-        existente.apellidos = opts.apellidos.trim() || opts.nombres.trim();
-        existente.tipoDocumento = opts.tipoDocumento;
-        existente.telefono = opts.telefono || existente.telefono;
-        existente.correo = opts.correo || existente.correo;
-        existente.vereda = { id: opts.veredaId } as Beneficiario['vereda'];
-        return {
-          beneficiario: await this.beneficiarioRepository.save(existente),
-          creado: true,
-        };
       }
-      return { beneficiario: existente, creado: false };
+      return {
+        beneficiario: await this.beneficiarioRepository.save(existente),
+        creado: false,
+      };
     }
 
     const creado = this.beneficiarioRepository.create({
-      nombres: opts.nombres.trim(),
-      apellidos: opts.apellidos.trim() || opts.nombres.trim(),
       numeroDocumento: identificador,
-      tipoDocumento: opts.tipoDocumento,
-      telefono: opts.telefono || undefined,
-      correo: opts.correo || undefined,
-      vereda: { id: opts.veredaId },
       estaActivo: true,
     });
-    return {
-      beneficiario: await this.beneficiarioRepository.save(creado),
-      creado: true,
-    };
+    asignarFilaABeneficiario(creado, opts.fila, opts.veredaId);
+    creado.numeroDocumento = identificador;
+    try {
+      return {
+        beneficiario: await this.beneficiarioRepository.save(creado),
+        creado: true,
+      };
+    } catch (err) {
+      if (!esLlaveDuplicada(err)) throw err;
+      const repetido = await this.buscarBeneficiarioPorCedula(identificador);
+      if (!repetido || repetido.eliminadoEn) throw err;
+      return { beneficiario: repetido, creado: false };
+    }
+  }
+
+  private async buscarBeneficiarioPorCedula(
+    identificador: string,
+  ): Promise<Beneficiario | null> {
+    return this.beneficiarioRepository
+      .createQueryBuilder('b')
+      .where(sqlCedulaIgual('b'), { id: identificador })
+      .getOne();
   }
 
   async obtenerEstadisticas(
@@ -1108,6 +1154,15 @@ export class ProyectosService {
       usuarioActual,
       proyecto.id,
     );
+  }
+
+  private resumirMunicipios(proyecto: Proyecto) {
+    return (proyecto.municipios ?? []).map((municipio) => ({
+      id: municipio.id,
+      nombre: municipio.nombre,
+      codigo: municipio.codigo,
+      departamentoNombre: municipio.departamento?.nombre,
+    }));
   }
 
   private async buscarProyecto(id: string): Promise<Proyecto> {

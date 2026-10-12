@@ -4,14 +4,27 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { TipoAsociacion } from '../enums/tipo-asociacion.enum';
 
 export class CrearAsociacionDto {
+  @ApiPropertyOptional({
+    enum: TipoAsociacion,
+    default: TipoAsociacion.ASOCIACION,
+    description:
+      'OAM es una organización que agrupa asociaciones. Puede vincularse a proyectos y jornadas igual que una asociación.',
+  })
+  @IsEnum(TipoAsociacion)
+  @IsOptional()
+  tipo?: TipoAsociacion;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -49,6 +62,24 @@ export class CrearAsociacionDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   beneficiarioIds?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'OAM a la que pertenece esta asociación',
+  })
+  @IsOptional()
+  @ValidateIf((_, valor) => valor !== null)
+  @IsUUID('4')
+  oamId?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Asociaciones que agrupa, solo si el tipo es OAM',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  asociacionIds?: string[];
 }
 
 export class ActualizarAsociacionDto {
@@ -90,6 +121,18 @@ export class ActualizarAsociacionDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   beneficiarioIds?: string[];
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, valor) => valor !== null)
+  @IsUUID('4')
+  oamId?: string | null;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  asociacionIds?: string[];
 }
 
 export class FiltrosAsociacionDto {
@@ -102,6 +145,11 @@ export class FiltrosAsociacionDto {
   @IsUUID('4')
   @IsOptional()
   veredaId?: string;
+
+  @ApiPropertyOptional({ enum: TipoAsociacion })
+  @IsEnum(TipoAsociacion)
+  @IsOptional()
+  tipo?: TipoAsociacion;
 
   @ApiPropertyOptional({ default: 1 })
   @Type(() => Number)
