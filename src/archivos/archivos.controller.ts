@@ -2,6 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
+  Param,
+  ParseUUIDPipe,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -19,7 +22,13 @@ import { memoryStorage } from 'multer';
 import { RequierePermisos } from '../autenticacion/decorators/requiere-permisos.decorator';
 import { ArchivosService } from './archivos.service';
 import { RespuestaSubirEvidenciaDto } from './dto/respuesta-subir-evidencia.dto';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { TipoEvidencia } from '../evidencias/enums/tipo-evidencia.enum';
 import { SubirEvidenciaDto } from './dto/subir-evidencia.dto';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
@@ -33,6 +42,12 @@ class SubirEvidenciaJornadaDto {
   @IsOptional()
   @IsEnum(TipoEvidencia)
   tipo?: TipoEvidencia;
+
+  /** Identificador generado en el teléfono; evita duplicados al reintentar. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idLocal?: string;
 }
 
 const TIPOS_PERMITIDOS = [
@@ -166,6 +181,7 @@ export class ArchivosController {
         archivo: { type: 'string', format: 'binary' },
         jornadaId: { type: 'string', format: 'uuid' },
         tipo: { type: 'string', enum: Object.values(TipoEvidencia) },
+        idLocal: { type: 'string' },
       },
     },
   })
@@ -186,6 +202,27 @@ export class ArchivosController {
       archivo,
       body.jornadaId,
       body.tipo,
+      body.idLocal,
     );
+  }
+
+  @Delete('evidencia/:id')
+  @RequierePermisos('archivos.subir')
+  @ApiOperation({
+    summary: 'Eliminar una evidencia de una jornada',
+    description:
+      'Borra la evidencia y sus archivos. No se permite si la jornada está en revisión o aprobada.',
+  })
+  async eliminarEvidencia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<{ eliminada: true }> {
+    const jornadaId = await this.archivosService.jornadaDeEvidencia(id);
+    await this.alcanceTerritorialService.assertTecnicoEnJornada(
+      usuario,
+      jornadaId,
+    );
+    await this.archivosService.eliminarEvidencia(id);
+    return { eliminada: true };
   }
 }

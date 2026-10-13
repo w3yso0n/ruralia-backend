@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { ActividadesService } from '../actividades/actividades.service';
@@ -69,9 +73,7 @@ export class DashboardService {
     if (alcance.permitidos && alcance.permitidos.length === 0) return [];
     const proyectos = await this.proyectoRepository.find({
       select: { id: true, nombre: true, tipo: true, estado: true },
-      where: alcance.permitidos
-        ? { id: In(alcance.permitidos) }
-        : undefined,
+      where: alcance.permitidos ? { id: In(alcance.permitidos) } : undefined,
       order: { nombre: 'ASC' },
     });
     return proyectos.map((p) => ({
@@ -153,28 +155,27 @@ export class DashboardService {
               : (whereActivos ?? { estado: EstadoProyecto.ACTIVO }),
             order: { actualizadoEn: 'DESC' },
             take: id ? 1 : 5,
-            relations: { proyectoBeneficiarios: true },
           })
         : Promise.resolve([]),
     ]);
 
     const agentesEnCampo = Number(agentesRaw?.total ?? 0);
 
-    const proyectosRecientes = await Promise.all(
-      recientes.map(async (p) => {
-        const progreso = await this.actividadesService.obtenerProgreso(p.id);
-        return {
-          id: p.id,
-          nombre: p.nombre,
-          tipo: p.tipo,
-          estado: p.estado,
-          progresoPorcentaje: progreso.progresoPorcentaje,
-          conteoBeneficiarios: p.proyectoBeneficiarios?.length ?? 0,
-          creadoEn: p.creadoEn,
-          actualizadoEn: p.actualizadoEn,
-        };
-      }),
-    );
+    const idsRecientes = recientes.map((p) => p.id);
+    const [progresos, beneficiarios] = await Promise.all([
+      this.actividadesService.obtenerProgresoPorProyectos(idsRecientes),
+      this.contarBeneficiariosPorProyecto(idsRecientes),
+    ]);
+    const proyectosRecientes = recientes.map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      tipo: p.tipo,
+      estado: p.estado,
+      progresoPorcentaje: progresos.get(p.id) ?? 0,
+      conteoBeneficiarios: beneficiarios.get(p.id) ?? 0,
+      creadoEn: p.creadoEn,
+      actualizadoEn: p.actualizadoEn,
+    }));
 
     return {
       proyectosActivos,
@@ -201,38 +202,11 @@ export class DashboardService {
           select: { id: true },
         })
       : [];
-
-    let cumplimientoPlan = 0;
-    if (activos.length > 0) {
-      const progresos = await Promise.all(
-        activos.map((p) => this.actividadesService.obtenerProgreso(p.id)),
-      );
-      const suma = progresos.reduce((acc, p) => acc + p.progresoPorcentaje, 0);
-      cumplimientoPlan = Math.round(suma / progresos.length);
-    }
-
     const idsActivos = activos.map((p) => p.id);
 
-    let coberturaTerritorial = 0;
-    if (idsActivos.length > 0) {
-      const totalVeredas = await this.proyectoRepository
-        .createQueryBuilder('proyecto')
-        .innerJoin('proyecto.veredas', 'vereda')
-        .where('proyecto.id IN (:...ids)', { ids: idsActivos })
-        .select('COUNT(DISTINCT vereda.id)', 'total')
-        .getRawOne<{ total: string }>();
-
-      const veredasConJornada = this.qbJornadasNoCanceladas(alcance)
-        .andWhere('jornada.proyecto_id IN (:...ids)', { ids: idsActivos })
-        .andWhere('jornada.vereda_id IS NOT NULL')
-        .select('COUNT(DISTINCT jornada.vereda_id)', 'total');
-
-      const rawVeredas = await veredasConJornada.getRawOne<{ total: string }>();
-
-      const denom = Number(totalVeredas?.total ?? 0);
-      const numer = Number(rawVeredas?.total ?? 0);
-      coberturaTerritorial = denom > 0 ? Math.round((numer / denom) * 100) : 0;
-    }
+    const ahora = new Date();
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
 
     const completadasQb = this.jornadaRepository
       .createQueryBuilder('jornada')
@@ -240,34 +214,68 @@ export class DashboardService {
         estado: EstadoJornada.COMPLETADA,
       });
     this.aplicarProyecto(completadasQb, alcance);
-    const completadas = await completadasQb.getCount();
 
-    let jornadasConEvidencia = 0;
-    if (completadas > 0) {
-      const conFotoQb = this.evidenciaRepository
-        .createQueryBuilder('evidencia')
-        .innerJoin('evidencia.jornada', 'jornada')
-        .where('jornada.estado = :estado', {
-          estado: EstadoJornada.COMPLETADA,
-        })
-        .andWhere('evidencia.tipo = :tipo', { tipo: TipoEvidencia.FOTO })
-        .select('COUNT(DISTINCT jornada.id)', 'total');
-      this.aplicarProyecto(conFotoQb, alcance);
-      const conFoto = await conFotoQb.getRawOne<{ total: string }>();
-
-      jornadasConEvidencia = Math.round(
-        (Number(conFoto?.total ?? 0) / completadas) * 100,
-      );
-    }
-
-    const ahora = new Date();
-    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
+    const conFotoQb = this.evidenciaRepository
+      .createQueryBuilder('evidencia')
+      .innerJoin('evidencia.jornada', 'jornada')
+      .where('jornada.estado = :estado', {
+        estado: EstadoJornada.COMPLETADA,
+      })
+      .andWhere('evidencia.tipo = :tipo', { tipo: TipoEvidencia.FOTO })
+      .select('COUNT(DISTINCT jornada.id)', 'total');
+    this.aplicarProyecto(conFotoQb, alcance);
 
     const jornadasMesQb = this.qbJornadasNoCanceladas(alcance)
       .andWhere('jornada.fecha >= :inicio', { inicio: inicioMes })
       .andWhere('jornada.fecha <= :fin', { fin: finMes });
-    const jornadasMesActual = await jornadasMesQb.getCount();
+
+    const [
+      progresos,
+      totalVeredas,
+      veredasConJornada,
+      completadas,
+      conFoto,
+      jornadasMesActual,
+    ] = await Promise.all([
+      this.actividadesService.obtenerProgresoPorProyectos(idsActivos),
+      idsActivos.length
+        ? this.proyectoRepository
+            .createQueryBuilder('proyecto')
+            .innerJoin('proyecto.veredas', 'vereda')
+            .where('proyecto.id IN (:...ids)', { ids: idsActivos })
+            .select('COUNT(DISTINCT vereda.id)', 'total')
+            .getRawOne<{ total: string }>()
+        : Promise.resolve(undefined),
+      idsActivos.length
+        ? this.qbJornadasNoCanceladas(alcance)
+            .andWhere('jornada.proyecto_id IN (:...ids)', { ids: idsActivos })
+            .andWhere('jornada.vereda_id IS NOT NULL')
+            .select('COUNT(DISTINCT jornada.vereda_id)', 'total')
+            .getRawOne<{ total: string }>()
+        : Promise.resolve(undefined),
+      completadasQb.getCount(),
+      conFotoQb.getRawOne<{ total: string }>(),
+      jornadasMesQb.getCount(),
+    ]);
+
+    let cumplimientoPlan = 0;
+    if (idsActivos.length > 0) {
+      const suma = idsActivos.reduce(
+        (acc, pid) => acc + (progresos.get(pid) ?? 0),
+        0,
+      );
+      cumplimientoPlan = Math.round(suma / idsActivos.length);
+    }
+
+    const denom = Number(totalVeredas?.total ?? 0);
+    const numer = Number(veredasConJornada?.total ?? 0);
+    const coberturaTerritorial =
+      denom > 0 ? Math.round((numer / denom) * 100) : 0;
+
+    const jornadasConEvidencia =
+      completadas > 0
+        ? Math.round((Number(conFoto?.total ?? 0) / completadas) * 100)
+        : 0;
 
     return {
       cumplimientoPlan,
@@ -303,11 +311,6 @@ export class DashboardService {
       .groupBy('anio')
       .addGroupBy('mes');
     this.aplicarProyecto(jornadasPorMesQb, alcance);
-    const jornadasPorMes = await jornadasPorMesQb.getRawMany<{
-      anio: string;
-      mes: string;
-      total: string;
-    }>();
 
     const formulariosPorMesQb = this.envioRepository
       .createQueryBuilder('envio')
@@ -321,11 +324,6 @@ export class DashboardService {
       formulariosPorMesQb.innerJoin('envio.jornada', 'jornada');
       this.aplicarProyecto(formulariosPorMesQb, alcance);
     }
-    const formulariosPorMes = await formulariosPorMesQb.getRawMany<{
-      anio: string;
-      mes: string;
-      total: string;
-    }>();
 
     const beneficiariosPorMesQb = this.jornadaRepository
       .createQueryBuilder('jornada')
@@ -340,11 +338,14 @@ export class DashboardService {
       .groupBy('anio')
       .addGroupBy('mes');
     this.aplicarProyecto(beneficiariosPorMesQb, alcance);
-    const beneficiariosPorMes = await beneficiariosPorMesQb.getRawMany<{
-      anio: string;
-      mes: string;
-      total: string;
-    }>();
+
+    type FilaMes = { anio: string; mes: string; total: string };
+    const [jornadasPorMes, formulariosPorMes, beneficiariosPorMes] =
+      await Promise.all([
+        jornadasPorMesQb.getRawMany<FilaMes>(),
+        formulariosPorMesQb.getRawMany<FilaMes>(),
+        beneficiariosPorMesQb.getRawMany<FilaMes>(),
+      ]);
 
     const mapaJ = this.aMapaMes(jornadasPorMes);
     const mapaF = this.aMapaMes(formulariosPorMes);
@@ -378,23 +379,22 @@ export class DashboardService {
       where: id ? { id } : whereActivos!,
       order: { actualizadoEn: 'DESC' },
       take: id ? 1 : 12,
-      relations: { proyectoBeneficiarios: true },
     });
 
-    return Promise.all(
-      activos.map(async (p) => {
-        const progreso = await this.actividadesService.obtenerProgreso(p.id);
-        return {
-          proyectoId: p.id,
-          nombre: p.nombre.includes(' — ')
-            ? (p.nombre.split(' — ')[0] ?? p.nombre)
-            : p.nombre,
-          tipo: p.tipo,
-          progresoPorcentaje: progreso.progresoPorcentaje,
-          conteoBeneficiarios: p.proyectoBeneficiarios?.length ?? 0,
-        };
-      }),
-    );
+    const ids = activos.map((p) => p.id);
+    const [progresos, beneficiarios] = await Promise.all([
+      this.actividadesService.obtenerProgresoPorProyectos(ids),
+      this.contarBeneficiariosPorProyecto(ids),
+    ]);
+    return activos.map((p) => ({
+      proyectoId: p.id,
+      nombre: p.nombre.includes(' — ')
+        ? (p.nombre.split(' — ')[0] ?? p.nombre)
+        : p.nombre,
+      tipo: p.tipo,
+      progresoPorcentaje: progresos.get(p.id) ?? 0,
+      conteoBeneficiarios: beneficiarios.get(p.id) ?? 0,
+    }));
   }
 
   async obtenerMapaCobertura(
@@ -419,17 +419,14 @@ export class DashboardService {
             ],
       relations: {
         veredas: { municipio: { departamento: true } },
-        proyectoBeneficiarios: true,
       },
     });
 
-    const progresoPorProyecto = new Map<string, number>();
-    await Promise.all(
-      proyectos.map(async (p) => {
-        const pr = await this.actividadesService.obtenerProgreso(p.id);
-        progresoPorProyecto.set(p.id, pr.progresoPorcentaje);
-      }),
-    );
+    const ids = proyectos.map((p) => p.id);
+    const [progresoPorProyecto, beneficiariosPorProyecto] = await Promise.all([
+      this.actividadesService.obtenerProgresoPorProyectos(ids),
+      this.contarBeneficiariosPorProyecto(ids),
+    ]);
 
     type Acum = {
       veredaId: string;
@@ -459,7 +456,7 @@ export class DashboardService {
           nombre: p.nombre,
           estado: p.estado,
           progresoPorcentaje: progresoPorProyecto.get(p.id) ?? 0,
-          beneficiarios: p.proyectoBeneficiarios?.length ?? 0,
+          beneficiarios: beneficiariosPorProyecto.get(p.id) ?? 0,
         });
       }
     }
@@ -712,13 +709,15 @@ export class DashboardService {
     proyectoId: string | undefined,
     usuario?: Usuario,
   ): Promise<AlcanceConsulta> {
-    const permitidos = usuario
-      ? await this.alcanceTerritorialService.idsProyectosVisibles(usuario)
-      : null;
+    const [permitidos, existe] = await Promise.all([
+      usuario
+        ? this.alcanceTerritorialService.idsProyectosVisibles(usuario)
+        : Promise.resolve(null),
+      proyectoId
+        ? this.proyectoRepository.exists({ where: { id: proyectoId } })
+        : Promise.resolve(true),
+    ]);
     if (!proyectoId) return { permitidos };
-    const existe = await this.proyectoRepository.exists({
-      where: { id: proyectoId },
-    });
     if (!existe) {
       throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
     }
@@ -739,6 +738,24 @@ export class DashboardService {
       typeof valor === 'string' ? valor : undefined,
       usuario,
     );
+  }
+
+  /** Vínculos de beneficiarios por proyecto con un GROUP BY, sin cargarlos. */
+  private async contarBeneficiariosPorProyecto(
+    ids: string[],
+  ): Promise<Map<string, number>> {
+    const mapa = new Map<string, number>();
+    if (!ids.length) return mapa;
+    const filas = await this.proyectoRepository.manager
+      .createQueryBuilder()
+      .select('pb.proyecto_id', 'proyectoId')
+      .addSelect('COUNT(*)', 'total')
+      .from('proyecto_beneficiarios', 'pb')
+      .where('pb.proyecto_id IN (:...ids)', { ids })
+      .groupBy('pb.proyecto_id')
+      .getRawMany<{ proyectoId: string; total: string }>();
+    for (const fila of filas) mapa.set(fila.proyectoId, Number(fila.total));
+    return mapa;
   }
 
   private async contarJornadas(alcance: AlcanceConsulta): Promise<number> {

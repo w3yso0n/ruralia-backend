@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -10,6 +11,8 @@ import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { Indicador } from './indicador.entity';
 
 @Entity('registros_indicador')
+@Index('IDX_registros_indicador_indicador_id', ['indicador'])
+@Index('IDX_registros_indicador_jornada_id', ['jornada'])
 export class RegistroIndicador {
   @PrimaryGeneratedColumn('uuid')
   id: string;

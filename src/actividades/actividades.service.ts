@@ -7,7 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
-import { sumarEjecutadoPorProyecto } from '../jornadas/utils/calcular-ejecutado-meta';
+import {
+  sumarEjecutadoPorProyecto,
+  sumarEjecutadoPorProyectos,
+} from '../jornadas/utils/calcular-ejecutado-meta';
 import {
   CronologiaService,
   detalleConOrigen,
@@ -38,6 +41,7 @@ import {
   aRespuestaActividad,
   aRespuestaPlan,
   aRespuestaProgreso,
+  progresoProyecto,
 } from './utils/calcular-progreso';
 
 @Injectable()
@@ -86,7 +90,9 @@ export class ActividadesService {
     usuarioActual: Usuario,
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividad(id);
-    const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
+    const proyecto = await this.buscarProyectoConPersonal(
+      actividad.proyecto.id,
+    );
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (dto.nombre !== undefined) {
@@ -105,7 +111,9 @@ export class ActividadesService {
 
   async eliminarActividad(id: string, usuarioActual: Usuario): Promise<void> {
     const actividad = await this.buscarActividad(id);
-    const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
+    const proyecto = await this.buscarProyectoConPersonal(
+      actividad.proyecto.id,
+    );
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     actividad.estaActivo = false;
@@ -118,7 +126,9 @@ export class ActividadesService {
     usuarioActual: Usuario,
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividadConSubactividades(id);
-    const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
+    const proyecto = await this.buscarProyectoConPersonal(
+      actividad.proyecto.id,
+    );
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     const subsActivas =
@@ -155,7 +165,9 @@ export class ActividadesService {
     usuarioActual: Usuario,
   ): Promise<RespuestaActividadDto> {
     const actividad = await this.buscarActividad(id);
-    const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
+    const proyecto = await this.buscarProyectoConPersonal(
+      actividad.proyecto.id,
+    );
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     actividad.estadoAvance = EstadoAvanceActividad.PENDIENTE;
@@ -173,7 +185,9 @@ export class ActividadesService {
     usuarioActual: Usuario,
   ): Promise<RespuestaSubactividadDto> {
     const actividad = await this.buscarActividad(actividadId);
-    const proyecto = await this.buscarProyectoConPersonal(actividad.proyecto.id);
+    const proyecto = await this.buscarProyectoConPersonal(
+      actividad.proyecto.id,
+    );
     await this.verificarPermisoGestion(proyecto, usuarioActual);
 
     if (actividad.estadoAvance === EstadoAvanceActividad.COMPLETADA) {
@@ -224,7 +238,10 @@ export class ActividadesService {
     return this.obtenerSubactividadRespuesta(id);
   }
 
-  async eliminarSubactividad(id: string, usuarioActual: Usuario): Promise<void> {
+  async eliminarSubactividad(
+    id: string,
+    usuarioActual: Usuario,
+  ): Promise<void> {
     const subactividad = await this.buscarSubactividad(id);
     const proyecto = await this.buscarProyectoConPersonal(
       subactividad.actividad.proyecto.id,
@@ -286,19 +303,56 @@ export class ActividadesService {
   }
 
   async obtenerPlan(proyectoId: string): Promise<RespuestaPlanProyectoDto> {
-    await this.verificarProyectoExiste(proyectoId);
-    const actividades = await this.cargarActividadesProyecto(proyectoId);
-    const ejecutadoPorMeta = await this.contarJornadasPorMeta(proyectoId);
+    const [, actividades, ejecutadoPorMeta] = await Promise.all([
+      this.verificarProyectoExiste(proyectoId),
+      this.cargarActividadesProyecto(proyectoId),
+      this.contarJornadasPorMeta(proyectoId),
+    ]);
     return aRespuestaPlan(proyectoId, actividades, ejecutadoPorMeta);
   }
 
   async obtenerProgreso(
     proyectoId: string,
   ): Promise<RespuestaProgresoProyectoDto> {
-    await this.verificarProyectoExiste(proyectoId);
-    const actividades = await this.cargarActividadesProyecto(proyectoId);
-    const ejecutadoPorMeta = await this.contarJornadasPorMeta(proyectoId);
+    const [, actividades, ejecutadoPorMeta] = await Promise.all([
+      this.verificarProyectoExiste(proyectoId),
+      this.cargarArbolProgreso([proyectoId]),
+      sumarEjecutadoPorProyectos(this.jornadaRepository, [proyectoId]),
+    ]);
     return aRespuestaProgreso(proyectoId, actividades, ejecutadoPorMeta);
+  }
+
+  /**
+   * Porcentaje de avance de varios proyectos con dos consultas en total
+   * (árbol del plan + suma de jornadas), en lugar de tres por proyecto.
+   */
+  async obtenerProgresoPorProyectos(
+    proyectoIds: string[],
+  ): Promise<Map<string, number>> {
+    const resultado = new Map<string, number>();
+    if (!proyectoIds.length) return resultado;
+
+    const [actividades, ejecutadoPorMeta] = await Promise.all([
+      this.cargarArbolProgreso(proyectoIds),
+      sumarEjecutadoPorProyectos(this.jornadaRepository, proyectoIds),
+    ]);
+
+    const porProyecto = new Map<string, Actividad[]>();
+    for (const actividad of actividades) {
+      const id = actividad.proyecto?.id;
+      if (!id) continue;
+      const lista = porProyecto.get(id) ?? [];
+      lista.push(actividad);
+      porProyecto.set(id, lista);
+    }
+
+    for (const id of proyectoIds) {
+      resultado.set(
+        id,
+        progresoProyecto(porProyecto.get(id) ?? [], ejecutadoPorMeta),
+      );
+    }
+    return resultado;
   }
 
   async eliminarPlanPorProyecto(proyectoId: string): Promise<void> {
@@ -423,6 +477,24 @@ export class ActividadesService {
     });
   }
 
+  /**
+   * Árbol mínimo para calcular avance: sin periodos ni completadaPor, que no
+   * intervienen en el porcentaje y multiplican las filas del JOIN.
+   */
+  private async cargarArbolProgreso(
+    proyectoIds: string[],
+  ): Promise<Actividad[]> {
+    return this.actividadRepository
+      .createQueryBuilder('actividad')
+      .leftJoin('actividad.proyecto', 'proyecto')
+      .addSelect('proyecto.id')
+      .leftJoinAndSelect('actividad.subactividades', 'subactividad')
+      .leftJoinAndSelect('subactividad.procesos', 'proceso')
+      .leftJoinAndSelect('proceso.metas', 'meta')
+      .where('actividad.proyecto_id IN (:...proyectoIds)', { proyectoIds })
+      .getMany();
+  }
+
   private async contarJornadasPorMeta(
     proyectoId: string,
   ): Promise<Map<string, number>> {
@@ -463,7 +535,9 @@ export class ActividadesService {
     return actividad;
   }
 
-  private async buscarActividadConSubactividades(id: string): Promise<Actividad> {
+  private async buscarActividadConSubactividades(
+    id: string,
+  ): Promise<Actividad> {
     const actividad = await this.actividadRepository.findOne({
       where: { id },
       relations: { proyecto: true, subactividades: true },

@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -10,6 +11,7 @@ import { Proceso } from './proceso.entity';
 import { MetaPeriodo } from './meta-periodo.entity';
 
 @Entity('metas')
+@Index('IDX_metas_proceso_id', ['proceso'])
 export class Meta {
   @PrimaryGeneratedColumn('uuid')
   id: string;

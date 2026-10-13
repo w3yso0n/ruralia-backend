@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -142,10 +143,11 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'IDs de técnicos responsables (personal del proyecto). Crea una jornada independiente por cada uno, ligadas por grupoJornadaId si hay más de uno.',
+      'ID del técnico responsable (personal del proyecto). Se admite un único agente por jornada.',
   })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(1, { message: 'Solo se puede asignar un agente por jornada' })
   @IsUUID('4', { each: true })
   @IsOptional()
   tecnicoResponsableIds?: string[];
@@ -153,7 +155,7 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Beneficiarios del proyecto atendidos en esta jornada. Obligatorio si no se envían asociaciones.',
+      'Beneficiarios del proyecto. Se crea una jornada independiente por cada uno, ligadas por grupoJornadaId si hay más de uno. Obligatorio si no se envían asociaciones.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -163,7 +165,7 @@ export class CrearJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Asociaciones del proyecto atendidas en esta jornada. Obligatorio si no se envían beneficiarios. No se combinan con beneficiarios.',
+      'Asociaciones del proyecto. Se crea una jornada independiente por cada una, ligadas por grupoJornadaId si hay más de una. Obligatorio si no se envían beneficiarios. No se combinan con beneficiarios.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -275,7 +277,7 @@ export class ActualizarJornadaDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Reemplaza los beneficiarios de la jornada. Si se envía, la jornada debe quedar asignada a beneficiarios o a asociaciones, no a ambos ni a ninguno.',
+      'Reemplaza los beneficiarios de la jornada (solo de esta, no de las demás del grupo). Si se envía, la jornada debe quedar asignada a beneficiarios o a asociaciones, no a ambos ni a ninguno.',
   })
   @IsArray()
   @IsUUID('4', { each: true })
@@ -294,7 +296,10 @@ export class ActualizarJornadaDto {
 }
 
 export class CambiarEstadoJornadaDto {
-  @ApiProperty({ enum: EstadoJornada, description: 'Nuevo estado de la jornada' })
+  @ApiProperty({
+    enum: EstadoJornada,
+    description: 'Nuevo estado de la jornada',
+  })
   @IsEnum(EstadoJornada)
   @IsNotEmpty()
   estado: EstadoJornada;

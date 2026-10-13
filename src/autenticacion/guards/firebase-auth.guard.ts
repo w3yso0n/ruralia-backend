@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -23,10 +24,10 @@ export class FirebaseAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const esPublica = this.reflector.getAllAndOverride<boolean>(ES_PUBLICA_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const esPublica = this.reflector.getAllAndOverride<boolean>(
+      ES_PUBLICA_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (esPublica) {
       return true;
@@ -45,17 +46,9 @@ export class FirebaseAuthGuard implements CanActivate {
 
     const token = authorization.slice('Bearer '.length);
 
+    let decoded: Awaited<ReturnType<FirebaseAdminService['verificarToken']>>;
     try {
-      const decoded = await this.firebaseAdminService.verificarToken(token);
-      const usuario =
-        await this.autenticacionService.obtenerOCrearUsuario(decoded);
-
-      if (!usuario.estaActivo) {
-        throw new ForbiddenException('Usuario desactivado');
-      }
-
-      request.usuario = usuario;
-      return true;
+      decoded = await this.firebaseAdminService.verificarToken(token);
     } catch (error) {
       if (
         error instanceof ForbiddenException ||
@@ -80,5 +73,28 @@ export class FirebaseAuthGuard implements CanActivate {
       );
       throw error;
     }
+
+    let usuario: Awaited<
+      ReturnType<AutenticacionService['obtenerOCrearUsuario']>
+    >;
+    try {
+      usuario = await this.autenticacionService.obtenerOCrearUsuario(decoded);
+    } catch (error) {
+      // No es un problema del token: no se disfraza de 401.
+      this.logger.error(
+        `No se pudo cargar el usuario ${decoded.uid}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new InternalServerErrorException(
+        'No se pudo cargar el usuario. Intenta de nuevo más tarde.',
+      );
+    }
+
+    if (!usuario.estaActivo) {
+      throw new ForbiddenException('Usuario desactivado');
+    }
+
+    request.usuario = usuario;
+    return true;
   }
 }

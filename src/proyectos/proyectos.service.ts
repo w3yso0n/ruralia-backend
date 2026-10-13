@@ -18,7 +18,9 @@ import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Municipio } from '../territorios/entities/municipio.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { usuarioSoloJornadasAsignadas } from '../usuarios/utils/permisos-usuario';
+import { Rol } from '../usuarios/entities/rol.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
+import { ORDEN_NIVEL_ACCESO } from '../usuarios/enums/nivel-acceso-rol.enum';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { ActualizarProyectoDto } from './dto/actualizar-proyecto.dto';
 import {
@@ -34,6 +36,13 @@ import {
   RespuestaPaginadaProyectosDto,
   RespuestaProyectoDto,
 } from './dto/respuesta-proyecto.dto';
+import {
+  EquipoResumenDto,
+  MiembroEquipoResumenDto,
+  MunicipioResumenDto,
+  ResumenProyectoDto,
+  RolEquipoResumenDto,
+} from './dto/resumen-proyecto.dto';
 import {
   RespuestaCargaMasivaBeneficiariosDto,
   RespuestaHistorialBeneficiarioProyectoDto,
@@ -132,22 +141,10 @@ export class ProyectosService {
     const limite = filtros.limite ?? 10;
     const skip = (pagina - 1) * limite;
 
-    const query = this.proyectoRepository
-      .createQueryBuilder('proyecto')
-      .leftJoinAndSelect('proyecto.creador', 'creador')
-      .leftJoinAndSelect('proyecto.personal', 'personal')
-      .leftJoinAndSelect('proyecto.proyectoBeneficiarios', 'pb')
-      .leftJoinAndSelect('pb.beneficiario', 'beneficiario')
-      .leftJoinAndSelect('pb.reemplazaA', 'reemplazaA')
-      .leftJoinAndSelect('pb.reemplazadoPor', 'reemplazadoPor')
-      .leftJoinAndSelect('proyecto.proyectoAsociaciones', 'pa')
-      .leftJoinAndSelect('pa.asociacion', 'asociacion')
-      .leftJoinAndSelect('proyecto.veredas', 'veredas')
-      .leftJoinAndSelect('proyecto.municipios', 'municipiosProyecto')
-      .leftJoinAndSelect(
-        'municipiosProyecto.departamento',
-        'departamentoMunicipio',
-      );
+    // Paginación y conteo solo sobre la tabla de proyectos: los filtros por
+    // vínculos usan EXISTS, así que no hacen falta JOINs aquí. Las relaciones
+    // se cargan después, únicamente para los proyectos de la página.
+    const query = this.proyectoRepository.createQueryBuilder('proyecto');
 
     if (filtros.estado) {
       query.andWhere('proyecto.estado = :estado', { estado: filtros.estado });
@@ -211,99 +208,102 @@ export class ProyectosService {
         query.orderBy('proyecto.creadoEn', 'DESC');
     }
 
-    const [proyectos, total] = await query
-      .skip(skip)
-      .take(limite)
-      .getManyAndCount();
+    // Página y conteo en paralelo (cada uno en su propia conexión del pool).
+    const [filasPagina, total] = await Promise.all([
+      query.clone().skip(skip).take(limite).getMany(),
+      query.getCount(),
+    ]);
 
-    const datos = await Promise.all(
-      proyectos.map(async (proyecto) => {
-        const progreso = await this.actividadesService.obtenerProgreso(
-          proyecto.id,
-        );
-        const { activos, reemplazados } = partirVinculosBeneficiarios(
-          proyecto.proyectoBeneficiarios ?? [],
-        );
-        const principalBenef =
-          activos[0] ??
-          (proyecto.proyectoBeneficiarios?.find((pb) => pb.esPrincipal)
-            ?.beneficiario
-            ? resumenDeBeneficiario(
-                proyecto.proyectoBeneficiarios.find((pb) => pb.esPrincipal)!
-                  .beneficiario,
-              )
-            : undefined);
-        const principalAsoc = proyecto.proyectoAsociaciones?.find(
-          (pa) => pa.esPrincipal,
-        )?.asociacion;
-        const asociaciones =
-          proyecto.proyectoAsociaciones
-            ?.map((pa) => pa.asociacion)
-            .filter(Boolean)
-            .map((a) => ({
-              id: a!.id,
-              nombre: a!.nombre,
-            })) ?? [];
-        const asocMostrar =
-          principalAsoc ?? proyecto.proyectoAsociaciones?.[0]?.asociacion;
+    // El técnico solo ve datos generales: no hace falta cargar vínculos ni avance.
+    if (usuario && usuarioSoloJornadasAsignadas(usuario)) {
+      return aRespuestaPaginada(
+        filasPagina.map((p) => aVistaLimitadaProyecto(aRespuestaProyecto(p))),
+        total,
+        pagina,
+        limite,
+      );
+    }
 
-        return aRespuestaProyecto(proyecto, {
-          conteoBeneficiarios: activos.length,
-          progresoPorcentaje: progreso.progresoPorcentaje,
-          beneficiarioPrincipal: principalBenef,
-          beneficiarios: activos,
-          beneficiariosReemplazados: reemplazados,
-          asociacionPrincipal: asocMostrar
-            ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
-            : undefined,
-          asociaciones,
-          municipios: this.resumirMunicipios(proyecto),
-        });
-      }),
-    );
+    const ids = filasPagina.map((p) => p.id);
 
-    const vistaLimitada = !!usuario && usuarioSoloJornadasAsignadas(usuario);
-    return aRespuestaPaginada(
-      vistaLimitada ? datos.map(aVistaLimitadaProyecto) : datos,
-      total,
-      pagina,
-      limite,
-    );
+    const [proyectos, progresoPorProyecto] = await Promise.all([
+      this.cargarProyectosConVinculos(ids),
+      this.actividadesService.obtenerProgresoPorProyectos(ids),
+    ]);
+
+    const datos = proyectos.map((proyecto) => {
+      const progresoPorcentaje = progresoPorProyecto.get(proyecto.id) ?? 0;
+      const { activos, reemplazados } = partirVinculosBeneficiarios(
+        proyecto.proyectoBeneficiarios ?? [],
+      );
+      const principalBenef =
+        activos[0] ??
+        (proyecto.proyectoBeneficiarios?.find((pb) => pb.esPrincipal)
+          ?.beneficiario
+          ? resumenDeBeneficiario(
+              proyecto.proyectoBeneficiarios.find((pb) => pb.esPrincipal)!
+                .beneficiario,
+            )
+          : undefined);
+      const principalAsoc = proyecto.proyectoAsociaciones?.find(
+        (pa) => pa.esPrincipal,
+      )?.asociacion;
+      const asociaciones =
+        proyecto.proyectoAsociaciones
+          ?.map((pa) => pa.asociacion)
+          .filter(Boolean)
+          .map((a) => ({
+            id: a!.id,
+            nombre: a!.nombre,
+          })) ?? [];
+      const asocMostrar =
+        principalAsoc ?? proyecto.proyectoAsociaciones?.[0]?.asociacion;
+
+      return aRespuestaProyecto(proyecto, {
+        conteoBeneficiarios: activos.length,
+        progresoPorcentaje,
+        beneficiarioPrincipal: principalBenef,
+        beneficiarios: activos,
+        beneficiariosReemplazados: reemplazados,
+        asociacionPrincipal: asocMostrar
+          ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
+          : undefined,
+        asociaciones,
+        municipios: this.resumirMunicipios(proyecto),
+      });
+    });
+
+    return aRespuestaPaginada(datos, total, pagina, limite);
   }
 
   async obtenerUno(
     id: string,
     usuario?: Usuario,
   ): Promise<RespuestaProyectoDto> {
-    if (usuario) {
-      await this.alcanceTerritorialService.assertProyectoVisible(usuario, id);
-    }
-    const proyecto = await this.proyectoRepository.findOne({
-      where: { id },
-      relations: {
-        creador: true,
-        actividades: true,
-        veredas: true,
-        municipios: { departamento: true },
-        personal: true,
-        proyectoBeneficiarios: {
-          beneficiario: true,
-          reemplazaA: true,
-          reemplazadoPor: true,
-        },
-        proyectoAsociaciones: { asociacion: true },
-      },
-    });
+    const vistaLimitada = !!usuario && usuarioSoloJornadasAsignadas(usuario);
+
+    // Permisos, datos y avance en paralelo: cada consulta usa su propia
+    // conexión, así el tiempo total es el de la más lenta y no la suma.
+    const [, proyectos, progresoPorProyecto] = await Promise.all([
+      usuario
+        ? this.alcanceTerritorialService.assertProyectoVisible(usuario, id)
+        : Promise.resolve(),
+      vistaLimitada
+        ? this.proyectoRepository.find({ where: { id } })
+        : this.cargarProyectosConVinculos([id], { actividades: true }),
+      vistaLimitada
+        ? Promise.resolve(new Map<string, number>())
+        : this.actividadesService.obtenerProgresoPorProyectos([id]),
+    ]);
+    const proyecto = proyectos[0];
 
     if (!proyecto) {
       throw new NotFoundException(`Proyecto con id ${id} no encontrado`);
     }
 
-    if (usuario && usuarioSoloJornadasAsignadas(usuario)) {
+    if (vistaLimitada) {
       return aVistaLimitadaProyecto(aRespuestaProyecto(proyecto, {}));
     }
-
-    const progreso = await this.actividadesService.obtenerProgreso(id);
     const { activos, reemplazados } = partirVinculosBeneficiarios(
       proyecto.proyectoBeneficiarios ?? [],
     );
@@ -323,7 +323,7 @@ export class ProyectosService {
 
     return aRespuestaProyecto(proyecto, {
       conteoBeneficiarios: activos.length,
-      progresoPorcentaje: progreso.progresoPorcentaje,
+      progresoPorcentaje: progresoPorProyecto.get(id) ?? 0,
       beneficiarioPrincipal: activos[0],
       beneficiarios: activos,
       beneficiariosReemplazados: reemplazados,
@@ -333,6 +333,106 @@ export class ProyectosService {
       asociaciones,
       municipios: this.resumirMunicipios(proyecto),
     });
+  }
+
+  /**
+   * Carga proyectos con sus vínculos usando una consulta independiente por
+   * relación, todas en paralelo. Un único JOIN con varias colecciones devuelve
+   * su producto cartesiano (p. ej. 1211 beneficiarios x 67 personas = 81 mil
+   * filas), y la estrategia 'query' de TypeORM las ejecuta en serie.
+   * Devuelve los proyectos en el mismo orden que `ids`.
+   */
+  private async cargarProyectosConVinculos(
+    ids: string[],
+    opciones: { actividades?: boolean } = {},
+  ): Promise<Proyecto[]> {
+    if (!ids.length) return [];
+
+    const conColeccion = (relacion: keyof Proyecto) =>
+      this.proyectoRepository
+        .createQueryBuilder('proyecto')
+        .select('proyecto.id')
+        .leftJoinAndSelect(`proyecto.${relacion}`, 'rel')
+        .where('proyecto.id IN (:...ids)', { ids })
+        .getMany();
+
+    const [
+      base,
+      conPersonal,
+      conVeredas,
+      conMunicipios,
+      conActividades,
+      vinculosBenef,
+      vinculosAsoc,
+    ] = await Promise.all([
+      this.proyectoRepository.find({
+        where: { id: In(ids) },
+        relations: { creador: true },
+      }),
+      conColeccion('personal'),
+      conColeccion('veredas'),
+      this.proyectoRepository
+        .createQueryBuilder('proyecto')
+        .select('proyecto.id')
+        .leftJoinAndSelect('proyecto.municipios', 'municipio')
+        .leftJoinAndSelect('municipio.departamento', 'departamento')
+        .where('proyecto.id IN (:...ids)', { ids })
+        .getMany(),
+      opciones.actividades
+        ? conColeccion('actividades')
+        : Promise.resolve([] as Proyecto[]),
+      this.proyectoBeneficiarioRepository
+        .createQueryBuilder('pb')
+        .leftJoin('pb.proyecto', 'proyecto')
+        .addSelect('proyecto.id')
+        .leftJoinAndSelect('pb.beneficiario', 'beneficiario')
+        .leftJoinAndSelect('pb.reemplazaA', 'reemplazaA')
+        .leftJoinAndSelect('pb.reemplazadoPor', 'reemplazadoPor')
+        .where('pb.proyecto_id IN (:...ids)', { ids })
+        .orderBy('pb.creadoEn', 'ASC')
+        .getMany(),
+      this.proyectoAsociacionRepository
+        .createQueryBuilder('pa')
+        .leftJoin('pa.proyecto', 'proyecto')
+        .addSelect('proyecto.id')
+        .leftJoinAndSelect('pa.asociacion', 'asociacion')
+        .where('pa.proyecto_id IN (:...ids)', { ids })
+        .getMany(),
+    ]);
+
+    const porId = new Map(base.map((p) => [p.id, p]));
+    for (const p of base) {
+      p.personal = [];
+      p.veredas = [];
+      p.municipios = [];
+      p.proyectoBeneficiarios = [];
+      p.proyectoAsociaciones = [];
+      if (opciones.actividades) p.actividades = [];
+    }
+    for (const p of conPersonal) {
+      const destino = porId.get(p.id);
+      if (destino) destino.personal = p.personal ?? [];
+    }
+    for (const p of conVeredas) {
+      const destino = porId.get(p.id);
+      if (destino) destino.veredas = p.veredas ?? [];
+    }
+    for (const p of conMunicipios) {
+      const destino = porId.get(p.id);
+      if (destino) destino.municipios = p.municipios ?? [];
+    }
+    for (const p of conActividades) {
+      const destino = porId.get(p.id);
+      if (destino) destino.actividades = p.actividades ?? [];
+    }
+    for (const pb of vinculosBenef) {
+      porId.get(pb.proyecto?.id)?.proyectoBeneficiarios.push(pb);
+    }
+    for (const pa of vinculosAsoc) {
+      porId.get(pa.proyecto?.id)?.proyectoAsociaciones.push(pa);
+    }
+
+    return ids.map((id) => porId.get(id)).filter((p): p is Proyecto => !!p);
   }
 
   async actualizar(
@@ -1046,22 +1146,23 @@ export class ProyectosService {
   async obtenerEstadisticas(
     proyectoId: string,
   ): Promise<EstadisticasProyectoDto> {
-    await this.buscarProyecto(proyectoId);
-
-    const conteoBeneficiarios = await this.contarBeneficiarios(proyectoId);
-
-    const conteoJornadas = await this.jornadaRepository.countBy({
-      proyecto: { id: proyectoId },
-    });
-
-    const conteoFormulariosEnviados = await this.envioFormularioRepository
-      .createQueryBuilder('envio')
-      .innerJoin('envio.jornada', 'jornada')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .getCount();
-
-    const porcentajeAvanceIndicadores =
-      await this.calcularPorcentajeAvanceIndicadores(proyectoId);
+    const [
+      ,
+      conteoBeneficiarios,
+      conteoJornadas,
+      conteoFormulariosEnviados,
+      porcentajeAvanceIndicadores,
+    ] = await Promise.all([
+      this.buscarProyecto(proyectoId),
+      this.contarBeneficiarios(proyectoId),
+      this.jornadaRepository.countBy({ proyecto: { id: proyectoId } }),
+      this.envioFormularioRepository
+        .createQueryBuilder('envio')
+        .innerJoin('envio.jornada', 'jornada')
+        .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .getCount(),
+      this.calcularPorcentajeAvanceIndicadores(proyectoId),
+    ]);
 
     return aEstadisticasProyecto({
       conteoBeneficiarios,
@@ -1069,6 +1170,158 @@ export class ProyectosService {
       conteoFormulariosEnviados,
       porcentajeAvanceIndicadores,
     });
+  }
+
+  /**
+   * Agregados de la pestaña Resumen. No devuelve listas completas: el equipo
+   * va agrupado por rol con una muestra de 4 personas y los beneficiarios
+   * se cuentan por municipio con GROUP BY, así la respuesta pesa lo mismo
+   * con 10 o con 5.000 personas.
+   */
+  async obtenerResumen(proyectoId: string): Promise<ResumenProyectoDto> {
+    const [
+      proyecto,
+      progreso,
+      jornadas,
+      formularios,
+      personal,
+      filasMunicipio,
+      asociaciones,
+    ] = await Promise.all([
+      this.buscarProyecto(proyectoId),
+      this.actividadesService.obtenerProgreso(proyectoId),
+      this.jornadaRepository.countBy({ proyecto: { id: proyectoId } }),
+      this.envioFormularioRepository
+        .createQueryBuilder('envio')
+        .innerJoin('envio.jornada', 'jornada')
+        .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .getCount(),
+      this.cargarPersonalConRoles(proyectoId),
+      this.proyectoBeneficiarioRepository
+        .createQueryBuilder('pb')
+        .innerJoin('pb.beneficiario', 'b')
+        .leftJoin('b.vereda', 'v')
+        .leftJoin('v.municipio', 'm')
+        .where('pb.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere('pb.estaActivoEnProyecto = true')
+        .select('m.nombre', 'municipio')
+        .addSelect('COUNT(*)', 'total')
+        .addSelect('COUNT(v.id)', 'conVereda')
+        .groupBy('m.id')
+        .addGroupBy('m.nombre')
+        .getRawMany<{
+          municipio: string | null;
+          total: string;
+          conVereda: string;
+        }>(),
+      this.proyectoAsociacionRepository.countBy({
+        proyecto: { id: proyectoId },
+      }),
+    ]);
+
+    let beneficiarios = 0;
+    let conVereda = 0;
+    let sinMunicipio = 0;
+    const porMunicipio: MunicipioResumenDto[] = [];
+    for (const fila of filasMunicipio) {
+      const total = Number(fila.total);
+      beneficiarios += total;
+      conVereda += Number(fila.conVereda);
+      if (fila.municipio) {
+        porMunicipio.push({ municipio: fila.municipio, total });
+      } else {
+        sinMunicipio += total;
+      }
+    }
+    porMunicipio.sort(
+      (a, b) =>
+        b.total - a.total ||
+        (a.municipio ?? '').localeCompare(b.municipio ?? ''),
+    );
+    if (sinMunicipio > 0) {
+      porMunicipio.push({ municipio: null, total: sinMunicipio });
+    }
+
+    return {
+      progreso: progreso.progresoPorcentaje,
+      jornadas,
+      formularios,
+      actividades: {
+        completadas: progreso.actividadesCompletadas,
+        total: progreso.actividadesTotal,
+      },
+      fechas: {
+        inicio: fechaIso(proyecto.fechaInicio),
+        fin: fechaIso(proyecto.fechaFin),
+      },
+      equipo: agruparEquipoPorRol(personal),
+      contraparte: {
+        beneficiarios,
+        asociaciones,
+        porMunicipio,
+        conVereda,
+      },
+    };
+  }
+
+  /**
+   * Personas del equipo para el modal del Resumen. Se pide solo al abrirlo;
+   * la agrupación por rol es la misma que la del resumen para que los
+   * conteos coincidan. `rolId = 'sin-rol'` filtra al personal sin rol.
+   */
+  async listarEquipoResumen(
+    proyectoId: string,
+    filtros: { rolId?: string },
+  ): Promise<MiembroEquipoResumenDto[]> {
+    const [, personal] = await Promise.all([
+      this.buscarProyecto(proyectoId),
+      this.cargarPersonalConRoles(proyectoId, { detalle: true }),
+    ]);
+
+    return personal
+      .map((u) => {
+        const principal = rolPrincipal(u);
+        return {
+          id: u.id,
+          nombre: u.nombreCompleto,
+          correo: u.correo,
+          urlFoto: u.urlFoto ?? null,
+          estaActivo: u.estaActivo,
+          rolId: principal?.id ?? null,
+          rol: principal?.nombre ?? 'Sin rol',
+          otrosRoles: (u.roles ?? [])
+            .filter((r) => r.id !== principal?.id)
+            .map((r) => r.nombre),
+        };
+      })
+      .filter((m) => !filtros.rolId || (m.rolId ?? 'sin-rol') === filtros.rolId)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+
+  /** Personal del proyecto con sus roles: una sola colección por consulta. */
+  private cargarPersonalConRoles(
+    proyectoId: string,
+    opciones: { detalle?: boolean } = {},
+  ): Promise<Usuario[]> {
+    return this.usuarioRepository
+      .createQueryBuilder('u')
+      .innerJoin(
+        'proyecto_personal',
+        'pp',
+        'pp.usuario_id = u.id AND pp.proyecto_id = :proyectoId',
+        { proyectoId },
+      )
+      .leftJoin('u.roles', 'r')
+      .select([
+        'u.id',
+        'u.nombreCompleto',
+        ...(opciones.detalle ? ['u.correo', 'u.urlFoto', 'u.estaActivo'] : []),
+        'r.id',
+        'r.nombre',
+        'r.descripcion',
+        'r.nivelAcceso',
+      ])
+      .getMany();
   }
 
   private async contarBeneficiarios(proyectoId: string): Promise<number> {
@@ -1092,26 +1345,23 @@ export class ProyectosService {
     }
 
     let totalMeta = 0;
-    let totalAlcanzado = 0;
-
     for (const indicador of indicadores) {
       const meta = Number(indicador.valorMeta ?? 0);
       if (meta > 0) {
         totalMeta += meta;
       }
-
-      const resultado = await this.registroIndicadorRepository
-        .createQueryBuilder('registro')
-        .innerJoin('registro.jornada', 'jornada')
-        .where('registro.indicador_id = :indicadorId', {
-          indicadorId: indicador.id,
-        })
-        .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
-        .select('COALESCE(SUM(registro.valor), 0)', 'suma')
-        .getRawOne<{ suma: string }>();
-
-      totalAlcanzado += Number(resultado?.suma ?? 0);
     }
+
+    const resultado = await this.registroIndicadorRepository
+      .createQueryBuilder('registro')
+      .innerJoin('registro.jornada', 'jornada')
+      .where('registro.indicador_id IN (:...indicadorIds)', {
+        indicadorIds: indicadores.map((i) => i.id),
+      })
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .select('COALESCE(SUM(registro.valor), 0)', 'suma')
+      .getRawOne<{ suma: string }>();
+    const totalAlcanzado = Number(resultado?.suma ?? 0);
 
     if (totalMeta === 0) {
       return 0;
@@ -1187,4 +1437,74 @@ export class ProyectosService {
 
     return proyecto;
   }
+}
+
+function fechaIso(valor: Date | string | null | undefined): string | null {
+  if (!valor) return null;
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  return String(valor).slice(0, 10);
+}
+
+function inicialesDe(nombre: string): string {
+  return nombre
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
+const MAX_MUESTRA_ROL = 4;
+
+function posicionNivel(rol: Rol): number {
+  const i = ORDEN_NIVEL_ACCESO.indexOf(rol.nivelAcceso);
+  return i === -1 ? ORDEN_NIVEL_ACCESO.length : i;
+}
+
+function compararRoles(a: Rol, b: Rol): number {
+  return (
+    posicionNivel(a) - posicionNivel(b) || a.nombre.localeCompare(b.nombre)
+  );
+}
+
+/** Rol de mayor alcance de la persona: con él se agrupa en el resumen. */
+function rolPrincipal(usuario: Usuario): Rol | null {
+  return [...(usuario.roles ?? [])].sort(compararRoles)[0] ?? null;
+}
+
+/** Agrupa al personal por su rol de mayor alcance (cada persona cuenta una vez). */
+function agruparEquipoPorRol(personal: Usuario[]): EquipoResumenDto {
+  const grupos = new Map<string, { rol: Rol | null; miembros: Usuario[] }>();
+  for (const usuario of personal) {
+    const principal = rolPrincipal(usuario);
+    const clave = principal?.id ?? '';
+    const grupo = grupos.get(clave) ?? { rol: principal, miembros: [] };
+    grupo.miembros.push(usuario);
+    grupos.set(clave, grupo);
+  }
+
+  const porRol: RolEquipoResumenDto[] = [...grupos.values()]
+    .sort((a, b) => {
+      if (!a.rol) return 1;
+      if (!b.rol) return -1;
+      return compararRoles(a.rol, b.rol);
+    })
+    .map(({ rol, miembros }) => ({
+      rolId: rol?.id ?? null,
+      rol: rol?.nombre ?? 'Sin rol',
+      descripcion: rol
+        ? (rol.descripcion ?? null)
+        : 'Personas sin rol asignado',
+      total: miembros.length,
+      muestra: [...miembros]
+        .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto))
+        .slice(0, MAX_MUESTRA_ROL)
+        .map((u) => ({
+          id: u.id,
+          nombre: u.nombreCompleto,
+          iniciales: inicialesDe(u.nombreCompleto),
+        })),
+    }));
+
+  return { total: personal.length, porRol };
 }

@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -12,6 +13,7 @@ import { EstadoAvanceActividad } from '../enums/estado-avance-actividad.enum';
 import { Subactividad } from './subactividad.entity';
 
 @Entity('actividades')
+@Index('IDX_actividades_proyecto_id', ['proyecto'])
 export class Actividad {
   @PrimaryGeneratedColumn('uuid')
   id: string;

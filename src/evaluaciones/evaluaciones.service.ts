@@ -55,6 +55,26 @@ const NOMBRES_MES = [
   'Diciembre',
 ];
 
+type MetricasAgente = {
+  conteoJornadas: number;
+  jornadasAprobadas: number;
+  jornadasConEvidencia: number;
+  formulariosEnviados: number;
+  rechazosRevision: number;
+  beneficiariosAtendidos: number;
+  veredasCubiertas: number;
+};
+
+const METRICAS_AGENTE_VACIAS: MetricasAgente = {
+  conteoJornadas: 0,
+  jornadasAprobadas: 0,
+  jornadasConEvidencia: 0,
+  formulariosEnviados: 0,
+  rechazosRevision: 0,
+  beneficiariosAtendidos: 0,
+  veredasCubiertas: 0,
+};
+
 @Injectable()
 export class EvaluacionesService {
   constructor(
@@ -290,15 +310,14 @@ export class EvaluacionesService {
         proyectoId,
       );
     }
-    await this.asegurarProyecto(proyectoId);
     const anio = filtros.anio ?? new Date().getFullYear();
     const mes = filtros.mes ?? new Date().getMonth() + 1;
 
-    const asignaciones = await this.asignacionesDelPeriodo(
-      { proyectoId },
-      anio,
-      mes,
-    );
+    const [, asignaciones, activos] = await Promise.all([
+      this.asegurarProyecto(proyectoId),
+      this.asignacionesDelPeriodo({ proyectoId }, anio, mes),
+      this.tecnicosActivosEnPeriodo(proyectoId, anio, mes),
+    ]);
 
     const porUsuario = new Map<string, ProductividadPersonaDto>();
     const sumaPorcentajes = new Map<string, number>();
@@ -328,7 +347,6 @@ export class EvaluacionesService {
     }
 
     // Incluir técnicos con jornadas aunque no tengan cuota asignada
-    const activos = await this.tecnicosActivosEnPeriodo(proyectoId, anio, mes);
     for (const t of activos) {
       if (!porUsuario.has(t.usuarioId)) {
         porUsuario.set(
@@ -338,12 +356,15 @@ export class EvaluacionesService {
       }
     }
 
-    const resultado: ProductividadPersonaDto[] = [];
-    for (const p of porUsuario.values()) {
-      resultado.push(
-        await this.completarMetricasAgente(p, proyectoId, anio, mes),
-      );
-    }
+    const metricas = await this.metricasAgentesProyecto(
+      proyectoId,
+      [...porUsuario.keys()],
+      anio,
+      mes,
+    );
+    const resultado = [...porUsuario.values()].map((p) =>
+      this.completarMetricasAgente(p, metricas.get(p.usuarioId)),
+    );
 
     return this.ordenarPorEficiencia(resultado);
   }
@@ -381,11 +402,14 @@ export class EvaluacionesService {
 
     const mapa = new Map<string, ProductividadPersonaDto>();
 
-    for (const p of proyectos) {
-      const ranking = await this.productividadProyecto(p.id, {
-        anio: a,
-        mes: m,
-      });
+    const rankings = await Promise.all(
+      proyectos.map((p) =>
+        this.productividadProyecto(p.id, { anio: a, mes: m }),
+      ),
+    );
+
+    for (const [i, p] of proyectos.entries()) {
+      const ranking = rankings[i];
       for (const r of ranking) {
         const actual = mapa.get(r.usuarioId) ?? {
           ...this.basePersona(r.usuarioId, r.nombreCompleto),
@@ -463,13 +487,11 @@ export class EvaluacionesService {
     };
   }
 
-  private async completarMetricasAgente(
+  private completarMetricasAgente(
     base: ProductividadPersonaDto,
-    proyectoId: string,
-    anio: number,
-    mes: number,
-  ): Promise<ProductividadPersonaDto> {
-    const [
+    m: MetricasAgente = METRICAS_AGENTE_VACIAS,
+  ): ProductividadPersonaDto {
+    const {
       conteoJornadas,
       jornadasAprobadas,
       jornadasConEvidencia,
@@ -477,15 +499,7 @@ export class EvaluacionesService {
       rechazosRevision,
       beneficiariosAtendidos,
       veredasCubiertas,
-    ] = await Promise.all([
-      this.contarJornadasUsuario(base.usuarioId, proyectoId, anio, mes),
-      this.contarJornadasAprobadas(base.usuarioId, proyectoId, anio, mes),
-      this.contarJornadasConEvidencia(base.usuarioId, proyectoId, anio, mes),
-      this.contarFormulariosUsuario(base.usuarioId, proyectoId, anio, mes),
-      this.contarRechazosRevision(base.usuarioId, proyectoId, anio, mes),
-      this.contarBeneficiariosUsuario(base.usuarioId, proyectoId, anio, mes),
-      this.contarVeredasUsuario(proyectoId, base.usuarioId, anio, mes),
-    ]);
+    } = m;
 
     return {
       ...base,
@@ -506,6 +520,122 @@ export class EvaluacionesService {
           : 0,
       indiceEficiencia: 0,
     };
+  }
+
+  /**
+   * Métricas de todos los agentes de un proyecto en un periodo: 7 consultas
+   * agrupadas por usuario y en paralelo, en lugar de 7 por agente.
+   * Mismas reglas que contarJornadasUsuario, contarJornadasAprobadas, etc.
+   */
+  private async metricasAgentesProyecto(
+    proyectoId: string,
+    usuarioIds: string[],
+    anio: number,
+    mes: number,
+  ): Promise<Map<string, MetricasAgente>> {
+    const resultado = new Map<string, MetricasAgente>();
+    if (!usuarioIds.length) return resultado;
+
+    type Fila = { usuarioId: string; total: string };
+    const jornadasBase = () => {
+      const qb = this.jornadaRepository
+        .createQueryBuilder('jornada')
+        .select('jornada.tecnico_responsable_id', 'usuarioId')
+        .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere('jornada.tecnico_responsable_id IN (:...usuarioIds)', {
+          usuarioIds,
+        })
+        .andWhere('jornada.estado != :cancelada', {
+          cancelada: EstadoJornada.CANCELADA,
+        })
+        .groupBy('jornada.tecnico_responsable_id');
+      this.aplicarPeriodo(qb, anio, mes);
+      return qb;
+    };
+    const inicio = new Date(anio, mes - 1, 1);
+    const fin = new Date(anio, mes, 0, 23, 59, 59);
+
+    const [
+      jornadas,
+      aprobadas,
+      conEvidencia,
+      formularios,
+      rechazos,
+      beneficiarios,
+      veredas,
+    ] = await Promise.all([
+      jornadasBase().addSelect('COUNT(*)', 'total').getRawMany<Fila>(),
+      jornadasBase()
+        .andWhere('jornada.estado_funcional = :aprobado', {
+          aprobado: EstadoFuncional.APROBADO,
+        })
+        .addSelect('COUNT(*)', 'total')
+        .getRawMany<Fila>(),
+      jornadasBase()
+        .innerJoin(
+          Evidencia,
+          'evidencia',
+          'evidencia.jornada_id = jornada.id AND evidencia.tipo = :tipoFoto',
+          { tipoFoto: TipoEvidencia.FOTO },
+        )
+        .addSelect('COUNT(DISTINCT jornada.id)', 'total')
+        .getRawMany<Fila>(),
+      this.envioRepository
+        .createQueryBuilder('envio')
+        .innerJoin('envio.jornada', 'jornada')
+        .select('envio.usuario_id', 'usuarioId')
+        .addSelect('COUNT(*)', 'total')
+        .where('envio.usuario_id IN (:...usuarioIds)', { usuarioIds })
+        .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere('envio.enviado_en >= :inicio', { inicio })
+        .andWhere('envio.enviado_en <= :fin', { fin })
+        .groupBy('envio.usuario_id')
+        .getRawMany<Fila>(),
+      this.rejectionRepository
+        .createQueryBuilder('rechazo')
+        .innerJoin(Jornada, 'jornada', 'jornada.id = rechazo.jornada_id')
+        .select('jornada.tecnico_responsable_id', 'usuarioId')
+        .addSelect('COUNT(*)', 'total')
+        .where('jornada.tecnico_responsable_id IN (:...usuarioIds)', {
+          usuarioIds,
+        })
+        .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere('jornada.estado != :cancelada', {
+          cancelada: EstadoJornada.CANCELADA,
+        })
+        .andWhere('rechazo.rejected_at >= :inicio', { inicio })
+        .andWhere('rechazo.rejected_at <= :fin', { fin })
+        .groupBy('jornada.tecnico_responsable_id')
+        .getRawMany<Fila>(),
+      jornadasBase()
+        .innerJoin('jornada.beneficiarios', 'b')
+        .addSelect('COUNT(DISTINCT b.id)', 'total')
+        .getRawMany<Fila>(),
+      jornadasBase()
+        .andWhere('jornada.vereda_id IS NOT NULL')
+        .addSelect('COUNT(DISTINCT jornada.vereda_id)', 'total')
+        .getRawMany<Fila>(),
+    ]);
+
+    const metrica = (usuarioId: string): MetricasAgente => {
+      let m = resultado.get(usuarioId);
+      if (!m) {
+        m = { ...METRICAS_AGENTE_VACIAS };
+        resultado.set(usuarioId, m);
+      }
+      return m;
+    };
+    const volcar = (filas: Fila[], campo: keyof MetricasAgente) => {
+      for (const f of filas) metrica(f.usuarioId)[campo] = Number(f.total);
+    };
+    volcar(jornadas, 'conteoJornadas');
+    volcar(aprobadas, 'jornadasAprobadas');
+    volcar(conEvidencia, 'jornadasConEvidencia');
+    volcar(formularios, 'formulariosEnviados');
+    volcar(rechazos, 'rechazosRevision');
+    volcar(beneficiarios, 'beneficiariosAtendidos');
+    volcar(veredas, 'veredasCubiertas');
+    return resultado;
   }
 
   private ordenarPorEficiencia(
@@ -572,67 +702,6 @@ export class EvaluacionesService {
       .addGroupBy('tecnico.nombre_completo');
     this.aplicarPeriodo(qb, anio, mes);
     return qb.getRawMany<{ usuarioId: string; nombreCompleto: string }>();
-  }
-
-  private async contarJornadasAprobadas(
-    usuarioId: string,
-    proyectoId: string,
-    anio: number,
-    mes: number,
-  ): Promise<number> {
-    const qb = this.jornadaRepository
-      .createQueryBuilder('jornada')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
-      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .andWhere('jornada.estado != :cancelada', {
-        cancelada: EstadoJornada.CANCELADA,
-      })
-      .andWhere('jornada.estado_funcional = :aprobado', {
-        aprobado: EstadoFuncional.APROBADO,
-      });
-    this.aplicarPeriodo(qb, anio, mes);
-    return qb.getCount();
-  }
-
-  private async contarJornadasConEvidencia(
-    usuarioId: string,
-    proyectoId: string,
-    anio: number,
-    mes: number,
-  ): Promise<number> {
-    const { desde, hasta } = rangoMes(anio, mes);
-    const raw = await this.evidenciaRepository
-      .createQueryBuilder('evidencia')
-      .innerJoin('evidencia.jornada', 'jornada')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
-      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .andWhere('jornada.estado != :cancelada', {
-        cancelada: EstadoJornada.CANCELADA,
-      })
-      .andWhere('evidencia.tipo = :tipo', { tipo: TipoEvidencia.FOTO })
-      .andWhere('jornada.fecha >= :inicioPeriodo', { inicioPeriodo: desde })
-      .andWhere('jornada.fecha <= :finPeriodo', { finPeriodo: hasta })
-      .select('COUNT(DISTINCT jornada.id)', 'total')
-      .getRawOne<{ total: string }>();
-    return Number(raw?.total ?? 0);
-  }
-
-  private async contarFormulariosUsuario(
-    usuarioId: string,
-    proyectoId: string,
-    anio: number,
-    mes: number,
-  ): Promise<number> {
-    const inicio = new Date(anio, mes - 1, 1);
-    const fin = new Date(anio, mes, 0, 23, 59, 59);
-    return this.envioRepository
-      .createQueryBuilder('envio')
-      .innerJoin('envio.jornada', 'jornada')
-      .where('envio.usuario_id = :usuarioId', { usuarioId })
-      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
-      .andWhere('envio.enviado_en >= :inicio', { inicio })
-      .andWhere('envio.enviado_en <= :fin', { fin })
-      .getCount();
   }
 
   /**
@@ -808,31 +877,33 @@ export class EvaluacionesService {
           ? { hasta: rangoMes(corte.anio, corte.mes).hasta }
           : undefined;
 
-    const ejecutado = await sumarEjecutadoPorMetaYUsuario(
-      this.jornadaRepository,
-      asig.meta.id,
-      asig.usuario.id,
-      opciones,
-    );
+    const [ejecutado, conteoJornadas, beneficiariosAtendidos] =
+      await Promise.all([
+        sumarEjecutadoPorMetaYUsuario(
+          this.jornadaRepository,
+          asig.meta.id,
+          asig.usuario.id,
+          opciones,
+        ),
+        this.contarJornadasMetaUsuario(
+          proyectoId,
+          asig.meta.id,
+          asig.usuario.id,
+          opciones,
+        ),
+        this.contarBeneficiariosMetaUsuario(
+          proyectoId,
+          asig.meta.id,
+          asig.usuario.id,
+          opciones,
+        ),
+      ]);
 
     const cantidadAsignada = Number(asig.cantidadAsignada);
     const cumplimientoPorcentaje =
       cantidadAsignada > 0
         ? Math.round((ejecutado / cantidadAsignada) * 1000) / 10
         : 0;
-
-    const conteoJornadas = await this.contarJornadasMetaUsuario(
-      proyectoId,
-      asig.meta.id,
-      asig.usuario.id,
-      opciones,
-    );
-    const beneficiariosAtendidos = await this.contarBeneficiariosMetaUsuario(
-      proyectoId,
-      asig.meta.id,
-      asig.usuario.id,
-      opciones,
-    );
 
     return {
       id: asig.id,

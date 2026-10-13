@@ -49,6 +49,11 @@ import {
   RespuestaPaginadaProyectosDto,
   RespuestaProyectoDto,
 } from './dto/respuesta-proyecto.dto';
+import {
+  FiltrosEquipoResumenDto,
+  MiembroEquipoResumenDto,
+  ResumenProyectoDto,
+} from './dto/resumen-proyecto.dto';
 import { ProyectosService } from './proyectos.service';
 import { parsearExcelBeneficiarios } from './utils/excel-beneficiarios';
 
@@ -134,6 +139,41 @@ export class ProyectosController {
       id,
     );
     return this.proyectosService.obtenerEstadisticas(id);
+  }
+
+  @Get(':id/resumen')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary: 'Agregados de la pestaña Resumen (sin listas de personas)',
+  })
+  @ApiResponse({ status: 200, type: ResumenProyectoDto })
+  async obtenerResumen(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<ResumenProyectoDto> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      id,
+    );
+    return this.proyectosService.obtenerResumen(id);
+  }
+
+  @Get(':id/resumen/equipo')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary: 'Personas del equipo para el detalle del Resumen (por rol)',
+  })
+  @ApiResponse({ status: 200, type: [MiembroEquipoResumenDto] })
+  async listarEquipoResumen(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() filtros: FiltrosEquipoResumenDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<MiembroEquipoResumenDto[]> {
+    await this.alcanceTerritorialService.assertConsultaCompletaProyecto(
+      usuario,
+      id,
+    );
+    return this.proyectosService.listarEquipoResumen(id, filtros);
   }
 
   @Get(':id')
