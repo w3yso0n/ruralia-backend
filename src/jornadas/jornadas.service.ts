@@ -216,7 +216,23 @@ export class JornadasService {
       dto.asociacionIds,
     );
 
-    const grupoJornadaId = tecnicoIds.length > 1 ? randomUUID() : null;
+    // Se crea una jornada independiente por cada beneficiario o asociación.
+    const asignaciones: {
+      beneficiarios: Beneficiario[];
+      asociaciones: Asociacion[];
+    }[] = [
+      ...participantes.beneficiarios.map((beneficiario) => ({
+        beneficiarios: [beneficiario],
+        asociaciones: [],
+      })),
+      ...participantes.asociaciones.map((asociacion) => ({
+        beneficiarios: [],
+        asociaciones: [asociacion],
+      })),
+    ];
+
+    const grupoJornadaId =
+      tecnicoIds.length * asignaciones.length > 1 ? randomUUID() : null;
     const tecnicosPorId = new Map(tecnicos.map((t) => [t.id, t]));
 
     const idsGuardados = await this.dataSource.transaction(async (manager) => {
@@ -224,35 +240,37 @@ export class JornadasService {
       const creadas: string[] = [];
 
       for (const tecnicoId of tecnicoIds) {
-        const tecnico = tecnicosPorId.get(tecnicoId)!;
-        const jornada = repo.create({
-          fecha: new Date(dto.fecha),
-          nombre: dto.nombre?.trim() ? dto.nombre.trim() : null,
-          observaciones: dto.observaciones,
-          latitud: dto.latitud,
-          longitud: dto.longitud,
-          tipo: tipoJornada,
-          requiereRevision: dto.requiereRevision ?? true,
-          proyecto: { id: dto.proyectoId },
-          meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
-          plantillaFormulario: plantilla
-            ? ({ id: plantilla.id } as PlantillaFormulario)
-            : null,
-          vereda: lugar.vereda,
-          municipio: lugar.municipio,
-          geocerca: lugar.geocerca,
-          tecnicoResponsable: { id: tecnicoId },
-          tecnicoResponsableNombre: tecnico.nombreCompleto,
-          equipo: [{ id: tecnicoId }],
-          jornadaActividades: lineas.map((linea) =>
-            manager.getRepository(JornadaActividad).create({ ...linea }),
-          ),
-          grupoJornadaId,
-          beneficiarios: participantes.beneficiarios,
-          asociaciones: participantes.asociaciones,
-        });
-        const guardada = await repo.save(jornada);
-        creadas.push(guardada.id);
+        for (const asignacion of asignaciones) {
+          const tecnico = tecnicosPorId.get(tecnicoId)!;
+          const jornada = repo.create({
+            fecha: new Date(dto.fecha),
+            nombre: dto.nombre?.trim() ? dto.nombre.trim() : null,
+            observaciones: dto.observaciones,
+            latitud: dto.latitud,
+            longitud: dto.longitud,
+            tipo: tipoJornada,
+            requiereRevision: dto.requiereRevision ?? true,
+            proyecto: { id: dto.proyectoId },
+            meta: dto.metaId ? ({ id: dto.metaId } as Meta) : null,
+            plantillaFormulario: plantilla
+              ? ({ id: plantilla.id } as PlantillaFormulario)
+              : null,
+            vereda: lugar.vereda,
+            municipio: lugar.municipio,
+            geocerca: lugar.geocerca,
+            tecnicoResponsable: { id: tecnicoId },
+            tecnicoResponsableNombre: tecnico.nombreCompleto,
+            equipo: [{ id: tecnicoId }],
+            jornadaActividades: lineas.map((linea) =>
+              manager.getRepository(JornadaActividad).create({ ...linea }),
+            ),
+            grupoJornadaId,
+            beneficiarios: asignacion.beneficiarios,
+            asociaciones: asignacion.asociaciones,
+          });
+          const guardada = await repo.save(jornada);
+          creadas.push(guardada.id);
+        }
       }
 
       return creadas;
@@ -628,6 +646,8 @@ export class JornadasService {
       .leftJoinAndSelect('proceso.subactividad', 'subactividad')
       .leftJoinAndSelect('subactividad.actividad', 'actividad')
       .leftJoinAndSelect('jornada.plantillaFormulario', 'plantillaFormulario')
+      .leftJoinAndSelect('jornada.beneficiarios', 'beneficiarios')
+      .leftJoinAndSelect('jornada.asociaciones', 'asociaciones')
       .where(
         '(jornada.tecnico_responsable_id = :usuarioId OR EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = jornada.id AND je.usuario_id = :usuarioId))',
         { usuarioId: usuario.id },
@@ -864,13 +884,14 @@ export class JornadasService {
         beneficiarioIds,
         asociacionIds,
       );
-      for (const objetivo of objetivos) {
-        if (dto.beneficiarioIds !== undefined) {
-          objetivo.beneficiarios = participantes.beneficiarios;
-        }
-        if (dto.asociacionIds !== undefined) {
-          objetivo.asociaciones = participantes.asociaciones;
-        }
+      // Cada jornada del grupo atiende a su propio beneficiario: la
+      // asignación solo se cambia en la jornada solicitada.
+      const objetivo = objetivos.find((o) => o.id === id)!;
+      if (dto.beneficiarioIds !== undefined) {
+        objetivo.beneficiarios = participantes.beneficiarios;
+      }
+      if (dto.asociacionIds !== undefined) {
+        objetivo.asociaciones = participantes.asociaciones;
       }
     }
 

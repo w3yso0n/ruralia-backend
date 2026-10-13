@@ -64,7 +64,9 @@ export class ArchivosService {
     const directorio = path.join(rutaBase, proyectoId, jornadaId);
     await fs.mkdir(directorio, { recursive: true });
 
-    const extension = path.extname(archivo.originalname) || this.extensionDesdeMime(archivo.mimetype);
+    const extension =
+      path.extname(archivo.originalname) ||
+      this.extensionDesdeMime(archivo.mimetype);
     const nombreArchivo = `${randomUUID()}${extension}`;
     const rutaCompleta = path.join(directorio, nombreArchivo);
     const urlRelativa = path
@@ -92,6 +94,7 @@ export class ArchivosService {
     archivo: Express.Multer.File,
     jornadaId: string,
     tipo?: TipoEvidencia,
+    idLocal?: string,
   ) {
     const jornada = await this.jornadaRepository.findOne({
       where: { id: jornadaId },
@@ -102,14 +105,26 @@ export class ArchivosService {
       throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
     }
 
-    if (
-      jornada.estadoFuncional === EstadoFuncional.APROBADO ||
-      jornada.estadoFuncional === EstadoFuncional.EN_REVISION
-    ) {
-      throw new BadRequestException(
-        'Esta jornada no admite nuevas evidencias en su estado actual',
-      );
+    // Reintento desde el teléfono de una evidencia que ya llegó: no se duplica.
+    if (idLocal) {
+      const existente = await this.evidenciaRepository.findOne({
+        where: { idLocal, jornada: { id: jornadaId } },
+      });
+      if (existente) {
+        return {
+          id: existente.id,
+          tipo: existente.tipo,
+          nombreArchivo: existente.nombreArchivo,
+          urlArchivo: existente.urlArchivo ?? null,
+          urlMiniatura: existente.urlMiniatura ?? null,
+          tipoMime: existente.tipoMime,
+          capturadoEn: existente.capturadoEn,
+          estado: existente.estado,
+        };
+      }
     }
+
+    this.assertJornadaAdmiteEvidencias(jornada);
 
     const evidencia = await this.evidenciaRepository.save(
       this.evidenciaRepository.create({
@@ -119,7 +134,9 @@ export class ArchivosService {
         nombreArchivo: archivo.originalname || 'evidencia',
         tipoMime: archivo.mimetype || 'application/octet-stream',
         capturadoEn: new Date(),
-        esOffline: false,
+        esOffline: Boolean(idLocal),
+        idLocal: idLocal ?? undefined,
+        sincronizadoEn: idLocal ? new Date() : undefined,
         jornada: { id: jornadaId } as Jornada,
       }),
     );
@@ -140,6 +157,51 @@ export class ArchivosService {
       capturadoEn: actual?.capturadoEn ?? evidencia.capturadoEn,
       estado: actual?.estado ?? evidencia.estado,
     };
+  }
+
+  async jornadaDeEvidencia(evidenciaId: string): Promise<string> {
+    const evidencia = await this.evidenciaRepository.findOne({
+      where: { id: evidenciaId },
+      relations: { jornada: true },
+    });
+    if (!evidencia) {
+      throw new NotFoundException(`Evidencia ${evidenciaId} no encontrada`);
+    }
+    return evidencia.jornada.id;
+  }
+
+  async eliminarEvidencia(evidenciaId: string): Promise<void> {
+    const evidencia = await this.evidenciaRepository.findOne({
+      where: { id: evidenciaId },
+      relations: { jornada: true },
+    });
+    if (!evidencia) {
+      throw new NotFoundException(`Evidencia ${evidenciaId} no encontrada`);
+    }
+    this.assertJornadaAdmiteEvidencias(evidencia.jornada);
+
+    const rutaBase =
+      this.configService.get<string>('RUTA_SUBIDAS') ||
+      path.join(process.cwd(), 'subidas');
+    const rutas = [evidencia.urlArchivo, evidencia.urlMiniatura]
+      .filter((url): url is string => Boolean(url))
+      .map((url) => path.join(rutaBase, url.replace(/^\/?subidas\//, '')));
+
+    await this.evidenciaRepository.remove(evidencia);
+    await Promise.all(
+      rutas.map((ruta) => fs.unlink(ruta).catch(() => undefined)),
+    );
+  }
+
+  private assertJornadaAdmiteEvidencias(jornada: Jornada): void {
+    if (
+      jornada.estadoFuncional === EstadoFuncional.APROBADO ||
+      jornada.estadoFuncional === EstadoFuncional.EN_REVISION
+    ) {
+      throw new BadRequestException(
+        'Esta jornada no admite cambios en sus evidencias en su estado actual',
+      );
+    }
   }
 
   private tipoDesdeMime(mime: string): TipoEvidencia {
