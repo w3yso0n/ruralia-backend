@@ -264,3 +264,26 @@ export class EstadisticasProyectoDto {
   @Expose()
   porcentajeAvanceIndicadores: number;
 }
+
+export class RespuestaPaginadaBeneficiariosProyectoDto {
+  @ApiProperty({ type: [RespuestaBeneficiarioResumenDto] })
+  @Expose()
+  @Type(() => RespuestaBeneficiarioResumenDto)
+  datos: RespuestaBeneficiarioResumenDto[];
+
+  @ApiProperty()
+  @Expose()
+  total: number;
+
+  @ApiProperty()
+  @Expose()
+  pagina: number;
+
+  @ApiProperty()
+  @Expose()
+  limite: number;
+
+  @ApiProperty()
+  @Expose()
+  totalPaginas: number;
+}

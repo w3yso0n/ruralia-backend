@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { ActividadesService } from '../actividades/actividades.service';
@@ -31,8 +32,10 @@ import { AsignarPersonalDto } from './dto/asignar-personal.dto';
 import { AsignarTerritoriosDto } from './dto/asignar-territorios.dto';
 import { CrearProyectoDto } from './dto/crear-proyecto.dto';
 import { FiltrosProyectoDto } from './dto/filtros-proyecto.dto';
+import { FiltrosBeneficiariosProyectoDto } from './dto/filtros-beneficiarios-proyecto.dto';
 import {
   EstadisticasProyectoDto,
+  RespuestaPaginadaBeneficiariosProyectoDto,
   RespuestaPaginadaProyectosDto,
   RespuestaProyectoDto,
 } from './dto/respuesta-proyecto.dto';
@@ -71,7 +74,7 @@ import {
   sqlCedulaIgual,
 } from './utils/excel-beneficiarios';
 import {
-  partirVinculosBeneficiarios,
+  mapearVinculoBeneficiario,
   resumenDeBeneficiario,
 } from './utils/mapear-vinculos-beneficiario';
 import { TipoDocumento } from '../beneficiarios/enums/tipo-documento.enum';
@@ -226,25 +229,14 @@ export class ProyectosService {
 
     const ids = filasPagina.map((p) => p.id);
 
-    const [proyectos, progresoPorProyecto] = await Promise.all([
+    const [proyectos, progresoPorProyecto, conteos] = await Promise.all([
       this.cargarProyectosConVinculos(ids),
       this.actividadesService.obtenerProgresoPorProyectos(ids),
+      this.contarBeneficiariosActivos(ids),
     ]);
 
     const datos = proyectos.map((proyecto) => {
       const progresoPorcentaje = progresoPorProyecto.get(proyecto.id) ?? 0;
-      const { activos, reemplazados } = partirVinculosBeneficiarios(
-        proyecto.proyectoBeneficiarios ?? [],
-      );
-      const principalBenef =
-        activos[0] ??
-        (proyecto.proyectoBeneficiarios?.find((pb) => pb.esPrincipal)
-          ?.beneficiario
-          ? resumenDeBeneficiario(
-              proyecto.proyectoBeneficiarios.find((pb) => pb.esPrincipal)!
-                .beneficiario,
-            )
-          : undefined);
       const principalAsoc = proyecto.proyectoAsociaciones?.find(
         (pa) => pa.esPrincipal,
       )?.asociacion;
@@ -260,11 +252,8 @@ export class ProyectosService {
         principalAsoc ?? proyecto.proyectoAsociaciones?.[0]?.asociacion;
 
       return aRespuestaProyecto(proyecto, {
-        conteoBeneficiarios: activos.length,
+        conteoBeneficiarios: conteos.get(proyecto.id) ?? 0,
         progresoPorcentaje,
-        beneficiarioPrincipal: principalBenef,
-        beneficiarios: activos,
-        beneficiariosReemplazados: reemplazados,
         asociacionPrincipal: asocMostrar
           ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
           : undefined,
@@ -284,7 +273,7 @@ export class ProyectosService {
 
     // Permisos, datos y avance en paralelo: cada consulta usa su propia
     // conexión, así el tiempo total es el de la más lenta y no la suma.
-    const [, proyectos, progresoPorProyecto] = await Promise.all([
+    const [, proyectos, progresoPorProyecto, conteos] = await Promise.all([
       usuario
         ? this.alcanceTerritorialService.assertProyectoVisible(usuario, id)
         : Promise.resolve(),
@@ -294,6 +283,9 @@ export class ProyectosService {
       vistaLimitada
         ? Promise.resolve(new Map<string, number>())
         : this.actividadesService.obtenerProgresoPorProyectos([id]),
+      vistaLimitada
+        ? Promise.resolve(new Map<string, number>())
+        : this.contarBeneficiariosActivos([id]),
     ]);
     const proyecto = proyectos[0];
 
@@ -304,9 +296,6 @@ export class ProyectosService {
     if (vistaLimitada) {
       return aVistaLimitadaProyecto(aRespuestaProyecto(proyecto, {}));
     }
-    const { activos, reemplazados } = partirVinculosBeneficiarios(
-      proyecto.proyectoBeneficiarios ?? [],
-    );
     const principalAsoc = proyecto.proyectoAsociaciones?.find(
       (pa) => pa.esPrincipal,
     )?.asociacion;
@@ -322,11 +311,8 @@ export class ProyectosService {
       principalAsoc ?? proyecto.proyectoAsociaciones?.[0]?.asociacion;
 
     return aRespuestaProyecto(proyecto, {
-      conteoBeneficiarios: activos.length,
+      conteoBeneficiarios: conteos.get(id) ?? 0,
       progresoPorcentaje: progresoPorProyecto.get(id) ?? 0,
-      beneficiarioPrincipal: activos[0],
-      beneficiarios: activos,
-      beneficiariosReemplazados: reemplazados,
       asociacionPrincipal: asocMostrar
         ? { id: asocMostrar.id, nombre: asocMostrar.nombre }
         : undefined,
@@ -337,9 +323,8 @@ export class ProyectosService {
 
   /**
    * Carga proyectos con sus vínculos usando una consulta independiente por
-   * relación, todas en paralelo. Un único JOIN con varias colecciones devuelve
-   * su producto cartesiano (p. ej. 1211 beneficiarios x 67 personas = 81 mil
-   * filas), y la estrategia 'query' de TypeORM las ejecuta en serie.
+   * relación, todas en paralelo. Los beneficiarios no se incluyen: el listado
+   * y el detalle solo necesitan el conteo, y la lista se pide paginada.
    * Devuelve los proyectos en el mismo orden que `ids`.
    */
   private async cargarProyectosConVinculos(
@@ -362,7 +347,6 @@ export class ProyectosService {
       conVeredas,
       conMunicipios,
       conActividades,
-      vinculosBenef,
       vinculosAsoc,
     ] = await Promise.all([
       this.proyectoRepository.find({
@@ -381,16 +365,6 @@ export class ProyectosService {
       opciones.actividades
         ? conColeccion('actividades')
         : Promise.resolve([] as Proyecto[]),
-      this.proyectoBeneficiarioRepository
-        .createQueryBuilder('pb')
-        .leftJoin('pb.proyecto', 'proyecto')
-        .addSelect('proyecto.id')
-        .leftJoinAndSelect('pb.beneficiario', 'beneficiario')
-        .leftJoinAndSelect('pb.reemplazaA', 'reemplazaA')
-        .leftJoinAndSelect('pb.reemplazadoPor', 'reemplazadoPor')
-        .where('pb.proyecto_id IN (:...ids)', { ids })
-        .orderBy('pb.creadoEn', 'ASC')
-        .getMany(),
       this.proyectoAsociacionRepository
         .createQueryBuilder('pa')
         .leftJoin('pa.proyecto', 'proyecto')
@@ -425,14 +399,35 @@ export class ProyectosService {
       const destino = porId.get(p.id);
       if (destino) destino.actividades = p.actividades ?? [];
     }
-    for (const pb of vinculosBenef) {
-      porId.get(pb.proyecto?.id)?.proyectoBeneficiarios.push(pb);
-    }
     for (const pa of vinculosAsoc) {
       porId.get(pa.proyecto?.id)?.proyectoAsociaciones.push(pa);
     }
 
     return ids.map((id) => porId.get(id)).filter((p): p is Proyecto => !!p);
+  }
+
+  /** Conteo de beneficiarios activos. No carga las personas. */
+  private async contarBeneficiariosActivos(
+    ids: string[],
+  ): Promise<Map<string, number>> {
+    if (!ids.length) return new Map();
+    const filas = await this.proyectoBeneficiarioRepository
+      .createQueryBuilder('pb')
+      .select('pb.proyecto_id', 'proyecto_id')
+      .addSelect('COUNT(*)', 'total')
+      .where('pb.proyecto_id IN (:...ids)', { ids })
+      .andWhere('pb.estaActivoEnProyecto = true')
+      .groupBy('pb.proyecto_id')
+      .getRawMany<Record<string, unknown>>();
+    const conteos = new Map<string, number>();
+    for (const fila of filas) {
+      const proyectoId = String(
+        fila.proyecto_id ?? fila.proyectoId ?? fila.pb_proyecto_id ?? '',
+      );
+      if (!proyectoId) continue;
+      conteos.set(proyectoId, Number(fila.total ?? 0));
+    }
+    return conteos;
   }
 
   async actualizar(
@@ -524,16 +519,21 @@ export class ProyectosService {
       );
     }
 
-    const detalle = await this.proyectoRepository.findOne({
-      where: { id },
-      relations: {
-        veredas: true,
-        municipios: true,
-        personal: true,
-        proyectoBeneficiarios: true,
-        proyectoAsociaciones: true,
-      },
-    });
+    const [detalle, beneficiariosActivos] = await Promise.all([
+      this.proyectoRepository.findOne({
+        where: { id },
+        relations: {
+          veredas: true,
+          municipios: true,
+          personal: true,
+          proyectoAsociaciones: true,
+        },
+      }),
+      this.proyectoBeneficiarioRepository.countBy({
+        proyecto: { id },
+        estaActivoEnProyecto: true,
+      }),
+    ]);
 
     if (!detalle) {
       throw new NotFoundException(`Proyecto con id ${id} no encontrado`);
@@ -552,8 +552,7 @@ export class ProyectosService {
     }
 
     const tieneContraparte =
-      (detalle.proyectoBeneficiarios?.some((pb) => pb.estaActivoEnProyecto) ??
-        false) ||
+      beneficiariosActivos > 0 ||
       (detalle.proyectoAsociaciones?.length ?? 0) > 0;
 
     if (!tieneContraparte) {
@@ -687,6 +686,149 @@ export class ProyectosService {
       await this.proyectoBeneficiarioRepository.save(vinculo);
     }
 
+    return this.obtenerUno(proyectoId);
+  }
+
+  async listarBeneficiariosDelProyecto(
+    proyectoId: string,
+    filtros: FiltrosBeneficiariosProyectoDto,
+    usuario?: Usuario,
+  ): Promise<RespuestaPaginadaBeneficiariosProyectoDto> {
+    if (usuario) {
+      await this.alcanceTerritorialService.assertProyectoVisible(
+        usuario,
+        proyectoId,
+      );
+    }
+    const pagina = Math.max(filtros.pagina ?? 1, 1);
+    const limite = Math.min(Math.max(filtros.limite ?? 20, 1), 50);
+    const qb = this.proyectoBeneficiarioRepository
+      .createQueryBuilder('pb')
+      .innerJoinAndSelect('pb.beneficiario', 'beneficiario')
+      .leftJoinAndSelect('pb.reemplazaA', 'reemplazaA')
+      .leftJoinAndSelect('pb.reemplazadoPor', 'reemplazadoPor')
+      .where('pb.proyecto_id = :proyectoId', { proyectoId });
+
+    if (filtros.estado === 'reemplazados') {
+      qb.andWhere('pb.estaActivoEnProyecto = false');
+    } else {
+      qb.andWhere('pb.estaActivoEnProyecto = true');
+    }
+
+    const termino = filtros.busqueda?.trim();
+    if (termino) {
+      qb.andWhere(
+        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda)',
+        { busqueda: `%${termino}%` },
+      );
+    }
+
+    qb.orderBy('beneficiario.apellidos', 'ASC').addOrderBy(
+      'beneficiario.nombres',
+      'ASC',
+    );
+    qb.skip((pagina - 1) * limite).take(limite);
+
+    const [filas, total] = await qb.getManyAndCount();
+    const datos = filas.flatMap((vinculo) => {
+      const resumen = mapearVinculoBeneficiario(vinculo);
+      return resumen ? [resumen] : [];
+    });
+
+    return plainToInstance(
+      RespuestaPaginadaBeneficiariosProyectoDto,
+      {
+        datos,
+        total,
+        pagina,
+        limite,
+        totalPaginas: Math.ceil(total / limite) || 0,
+      },
+      { excludeExtraneousValues: true },
+    );
+  }
+
+  /** Vincula personas sin dar de baja a las que ya están en el proyecto. */
+  async vincularBeneficiarios(
+    proyectoId: string,
+    dto: AsignarBeneficiariosProyectoDto,
+    usuarioActual: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    const proyecto = await this.buscarProyectoConPersonal(proyectoId);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
+
+    const ids = [
+      ...new Set(dto.beneficiarios.map((item) => item.beneficiarioId)),
+    ];
+    if (!ids.length) {
+      throw new BadRequestException('Indica al menos un beneficiario');
+    }
+    const beneficiarios = await this.beneficiarioRepository.findBy({
+      id: In(ids),
+      estaActivo: true,
+    });
+    if (beneficiarios.length !== ids.length) {
+      throw new NotFoundException('Uno o más beneficiarios no existen');
+    }
+
+    const existentes = await this.proyectoBeneficiarioRepository.find({
+      where: { proyecto: { id: proyectoId }, beneficiario: { id: In(ids) } },
+      relations: { beneficiario: true },
+    });
+    const porBeneficiario = new Map(
+      existentes.map((v) => [v.beneficiario.id, v]),
+    );
+
+    for (const id of ids) {
+      const actual = porBeneficiario.get(id);
+      if (!actual) {
+        await this.proyectoBeneficiarioRepository.save(
+          this.proyectoBeneficiarioRepository.create({
+            proyecto: { id: proyectoId },
+            beneficiario: { id },
+            esPrincipal: false,
+            estaActivoEnProyecto: true,
+          }),
+        );
+        continue;
+      }
+      if (actual.estaActivoEnProyecto) {
+        if (ids.length === 1) {
+          throw new ConflictException(
+            'Esa persona ya está vinculada al proyecto',
+          );
+        }
+        continue;
+      }
+      if (actual.reemplazadoPor) continue;
+      actual.estaActivoEnProyecto = true;
+      await this.proyectoBeneficiarioRepository.save(actual);
+    }
+
+    return this.obtenerUno(proyectoId);
+  }
+
+  async desvincularBeneficiario(
+    proyectoId: string,
+    beneficiarioId: string,
+    usuarioActual: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    const proyecto = await this.buscarProyectoConPersonal(proyectoId);
+    await this.verificarPermisoGestion(proyecto, usuarioActual);
+
+    const vinculo = await this.proyectoBeneficiarioRepository.findOne({
+      where: {
+        proyecto: { id: proyectoId },
+        beneficiario: { id: beneficiarioId },
+      },
+    });
+    if (!vinculo?.estaActivoEnProyecto) {
+      throw new NotFoundException(
+        'Ese beneficiario no está activo en el proyecto',
+      );
+    }
+    vinculo.estaActivoEnProyecto = false;
+    await this.proyectoBeneficiarioRepository.save(vinculo);
     return this.obtenerUno(proyectoId);
   }
 

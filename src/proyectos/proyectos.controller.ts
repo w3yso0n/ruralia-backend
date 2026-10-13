@@ -43,9 +43,11 @@ import {
   ReemplazarBeneficiarioProyectoDto,
 } from './dto/carga-beneficiarios.dto';
 import { CrearProyectoDto } from './dto/crear-proyecto.dto';
+import { FiltrosBeneficiariosProyectoDto } from './dto/filtros-beneficiarios-proyecto.dto';
 import { FiltrosProyectoDto } from './dto/filtros-proyecto.dto';
 import {
   EstadisticasProyectoDto,
+  RespuestaPaginadaBeneficiariosProyectoDto,
   RespuestaPaginadaProyectosDto,
   RespuestaProyectoDto,
 } from './dto/respuesta-proyecto.dto';
@@ -254,6 +256,58 @@ export class ProyectosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaProyectoDto> {
     return this.proyectosService.asignarPersonal(id, dto, usuario);
+  }
+
+  @Get(':id/beneficiarios')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary:
+      'Beneficiarios del proyecto, paginados. No forma parte del detalle del proyecto.',
+  })
+  @ApiResponse({ status: 200, type: RespuestaPaginadaBeneficiariosProyectoDto })
+  listarBeneficiarios(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() filtros: FiltrosBeneficiariosProyectoDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaPaginadaBeneficiariosProyectoDto> {
+    return this.proyectosService.listarBeneficiariosDelProyecto(
+      id,
+      filtros,
+      usuario,
+    );
+  }
+
+  @Post(':id/beneficiarios/vincular')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @ApiOperation({
+    summary:
+      'Vincula beneficiarios sin quitar a los que ya están en el proyecto',
+  })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  vincularBeneficiarios(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AsignarBeneficiariosProyectoDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.vincularBeneficiarios(id, dto, usuario);
+  }
+
+  @Delete(':id/beneficiarios/:beneficiarioId')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @ApiOperation({
+    summary: 'Quita a un beneficiario del cupo activo del proyecto',
+  })
+  @ApiResponse({ status: 200, type: RespuestaProyectoDto })
+  desvincularBeneficiario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('beneficiarioId', ParseUUIDPipe) beneficiarioId: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaProyectoDto> {
+    return this.proyectosService.desvincularBeneficiario(
+      id,
+      beneficiarioId,
+      usuario,
+    );
   }
 
   @Post(':id/beneficiarios')
