@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -14,6 +15,7 @@ import { PlantillaFormulario } from './plantilla-formulario.entity';
 import { RespuestaFormulario } from './respuesta-formulario.entity';
 
 @Entity('envios_formulario')
+@Index('IDX_envios_formulario_jornada_id', ['jornada'])
 @Unique('UQ_envio_dispositivo_id_local', ['dispositivoId', 'idLocal'])
 export class EnvioFormulario {
   @PrimaryGeneratedColumn('uuid')
@@ -49,14 +51,15 @@ export class EnvioFormulario {
   @JoinColumn({ name: 'usuario_id' })
   usuario: Usuario;
 
-  @ManyToOne(
-    () => PlantillaFormulario,
-    (plantilla) => plantilla.envios,
-    { nullable: false },
-  )
+  @ManyToOne(() => PlantillaFormulario, (plantilla) => plantilla.envios, {
+    nullable: false,
+  })
   @JoinColumn({ name: 'plantilla_formulario_id' })
   plantillaFormulario: PlantillaFormulario;
 
-  @OneToMany(() => RespuestaFormulario, (respuesta) => respuesta.envioFormulario)
+  @OneToMany(
+    () => RespuestaFormulario,
+    (respuesta) => respuesta.envioFormulario,
+  )
   respuestas: RespuestaFormulario[];
 }

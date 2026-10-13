@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -12,6 +13,7 @@ import { Actividad } from './actividad.entity';
 import { Proceso } from './proceso.entity';
 
 @Entity('subactividades')
+@Index('IDX_subactividades_actividad_id', ['actividad'])
 export class Subactividad {
   @PrimaryGeneratedColumn('uuid')
   id: string;

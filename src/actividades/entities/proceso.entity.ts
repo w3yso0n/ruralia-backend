@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToMany,
   ManyToOne,
@@ -12,6 +13,7 @@ import { Subactividad } from './subactividad.entity';
 import { Meta } from './meta.entity';
 
 @Entity('procesos')
+@Index('IDX_procesos_subactividad_id', ['subactividad'])
 export class Proceso {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -37,9 +39,6 @@ export class Proceso {
   @OneToMany(() => Meta, (meta) => meta.proceso)
   metas: Meta[];
 
-  @ManyToMany(
-    () => PlantillaFormulario,
-    (plantilla) => plantilla.procesos,
-  )
+  @ManyToMany(() => PlantillaFormulario, (plantilla) => plantilla.procesos)
   plantillasFormulario: PlantillaFormulario[];
 }

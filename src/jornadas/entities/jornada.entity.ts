@@ -27,6 +27,9 @@ import { JornadaActividad } from './jornada-actividad.entity';
 import { JornadaAsistente } from './jornada-asistente.entity';
 
 @Entity('jornadas')
+@Index('IDX_jornadas_proyecto_fecha', ['proyecto', 'fecha'])
+@Index('IDX_jornadas_meta_id', ['meta'])
+@Index('IDX_jornadas_tecnico_responsable_id', ['tecnicoResponsable'])
 @Unique('UQ_jornada_dispositivo_id_local', ['dispositivoId', 'idLocal'])
 export class Jornada {
   @PrimaryGeneratedColumn('uuid')

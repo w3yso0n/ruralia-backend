@@ -449,6 +449,7 @@ export class JornadasService {
     const conVinculos = await this.jornadaRepository.find({
       where: { id: In(jornadas.map((j) => j.id)) },
       relations: { beneficiarios: true, asociaciones: true },
+      relationLoadStrategy: 'query',
     });
     const porId = new Map(conVinculos.map((j) => [j.id, j]));
     for (const jornada of jornadas) {
@@ -532,23 +533,13 @@ export class JornadasService {
     const limite = filtros.limite ?? 10;
     const skip = (pagina - 1) * limite;
 
+    // Paginación y conteo sobre la tabla de jornadas sin JOINs (los filtros
+    // solo usan columnas propias o EXISTS); el detalle se carga después solo
+    // para los ids de la página.
     const query = this.jornadaRepository
       .createQueryBuilder('jornada')
-      .leftJoinAndSelect('jornada.proyecto', 'proyecto')
-      .leftJoinAndSelect('jornada.vereda', 'vereda')
-      .leftJoinAndSelect('jornada.municipio', 'municipio')
-      .leftJoinAndSelect('jornada.geocerca', 'geocerca')
-      .leftJoinAndSelect('jornada.meta', 'meta')
-      .leftJoinAndSelect('meta.proceso', 'proceso')
-      .leftJoinAndSelect('proceso.subactividad', 'subactividad')
-      .leftJoinAndSelect('subactividad.actividad', 'actividad')
-      .leftJoinAndSelect('jornada.jornadaActividades', 'ja')
-      .leftJoinAndSelect('ja.actividad', 'actividadJa')
-      .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
-      .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
-      .leftJoinAndSelect('jornada.plantillaFormulario', 'plantillaFormulario')
-      .orderBy('jornada.fecha', 'DESC')
-      .addOrderBy('ja.orden', 'ASC');
+      .select(['jornada.id', 'jornada.fecha'])
+      .orderBy('jornada.fecha', 'DESC');
 
     if (filtros.proyectoId) {
       query.andWhere('jornada.proyecto_id = :proyectoId', {
@@ -606,10 +597,39 @@ export class JornadasService {
       }
     }
 
-    const [jornadas, total] = await query
+    const [filasPagina, total] = await query
       .skip(skip)
       .take(limite)
       .getManyAndCount();
+    const ids = filasPagina.map((j) => j.id);
+
+    const cargadas = ids.length
+      ? await this.jornadaRepository
+          .createQueryBuilder('jornada')
+          .leftJoinAndSelect('jornada.proyecto', 'proyecto')
+          .leftJoinAndSelect('jornada.vereda', 'vereda')
+          .leftJoinAndSelect('jornada.municipio', 'municipio')
+          .leftJoinAndSelect('jornada.geocerca', 'geocerca')
+          .leftJoinAndSelect('jornada.meta', 'meta')
+          .leftJoinAndSelect('meta.proceso', 'proceso')
+          .leftJoinAndSelect('proceso.subactividad', 'subactividad')
+          .leftJoinAndSelect('subactividad.actividad', 'actividad')
+          .leftJoinAndSelect('jornada.jornadaActividades', 'ja')
+          .leftJoinAndSelect('ja.actividad', 'actividadJa')
+          .leftJoinAndSelect('ja.subactividad', 'subactividadJa')
+          .leftJoinAndSelect('jornada.tecnicoResponsable', 'tecnico')
+          .leftJoinAndSelect(
+            'jornada.plantillaFormulario',
+            'plantillaFormulario',
+          )
+          .where('jornada.id IN (:...ids)', { ids })
+          .addOrderBy('ja.orden', 'ASC')
+          .getMany()
+      : [];
+    const porId = new Map(cargadas.map((j) => [j.id, j]));
+    const jornadas = ids
+      .map((id) => porId.get(id))
+      .filter((j): j is Jornada => !!j);
     await this.adjuntarParticipantes(jornadas);
     const hermanosPorGrupo = await this.mapearHermanosGrupo(jornadas);
     const datos = jornadas.map((j) =>

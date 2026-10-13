@@ -130,3 +130,31 @@ export async function sumarEjecutadoPorProyecto(
   }
   return mapa;
 }
+
+/** Igual que sumarEjecutadoPorProyecto, para varios proyectos en una sola consulta. */
+export async function sumarEjecutadoPorProyectos(
+  jornadaRepository: Repository<Jornada>,
+  proyectoIds: string[],
+): Promise<Map<string, number>> {
+  const mapa = new Map<string, number>();
+  if (!proyectoIds.length) return mapa;
+
+  const filas = await jornadaRepository
+    .createQueryBuilder('jornada')
+    .select('jornada.meta_id', 'metaId')
+    .addSelect(SQL_SUMA_EJECUTADO, 'total')
+    .where('jornada.proyecto_id IN (:...proyectoIds)', { proyectoIds })
+    .andWhere('jornada.estado != :estadoCancelada', {
+      estadoCancelada: EstadoJornada.CANCELADA,
+    })
+    .andWhere('jornada.meta_id IS NOT NULL')
+    .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
+    .setParameter('estadoAprobado', EstadoFuncional.APROBADO)
+    .groupBy('jornada.meta_id')
+    .getRawMany<{ metaId: string; total: string }>();
+
+  for (const fila of filas) {
+    mapa.set(fila.metaId, Number(fila.total));
+  }
+  return mapa;
+}
