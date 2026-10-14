@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
@@ -181,6 +182,16 @@ export class ProcesosService {
       throw new BadRequestException('El mes debe estar entre 1 y 12');
     }
 
+    const mensajeDuplicado = `Ya hay una cantidad planeada para ${dto.mes}/${dto.anio} en esta meta. Quita ese mes o elige otro.`;
+
+    // Cubierto por el índice único (meta_id, anio, mes).
+    const yaExiste = await this.metaPeriodoRepository.exists({
+      where: { meta: { id: metaId }, anio: dto.anio, mes: dto.mes },
+    });
+    if (yaExiste) {
+      throw new ConflictException(mensajeDuplicado);
+    }
+
     const periodo = this.metaPeriodoRepository.create({
       meta: { id: metaId },
       anio: dto.anio,
@@ -188,8 +199,19 @@ export class ProcesosService {
       cantidadPlaneada: dto.cantidadPlaneada,
     });
 
-    const guardado = await this.metaPeriodoRepository.save(periodo);
-    return this.periodoARespuesta(guardado, 0);
+    try {
+      const guardado = await this.metaPeriodoRepository.save(periodo);
+      return this.periodoARespuesta(guardado, 0);
+    } catch (err) {
+      // Dos altas simultáneas del mismo mes: la segunda choca con el índice único.
+      if (
+        err instanceof QueryFailedError &&
+        (err.driverError as { code?: string } | undefined)?.code === '23505'
+      ) {
+        throw new ConflictException(mensajeDuplicado);
+      }
+      throw err;
+    }
   }
 
   async actualizarMetaPeriodo(
