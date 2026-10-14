@@ -1001,7 +1001,13 @@ export class JornadasService {
 
     if (!forzar) {
       for (const objetivo of objetivos) {
-        const [envios, evidencias, documentos] = await Promise.all([
+        const [
+          envios,
+          evidencias,
+          documentos,
+          documentosExternos,
+          registros,
+        ] = await Promise.all([
           this.envioRepository.count({
             where: { jornada: { id: objetivo.id } },
           }),
@@ -1012,13 +1018,31 @@ export class JornadasService {
             `SELECT COUNT(*)::text AS count FROM documents WHERE jornada_id = $1`,
             [objetivo.id],
           ),
+          this.dataSource.query<{ count: string }[]>(
+            `SELECT COUNT(*)::text AS count FROM documentos_externos WHERE jornada_id = $1`,
+            [objetivo.id],
+          ),
+          this.dataSource.query<{ count: string }[]>(
+            `SELECT COUNT(*)::text AS count FROM registros_indicador WHERE jornada_id = $1`,
+            [objetivo.id],
+          ),
         ]);
 
         const totalDocumentos = Number(documentos[0]?.count ?? 0);
+        const totalDocumentosExternos = Number(
+          documentosExternos[0]?.count ?? 0,
+        );
+        const totalRegistros = Number(registros[0]?.count ?? 0);
 
-        if (envios > 0 || evidencias > 0 || totalDocumentos > 0) {
+        if (
+          envios > 0 ||
+          evidencias > 0 ||
+          totalDocumentos > 0 ||
+          totalDocumentosExternos > 0 ||
+          totalRegistros > 0
+        ) {
           throw new BadRequestException(
-            'No se puede eliminar una jornada con formularios, evidencias o documentos de revisión. Confirma el borrado forzado para continuar.',
+            'No se puede eliminar una jornada con formularios, evidencias, documentos o registros de indicadores. Confirma el borrado forzado para continuar.',
           );
         }
       }
@@ -1090,6 +1114,14 @@ export class JornadasService {
       );
       await manager.query(
         `DELETE FROM documents WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM documentos_externos WHERE jornada_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await manager.query(
+        `DELETE FROM registros_indicador WHERE jornada_id = ANY($1::uuid[])`,
         [ids],
       );
 
