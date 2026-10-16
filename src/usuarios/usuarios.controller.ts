@@ -51,8 +51,9 @@ export class UsuariosController {
   @ApiResponse({ status: 200, type: RespuestaPaginadaUsuariosDto })
   listar(
     @Query() filtros: FiltrosUsuarioDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaPaginadaUsuariosDto> {
-    return this.usuariosService.listar(filtros);
+    return this.usuariosService.listar(filtros, usuario);
   }
 
   @Get(':id')
@@ -61,8 +62,9 @@ export class UsuariosController {
   @ApiResponse({ status: 200, type: RespuestaUsuarioDto })
   obtenerUno(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaUsuarioDto> {
-    return this.usuariosService.obtenerUno(id);
+    return this.usuariosService.obtenerUno(id, usuario);
   }
 
   @Get(':id/alcance')
@@ -88,8 +90,11 @@ export class UsuariosController {
   @RequierePermisos('usuarios.ver')
   @ApiOperation({ summary: 'Proyectos donde el usuario está asignado' })
   @ApiResponse({ status: 200, type: [ProyectoAsignadoUsuarioDto] })
-  listarProyectos(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usuariosService.listarProyectosAsignados(id);
+  listarProyectos(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    return this.usuariosService.listarProyectosAsignados(id, usuario);
   }
 
   @Put(':id/proyectos')
@@ -101,10 +106,12 @@ export class UsuariosController {
   reemplazarProyectos(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReemplazarProyectosUsuarioDto,
+    @UsuarioActual() usuario: Usuario,
   ) {
     return this.usuariosService.reemplazarProyectosAsignados(
       id,
       dto.proyectoIds,
+      usuario,
     );
   }
 
@@ -112,8 +119,11 @@ export class UsuariosController {
   @RequierePermisos('usuarios.crear')
   @ApiOperation({ summary: 'Crear un usuario (Firebase + base de datos)' })
   @ApiResponse({ status: 201, type: RespuestaUsuarioDto })
-  crear(@Body() dto: CrearUsuarioDto): Promise<RespuestaUsuarioDto> {
-    return this.usuariosService.crear(dto);
+  crear(
+    @Body() dto: CrearUsuarioDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaUsuarioDto> {
+    return this.usuariosService.crear(dto, usuario);
   }
 
   @Patch(':id')
@@ -149,8 +159,9 @@ export class UsuariosController {
   @ApiResponse({ status: 201, type: RespuestaUsuarioDto })
   reactivar(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaUsuarioDto> {
-    return this.usuariosService.reactivar(id);
+    return this.usuariosService.reactivar(id, usuario);
   }
 
   @Delete(':id')

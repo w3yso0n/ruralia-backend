@@ -10,7 +10,10 @@ import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { AprobacionesController } from './aprobaciones.controller';
 import { AprobacionesService } from './aprobaciones.service';
+import { CadenaRevisionService } from './cadena-revision.service';
 import { Approval } from './entities/approval.entity';
+import { NivelAprobacionProyecto } from './entities/nivel-aprobacion-proyecto.entity';
+import { PasoRevisionJornada } from './entities/paso-revision-jornada.entity';
 import { Rejection } from './entities/rejection.entity';
 
 @Module({
@@ -18,6 +21,8 @@ import { Rejection } from './entities/rejection.entity';
     TypeOrmModule.forFeature([
       Approval,
       Rejection,
+      PasoRevisionJornada,
+      NivelAprobacionProyecto,
       Jornada,
       Evidencia,
       Documento,
@@ -29,7 +34,7 @@ import { Rejection } from './entities/rejection.entity';
     forwardRef(() => DocumentosModule),
   ],
   controllers: [AprobacionesController],
-  providers: [AprobacionesService],
+  providers: [AprobacionesService, CadenaRevisionService],
   exports: [AprobacionesService],
 })
 export class AprobacionesModule {}

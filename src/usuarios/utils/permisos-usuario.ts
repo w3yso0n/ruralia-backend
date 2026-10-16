@@ -43,6 +43,10 @@ export function usuarioTieneRol(usuario: Usuario, nombre: string): boolean {
   return (usuario.roles ?? []).some((rol) => rol.nombre === nombre);
 }
 
+export function usuarioEsCuantiva(usuario: Usuario): boolean {
+  return usuarioTieneRol(usuario, 'CUANTIVA');
+}
+
 /**
  * Nivel de acceso más amplio entre los roles activos del usuario.
  * Sin roles activos se trata como el más restrictivo.

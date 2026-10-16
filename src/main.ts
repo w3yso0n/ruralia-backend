@@ -45,7 +45,11 @@ async function bootstrap() {
   const colaModule = await ColaModule.forRoot();
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register(colaModule),
+    { bodyParser: false },
   );
+  // Las fotos de formulario viajan como data URL dentro del JSON.
+  app.useBodyParser('json', { limit: '20mb' });
+  app.useBodyParser('urlencoded', { limit: '20mb', extended: true });
 
   app.enableCors({
     origin: (origin, callback) => {

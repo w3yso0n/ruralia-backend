@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { AccionAuditoria } from '../common/workflow/accion-auditoria.enum';
 import { EntidadRevisable } from '../common/workflow/entidad-revisable.enum';
 import { EstadoFuncional } from '../common/workflow/estado-funcional.enum';
@@ -33,6 +33,7 @@ import {
   usuarioTieneAccesoTotal,
   usuarioTieneAlgunPermiso,
 } from '../usuarios/utils/permisos-usuario';
+import { CadenaRevisionService } from './cadena-revision.service';
 import {
   AprobarDto,
   FiltrosBandejaDto,
@@ -40,7 +41,10 @@ import {
   ReenviarRevisionDto,
 } from './dto/aprobaciones.dto';
 import { Approval } from './entities/approval.entity';
+import { PasoRevisionJornada } from './entities/paso-revision-jornada.entity';
 import { EstadoRechazo, Rejection } from './entities/rejection.entity';
+import { EstadoPasoRevision } from './enums/estado-paso-revision.enum';
+import { ModoRevision } from './enums/modo-revision.enum';
 
 const ROLES_APROBADORES: RolSistema[] = [
   RolSistema.COORDINADOR_ZONA,
@@ -68,6 +72,8 @@ export class AprobacionesService {
     private readonly documentosService: DocumentosService,
     private readonly cronologiaService: CronologiaService,
     private readonly alcanceTerritorialService: AlcanceTerritorialService,
+    private readonly cadena: CadenaRevisionService,
+    private readonly dataSource: DataSource,
   ) {}
 
   private nombresRol(usuario: Usuario): string[] {
@@ -133,18 +139,32 @@ export class AprobacionesService {
       );
     }
 
-    const anterior = jornada.estadoFuncional;
-    jornada.estadoFuncional = transicionarEstado(
-      anterior,
-      EstadoFuncional.EN_REVISION,
-      { permitirAtajosOnline: true },
-    );
-    await this.jornadaRepo.save(jornada);
-
     const { documento, version } =
       await this.documentosService.generarOVersionar(jornadaId, usuario, {
         changeReason: notas,
       });
+
+    const anterior = await this.dataSource.transaction(async (manager) => {
+      const bloqueada = await this.cadena.bloquearJornada(manager, jornadaId);
+      const desde = bloqueada.estadoFuncional;
+      if (desde !== EstadoFuncional.EN_REVISION) {
+        bloqueada.revisionContenido = (bloqueada.revisionContenido ?? 0) + 1;
+        await this.cadena.capturarPasos(
+          manager,
+          bloqueada,
+          bloqueada.revisionContenido,
+        );
+        bloqueada.estadoFuncional = transicionarEstado(
+          desde,
+          EstadoFuncional.EN_REVISION,
+          { permitirAtajosOnline: true },
+        );
+        await manager.save(Jornada, bloqueada);
+      }
+      jornada.estadoFuncional = bloqueada.estadoFuncional;
+      jornada.revisionContenido = bloqueada.revisionContenido;
+      return desde;
+    });
 
     documento.estadoFuncional = EstadoFuncional.EN_REVISION;
     await this.documentoRepo.save(documento);
@@ -318,46 +338,72 @@ export class AprobacionesService {
       );
     }
 
-    if (jornada.estadoFuncional === EstadoFuncional.RECHAZADO) {
-      jornada.estadoFuncional = transicionarEstado(
-        EstadoFuncional.RECHAZADO,
-        EstadoFuncional.EN_CORRECCION,
-      );
-      await this.jornadaRepo.save(jornada);
-    }
-
     const { documento, version } =
       await this.documentosService.generarOVersionar(jornadaId, usuario, {
         changeReason: dto.changeReason,
         forzarNuevaVersion: true,
       });
 
-    const anterior = jornada.estadoFuncional;
-    jornada.estadoFuncional = transicionarEstado(
-      EstadoFuncional.EN_CORRECCION,
-      EstadoFuncional.EN_REVISION,
-    );
-    await this.jornadaRepo.save(jornada);
+    const anterior = await this.dataSource.transaction(async (manager) => {
+      const bloqueada = await this.cadena.bloquearJornada(manager, jornadaId);
+      if (
+        bloqueada.estadoFuncional !== EstadoFuncional.RECHAZADO &&
+        bloqueada.estadoFuncional !== EstadoFuncional.EN_CORRECCION
+      ) {
+        throw new BadRequestException(
+          'La jornada ya no está rechazada ni en corrección',
+        );
+      }
+      const desde = bloqueada.estadoFuncional;
+      if (bloqueada.estadoFuncional === EstadoFuncional.RECHAZADO) {
+        bloqueada.estadoFuncional = transicionarEstado(
+          EstadoFuncional.RECHAZADO,
+          EstadoFuncional.EN_CORRECCION,
+        );
+      }
+      const nivel = await this.cadena.nivelRechazoAbierto(manager, jornadaId);
+      bloqueada.revisionContenido = (bloqueada.revisionContenido ?? 0) + 1;
+      if (
+        (await this.cadena.modo(manager, jornadaId)) === ModoRevision.NIVELES &&
+        nivel != null
+      ) {
+        await this.cadena.reiniciarDesdeNivel(
+          manager,
+          jornadaId,
+          nivel,
+          bloqueada.revisionContenido,
+        );
+      }
+      bloqueada.estadoFuncional = transicionarEstado(
+        EstadoFuncional.EN_CORRECCION,
+        EstadoFuncional.EN_REVISION,
+      );
+      await manager.save(Jornada, bloqueada);
+
+      const abiertos = await manager.find(Rejection, {
+        where: {
+          jornadaId,
+          status: EstadoRechazo.OPEN,
+          entityType: In([
+            EntidadRevisable.JORNADA,
+            EntidadRevisable.DOCUMENTO,
+          ]),
+        },
+      });
+      for (const r of abiertos) {
+        r.status = EstadoRechazo.RESOLVED;
+        r.resolvedAt = new Date();
+        r.resolvedBy = usuario.id;
+        r.resolutionVersionId = version.id;
+      }
+      if (abiertos.length) await manager.save(Rejection, abiertos);
+
+      jornada.estadoFuncional = bloqueada.estadoFuncional;
+      return desde;
+    });
 
     documento.estadoFuncional = EstadoFuncional.EN_REVISION;
     await this.documentoRepo.save(documento);
-
-    const abiertos = await this.rejectionRepo.find({
-      where: {
-        jornadaId,
-        status: EstadoRechazo.OPEN,
-        entityType: In([EntidadRevisable.JORNADA, EntidadRevisable.DOCUMENTO]),
-      },
-    });
-    for (const r of abiertos) {
-      r.status = EstadoRechazo.RESOLVED;
-      r.resolvedAt = new Date();
-      r.resolvedBy = usuario.id;
-      r.resolutionVersionId = version.id;
-    }
-    if (abiertos.length) {
-      await this.rejectionRepo.save(abiertos);
-    }
 
     await this.auditoriaService.registrar({
       entityType: EntidadRevisable.JORNADA,
@@ -398,7 +444,8 @@ export class AprobacionesService {
   }
 
   async aprobar(dto: AprobarDto, usuario: Usuario) {
-    if (!this.esAprobador(usuario)) {
+    const esJornada = dto.entityType === EntidadRevisable.JORNADA;
+    if (!esJornada && !this.esAprobador(usuario)) {
       throw new ForbiddenException('No tiene permiso para aprobar');
     }
     // Nunca aceptar approvedBy del cliente: se usa usuario autenticado.
@@ -416,7 +463,8 @@ export class AprobacionesService {
   }
 
   async rechazar(dto: RechazarDto, usuario: Usuario) {
-    if (!this.esAprobador(usuario)) {
+    const esJornada = dto.entityType === EntidadRevisable.JORNADA;
+    if (!esJornada && !this.esAprobador(usuario)) {
       throw new ForbiddenException('No tiene permiso para rechazar');
     }
 
@@ -437,11 +485,13 @@ export class AprobacionesService {
     usuario: Usuario,
     dto: AprobarDto,
   ) {
-    const jornada = await this.cargarJornada(jornadaId);
+    return this.dataSource.transaction(async (manager) => {
+    const jornada = await this.cadena.bloquearJornada(manager, jornadaId);
     await this.assertAlcanceRevision(jornada, usuario);
     this.bloquearAutoAprobacion(jornada, usuario);
+    this.cadena.confirmarEnRevision(jornada);
 
-    const evidenciasAbiertas = await this.rejectionRepo.count({
+    const evidenciasAbiertas = await manager.count(Rejection, {
       where: {
         jornadaId,
         entityType: EntidadRevisable.EVIDENCIA,
@@ -454,19 +504,41 @@ export class AprobacionesService {
       );
     }
 
-    const docs = await this.documentoRepo.find({ where: { jornadaId } });
+    const modo = await this.cadena.modo(manager, jornadaId);
+    let nivel: number | null = null;
+    let esUltimo = true;
+    if (modo === ModoRevision.NIVELES) {
+      const paso = await this.cadena.bloquearPasoPendiente(manager, jornadaId);
+      await this.cadena.exigirCandidato(manager, jornada, paso, usuario);
+      const pendientes = await manager.count(PasoRevisionJornada, {
+        where: { jornadaId, estado: EstadoPasoRevision.PENDIENTE },
+      });
+      esUltimo = pendientes <= 1;
+      nivel = paso.orden;
+      await this.cadena.marcarPaso(
+        manager,
+        paso,
+        EstadoPasoRevision.APROBADO,
+        usuario.id,
+        jornada.revisionContenido || 1,
+      );
+    } else if (!this.esAprobador(usuario)) {
+      throw new ForbiddenException('No tiene permiso para aprobar');
+    }
+
+    const docs = await manager.find(Documento, { where: { jornadaId } });
     let versionId = dto.documentVersionId ?? null;
     let documentId: string | null = null;
 
-    if (docs.length) {
+    if (esUltimo && docs.length) {
       const doc = docs[0];
       documentId = doc.id;
       const vigente =
         (versionId
-          ? await this.versionRepo.findOne({ where: { id: versionId } })
+          ? await manager.findOne(DocumentoVersion, { where: { id: versionId } })
           : null) ??
         (doc.versionVigenteId
-          ? await this.versionRepo.findOne({
+          ? await manager.findOne(DocumentoVersion, {
               where: { id: doc.versionVigenteId },
             })
           : null);
@@ -477,24 +549,29 @@ export class AprobacionesService {
       }
       versionId = vigente.id;
       vigente.status = EstadoVersionDocumento.APROBADO;
-      await this.versionRepo.save(vigente);
+      await manager.save(DocumentoVersion, vigente);
       doc.estadoFuncional = EstadoFuncional.APROBADO;
-      await this.documentoRepo.save(doc);
+      await manager.save(Documento, doc);
+    } else if (docs.length) {
+      documentId = docs[0].id;
+      versionId = docs[0].versionVigenteId;
     }
 
     const anterior = jornada.estadoFuncional;
-    jornada.estadoFuncional = transicionarEstado(
-      anterior,
-      EstadoFuncional.APROBADO,
-      { permitirAtajosOnline: false },
-    );
-    if (jornada.estado !== EstadoJornada.CANCELADA) {
-      jornada.estado = EstadoJornada.COMPLETADA;
+    if (esUltimo) {
+      jornada.estadoFuncional = transicionarEstado(
+        anterior,
+        EstadoFuncional.APROBADO,
+        { permitirAtajosOnline: false },
+      );
+      if (jornada.estado !== EstadoJornada.CANCELADA) {
+        jornada.estado = EstadoJornada.COMPLETADA;
+      }
+      await manager.save(Jornada, jornada);
     }
-    await this.jornadaRepo.save(jornada);
 
-    const approval = await this.approvalRepo.save(
-      this.approvalRepo.create({
+    const approval = await manager.save(
+      manager.create(Approval, {
         entityType: EntidadRevisable.JORNADA,
         entityId: jornada.id,
         projectId: jornada.proyecto.id,
@@ -503,6 +580,7 @@ export class AprobacionesService {
         documentVersionId: versionId,
         approvedBy: usuario.id,
         notes: dto.notes ?? null,
+        nivel,
       }),
     );
 
@@ -511,8 +589,8 @@ export class AprobacionesService {
       entityId: jornada.id,
       field: 'estadoFuncional',
       previousValue: anterior,
-      newValue: EstadoFuncional.APROBADO,
-      reason: dto.notes ?? 'Aprobación',
+      newValue: jornada.estadoFuncional,
+      reason: dto.notes ?? (nivel != null ? `Aprobación del nivel ${nivel}` : 'Aprobación'),
       action: AccionAuditoria.APPROVE,
       user: usuario,
       projectId: jornada.proyecto.id,
@@ -527,15 +605,17 @@ export class AprobacionesService {
       accion: 'JORNADA_APROBADA',
       entidadTipo: 'jornada',
       entidadId: jornada.id,
-      titulo: 'Aprobó la jornada',
+      titulo: nivel != null ? `Aprobó el nivel ${nivel}` : 'Aprobó la jornada',
       detalle: {
         origen: 'api',
         approvalId: approval.id,
         documentVersionId: versionId,
+        nivel,
       },
     });
 
-    return { approval, estadoFuncional: jornada.estadoFuncional };
+    return { approval, estadoFuncional: jornada.estadoFuncional, nivel };
+    });
   }
 
   private async aprobarDocumento(
@@ -652,30 +732,49 @@ export class AprobacionesService {
   }
 
   private async rechazarJornada(dto: RechazarDto, usuario: Usuario) {
-    const jornada = await this.cargarJornada(dto.entityId);
+    return this.dataSource.transaction(async (manager) => {
+    const jornada = await this.cadena.bloquearJornada(manager, dto.entityId);
     await this.assertAlcanceRevision(jornada, usuario);
+    this.cadena.confirmarEnRevision(jornada);
+
+    let nivel: number | null = null;
+    if ((await this.cadena.modo(manager, jornada.id)) === ModoRevision.NIVELES) {
+      const paso = await this.cadena.bloquearPasoPendiente(manager, jornada.id);
+      await this.cadena.exigirCandidato(manager, jornada, paso, usuario);
+      nivel = paso.orden;
+      await this.cadena.marcarPaso(
+        manager,
+        paso,
+        EstadoPasoRevision.RECHAZADO,
+        usuario.id,
+        jornada.revisionContenido || 1,
+      );
+    } else if (!this.esAprobador(usuario)) {
+      throw new ForbiddenException('No tiene permiso para rechazar');
+    }
+
     const anterior = jornada.estadoFuncional;
     jornada.estadoFuncional = transicionarEstado(
       anterior,
       EstadoFuncional.RECHAZADO,
     );
-    await this.jornadaRepo.save(jornada);
+    await manager.save(Jornada, jornada);
 
-    const docs = await this.documentoRepo.find({
+    const docs = await manager.find(Documento, {
       where: { jornadaId: jornada.id },
     });
     for (const doc of docs) {
       doc.estadoFuncional = EstadoFuncional.RECHAZADO;
       if (doc.versionVigenteId) {
-        await this.versionRepo.update(doc.versionVigenteId, {
+        await manager.update(DocumentoVersion, doc.versionVigenteId, {
           status: EstadoVersionDocumento.RECHAZADO,
         });
       }
     }
-    if (docs.length) await this.documentoRepo.save(docs);
+    if (docs.length) await manager.save(Documento, docs);
 
-    const rejection = await this.rejectionRepo.save(
-      this.rejectionRepo.create({
+    const rejection = await manager.save(
+      manager.create(Rejection, {
         entityType: EntidadRevisable.JORNADA,
         entityId: jornada.id,
         projectId: jornada.proyecto.id,
@@ -686,6 +785,7 @@ export class AprobacionesService {
         reason: dto.reason,
         requestedCorrection: dto.requestedCorrection,
         status: EstadoRechazo.OPEN,
+        nivel,
       }),
     );
 
@@ -714,10 +814,12 @@ export class AprobacionesService {
         category: dto.category,
         requestedCorrection: dto.requestedCorrection,
         rejectionId: rejection.id,
+        nivel,
       },
     });
 
-    return { rejection, estadoFuncional: jornada.estadoFuncional };
+    return { rejection, estadoFuncional: jornada.estadoFuncional, nivel };
+    });
   }
 
   private async rechazarDocumento(dto: RechazarDto, usuario: Usuario) {
@@ -727,6 +829,7 @@ export class AprobacionesService {
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
     await this.assertAlcanceRevision(doc.jornada, usuario);
+    const nivel = await this.rechazarPasoDeCadena(doc.jornadaId, usuario);
 
     const anterior = doc.estadoFuncional;
     doc.estadoFuncional = EstadoFuncional.RECHAZADO;
@@ -755,6 +858,7 @@ export class AprobacionesService {
         reason: dto.reason,
         requestedCorrection: dto.requestedCorrection,
         status: EstadoRechazo.OPEN,
+        nivel,
       }),
     );
 
@@ -782,6 +886,7 @@ export class AprobacionesService {
     });
     if (!evidencia) throw new NotFoundException('Evidencia no encontrada');
     await this.assertAlcanceRevision(evidencia.jornada, usuario);
+    const nivel = await this.rechazarPasoDeCadena(evidencia.jornada.id, usuario);
 
     const anterior = evidencia.estadoFuncional;
     evidencia.estadoFuncional = EstadoFuncional.RECHAZADO;
@@ -819,6 +924,7 @@ export class AprobacionesService {
         reason: dto.reason,
         requestedCorrection: dto.requestedCorrection,
         status: EstadoRechazo.OPEN,
+        nivel,
       }),
     );
 
@@ -925,6 +1031,11 @@ export class AprobacionesService {
     }
 
     const jornadas = await qb.getMany();
+    const indicadores = await this.cadena.indicadoresBandeja(
+      usuario,
+      jornadas,
+      this.esAprobador(usuario),
+    );
     const ids = jornadas.map((j) => j.id);
     const rechazos = ids.length
       ? await this.rejectionRepo.find({
@@ -979,6 +1090,14 @@ export class AprobacionesService {
         meta: j.meta ? { id: j.meta.id, nombre: j.meta.nombre } : null,
         vereda: j.vereda ? { id: j.vereda.id, nombre: j.vereda.nombre } : null,
         editable: estadoEditable(j.estadoFuncional),
+        modo: indicadores.get(j.id)?.modo ?? ModoRevision.LEGACY,
+        pasos: indicadores.get(j.id)?.pasos ?? [],
+        pasoPendiente: indicadores.get(j.id)?.pasoPendiente ?? null,
+        puedeAprobar: indicadores.get(j.id)?.puedeAprobar ?? false,
+        puedeRechazar: indicadores.get(j.id)?.puedeRechazar ?? false,
+        ...(indicadores.get(j.id)?.sinCandidatos !== undefined
+          ? { sinCandidatos: indicadores.get(j.id)?.sinCandidatos }
+          : {}),
         rechazosAbiertos: rechazos
           .filter((r) => r.jornadaId === j.id)
           .map((r) => ({
@@ -1012,6 +1131,79 @@ export class AprobacionesService {
       where: { jornadaId },
       relations: { approvedByUser: true },
       order: { approvedAt: 'DESC' },
+    });
+  }
+
+  async reasignarPaso(
+    jornadaId: string,
+    usuario: Usuario,
+    asignacion: { usuarioId?: string; rolId?: string },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const jornada = await this.cadena.bloquearJornada(manager, jornadaId);
+      const { paso, anterior } = await this.cadena.reasignar(
+        manager,
+        jornada,
+        usuario,
+        asignacion,
+      );
+      await this.auditoriaService.registrar({
+        entityType: EntidadRevisable.JORNADA,
+        entityId: jornada.id,
+        field: 'pasoPendiente',
+        previousValue: anterior,
+        newValue: { usuarioId: paso.usuarioId, rolId: paso.rolId, orden: paso.orden },
+        reason: 'Reasignación del paso pendiente',
+        action: AccionAuditoria.UPDATE,
+        user: usuario,
+        projectId: jornada.proyecto.id,
+        jornadaId: jornada.id,
+      });
+      return {
+        jornadaId,
+        pasoId: paso.id,
+        orden: paso.orden,
+        usuarioId: paso.usuarioId,
+        rolId: paso.rolId,
+      };
+    });
+  }
+
+  guardarNiveles(
+    proyectoId: string,
+    usuario: Usuario,
+    niveles: Array<{ orden: number; usuarioId?: string; rolId?: string }>,
+  ) {
+    return this.cadena.guardarNiveles(proyectoId, usuario, niveles);
+  }
+
+  listarNiveles(proyectoId: string) {
+    return this.cadena.listarNiveles(proyectoId);
+  }
+
+  /** Marca el paso y saca la jornada de revisión bajo el mismo bloqueo. */
+  private async rechazarPasoDeCadena(
+    jornadaId: string,
+    usuario: Usuario,
+  ): Promise<number | null> {
+    return this.dataSource.transaction(async (manager) => {
+      const jornada = await this.cadena.bloquearJornada(manager, jornadaId);
+      if (jornada.estadoFuncional !== EstadoFuncional.EN_REVISION) return null;
+      if ((await this.cadena.modo(manager, jornada.id)) !== ModoRevision.NIVELES) {
+        return null;
+      }
+      const paso = await this.cadena.bloquearPasoPendiente(manager, jornada.id);
+      await this.cadena.exigirCandidato(manager, jornada, paso, usuario);
+      await this.cadena.marcarPaso(
+        manager,
+        paso,
+        EstadoPasoRevision.RECHAZADO,
+        usuario.id,
+        jornada.revisionContenido || 1,
+      );
+      jornada.estadoFuncional = EstadoFuncional.EN_CORRECCION;
+      await manager.save(Jornada, jornada);
+      return paso.orden;
     });
   }
 

@@ -145,6 +145,11 @@ export class EnviosFormularioService {
     });
 
     if (dto.jornadaId) {
+      await this.guardarUbicacionDeJornada(
+        dto.jornadaId,
+        plantilla.campos ?? [],
+        dto.respuestas as RespuestaEntrada[],
+      );
       await this.colaEnviosService.encolarProcesarEnvio({
         envioId: envioGuardado.id,
         jornadaId: dto.jornadaId,
@@ -364,6 +369,11 @@ export class EnviosFormularioService {
     });
 
     if (envio.jornada?.id) {
+      await this.guardarUbicacionDeJornada(
+        envio.jornada.id,
+        plantilla.campos ?? [],
+        dto.respuestas as RespuestaEntrada[],
+      );
       await this.colaEnviosService.encolarProcesarEnvio({
         envioId,
         jornadaId: envio.jornada.id,
@@ -523,6 +533,44 @@ export class EnviosFormularioService {
         );
       }
     }
+  }
+
+  /** Copia el GPS del formulario a la jornada: es el punto real del momento de captura. */
+  private async guardarUbicacionDeJornada(
+    jornadaId: string,
+    campos: CampoFormulario[],
+    respuestas: RespuestaEntrada[],
+  ): Promise<void> {
+    const ubicacion = this.extraerUbicacionGps(campos, respuestas);
+    if (!ubicacion) return;
+    await this.jornadaRepository.update(jornadaId, {
+      latitud: ubicacion.latitud,
+      longitud: ubicacion.longitud,
+    });
+  }
+
+  private extraerUbicacionGps(
+    campos: CampoFormulario[],
+    respuestas: RespuestaEntrada[],
+  ): { latitud: number; longitud: number } | null {
+    const mapa = new Map(respuestas.map((r) => [r.claveCampo, r.valor]));
+    const ordenados = [...campos].sort((a, b) => a.orden - b.orden);
+    for (const campo of ordenados) {
+      if (campo.tipoCampo !== TipoCampo.GPS) continue;
+      const valor = mapa.get(campo.clave);
+      if (!valor || typeof valor !== 'object' || Array.isArray(valor)) continue;
+      const punto = valor as { latitud?: unknown; longitud?: unknown };
+      if (
+        typeof punto.latitud !== 'number' ||
+        typeof punto.longitud !== 'number' ||
+        !Number.isFinite(punto.latitud) ||
+        !Number.isFinite(punto.longitud)
+      ) {
+        continue;
+      }
+      return { latitud: punto.latitud, longitud: punto.longitud };
+    }
+    return null;
   }
 
   private mapearRespuesta(

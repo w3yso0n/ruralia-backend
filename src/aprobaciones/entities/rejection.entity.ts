@@ -47,6 +47,10 @@ export class Rejection {
   @Column({ name: 'rejected_by' })
   rejectedBy: string;
 
+  /** Nivel de la cadena que rechazó. El reenvío arranca desde aquí, no desde el paso ya limpiado. */
+  @Column({ type: 'int', nullable: true })
+  nivel: number | null;
+
   @CreateDateColumn({ name: 'rejected_at', type: 'timestamptz' })
   rejectedAt: Date;
 

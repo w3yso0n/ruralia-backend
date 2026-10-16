@@ -41,6 +41,10 @@ export class Approval {
   @Column({ name: 'approved_by' })
   approvedBy: string;
 
+  /** Nivel de la cadena. Null en aprobaciones anteriores a los pasos. */
+  @Column({ type: 'int', nullable: true })
+  nivel: number | null;
+
   @CreateDateColumn({ name: 'approved_at', type: 'timestamptz' })
   approvedAt: Date;
 

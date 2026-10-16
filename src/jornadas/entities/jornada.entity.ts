@@ -62,6 +62,13 @@ export class Jornada {
   @Column({ name: 'requiere_revision', type: 'boolean', default: true })
   requiereRevision: boolean;
 
+  /**
+   * Sube cada vez que el técnico envía o reenvía contenido.
+   * Los pasos guardan este número; no un solo document_version_id.
+   */
+  @Column({ name: 'revision_contenido', type: 'int', default: 0 })
+  revisionContenido: number;
+
   @Column({
     type: 'enum',
     enum: TipoJornada,

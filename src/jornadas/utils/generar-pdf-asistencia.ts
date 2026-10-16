@@ -186,6 +186,7 @@ function dibujarTituloSeccion(
 }
 
 function altoTarjetaCampo(item: ItemCabeceraPdfAsistencia): number {
+  if (item.tipoCampo === 'FOTO' && esDataUrlImagen(item.valor)) return 200;
   if (item.esFirma || esDataUrlImagen(item.valor)) return 78;
   const valor = limpiarValorRespuesta(item.valor);
   const lineas = Math.ceil(valor.length / 42);

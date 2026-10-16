@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { PERMISOS_CRITICOS_CUANTIVA, RolSistema } from './catalogo-permisos';
+import { CATALOGO_PERMISOS, RolSistema } from './catalogo-permisos';
+import { Usuario } from './entities/usuario.entity';
+import { usuarioEsCuantiva } from './utils/permisos-usuario';
 import { NivelAccesoRol } from './enums/nivel-acceso-rol.enum';
 import { ActualizarRolDto } from './dto/actualizar-rol.dto';
 import { CrearRolDto } from './dto/crear-rol.dto';
@@ -55,17 +58,20 @@ export class RolesService {
     }));
   }
 
-  async listar(): Promise<RespuestaRolDetalleDto[]> {
+  async listar(actor: Usuario): Promise<RespuestaRolDetalleDto[]> {
     await this.permisosSeed.asegurarCatalogoYRoles();
     const roles = await this.rolRepository.find({
       relations: { permisos: true, usuarios: true },
       order: { nombre: 'ASC' },
     });
-    return roles.map((rol) => this.aDetalle(rol));
+    return roles
+      .filter((rol) => this.puedeVerRol(actor, rol))
+      .map((rol) => this.aDetalle(rol));
   }
 
-  async obtenerUno(id: string): Promise<RespuestaRolDetalleDto> {
+  async obtenerUno(id: string, actor: Usuario): Promise<RespuestaRolDetalleDto> {
     const rol = await this.buscarRol(id);
+    this.assertPuedeVerRol(actor, rol);
     return this.aDetalle(rol);
   }
 
@@ -77,6 +83,7 @@ export class RolesService {
     }
 
     const permisos = await this.obtenerPermisosPorIds(dto.permisoIds ?? []);
+    this.assertPermisoAprobacionesPermitido(nombre, permisos);
     const rol = this.rolRepository.create({
       nombre,
       descripcion: dto.descripcion,
@@ -86,14 +93,16 @@ export class RolesService {
       permisos,
     });
     const guardado = await this.rolRepository.save(rol);
-    return this.obtenerUno(guardado.id);
+    return this.aDetalle(await this.buscarRol(guardado.id));
   }
 
   async actualizar(
     id: string,
     dto: ActualizarRolDto,
+    actor: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
     const rol = await this.buscarRol(id);
+    this.assertPuedeVerRol(actor, rol);
 
     if (dto.nombre !== undefined) {
       const nuevoNombre = dto.nombre.trim();
@@ -135,16 +144,29 @@ export class RolesService {
 
     if (dto.permisoIds !== undefined) {
       const permisos = await this.obtenerPermisosPorIds(dto.permisoIds);
+      if (rol.nombre === RolSistema.ADMINISTRADOR) {
+        const cadena = await this.permisoRepository.findOne({
+          where: { clave: 'proyectos.configurar_aprobaciones' },
+        });
+        if (cadena && !permisos.some((p) => p.id === cadena.id)) {
+          permisos.push(cadena);
+        }
+      }
       this.validarPermisosCriticosCuantiva(rol, permisos);
+      this.assertPermisoAprobacionesPermitido(rol.nombre, permisos);
       rol.permisos = permisos;
     }
 
     await this.rolRepository.save(rol);
-    return this.obtenerUno(id);
+    return this.aDetalle(await this.buscarRol(id));
   }
 
-  async eliminar(id: string): Promise<void> {
+  async eliminar(id: string, actor: Usuario): Promise<void> {
     const rol = await this.buscarRol(id);
+    this.assertPuedeVerRol(actor, rol);
+    if (rol.nombre === RolSistema.CUANTIVA) {
+      throw new BadRequestException('Nadie puede eliminar el rol Cuantiva');
+    }
     if (rol.esSistema) {
       throw new BadRequestException('No se puede eliminar un rol de sistema');
     }
@@ -159,23 +181,28 @@ export class RolesService {
   /** Aplica el preset de fábrica del rol de sistema, deshaciendo ediciones manuales. */
   async restablecerAValoresDeFabrica(
     id: string,
+    actor: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
+    const rol = await this.buscarRol(id);
+    this.assertPuedeVerRol(actor, rol);
     await this.permisosSeed.restablecerRolAValoresDeFabrica(id);
-    return this.obtenerUno(id);
+    return this.aDetalle(await this.buscarRol(id));
   }
 
-  /**
-   * Crea un rol personalizado con la misma matriz de permisos.
-   * Sirve también para partir de un rol de sistema sin alterar el original.
-   */
-  async clonar(id: string): Promise<RespuestaRolDetalleDto> {
+  async clonar(id: string, actor: Usuario): Promise<RespuestaRolDetalleDto> {
     const original = await this.buscarRol(id);
+    this.assertPuedeVerRol(actor, original);
+    if (original.nombre === RolSistema.CUANTIVA) {
+      throw new ForbiddenException('No se puede clonar el rol Cuantiva');
+    }
     const nombre = await this.generarNombreCopia(original.nombre);
     return this.crear({
       nombre,
       descripcion: original.descripcion ?? undefined,
       nivelAcceso: original.nivelAcceso,
-      permisoIds: (original.permisos ?? []).map((p) => p.id),
+      permisoIds: (original.permisos ?? [])
+        .filter((p) => p.clave !== 'proyectos.configurar_aprobaciones')
+        .map((p) => p.id),
     });
   }
 
@@ -206,11 +233,43 @@ export class RolesService {
   private validarPermisosCriticosCuantiva(rol: Rol, permisos: Permiso[]): void {
     if (rol.nombre !== RolSistema.CUANTIVA) return;
     const claves = new Set(permisos.map((p) => p.clave));
-    const faltantes = PERMISOS_CRITICOS_CUANTIVA.filter((c) => !claves.has(c));
+    const faltantes = CATALOGO_PERMISOS.map((p) => p.clave).filter(
+      (clave) => !claves.has(clave),
+    );
     if (faltantes.length) {
       throw new BadRequestException(
-        `El rol CUANTIVA no puede perder permisos críticos: ${faltantes.join(', ')}`,
+        'El rol Cuantiva no puede perder permisos',
       );
+    }
+  }
+
+  private assertPermisoAprobacionesPermitido(
+    nombreRol: string,
+    permisos: Permiso[],
+  ): void {
+    const loTiene = permisos.some(
+      (p) => p.clave === 'proyectos.configurar_aprobaciones',
+    );
+    if (!loTiene) return;
+    if (
+      nombreRol === RolSistema.CUANTIVA ||
+      nombreRol === RolSistema.ADMINISTRADOR
+    ) {
+      return;
+    }
+    throw new BadRequestException(
+      'Configurar aprobaciones solo puede estar en Administrador y Cuantiva',
+    );
+  }
+
+  private puedeVerRol(actor: Usuario, rol: Rol): boolean {
+    if (rol.nombre !== RolSistema.CUANTIVA) return true;
+    return usuarioEsCuantiva(actor);
+  }
+
+  private assertPuedeVerRol(actor: Usuario, rol: Rol): void {
+    if (!this.puedeVerRol(actor, rol)) {
+      throw new NotFoundException(`Rol con id ${rol.id} no encontrado`);
     }
   }
 

@@ -24,9 +24,11 @@ import {
   aRespuestaUsuario,
 } from './utils/serializar-usuario';
 import {
+  usuarioEsCuantiva,
   usuarioSoloJornadasAsignadas,
   usuarioTienePermisos,
 } from './utils/permisos-usuario';
+import { RolSistema } from './catalogo-permisos';
 
 @Injectable()
 export class UsuariosService {
@@ -42,6 +44,7 @@ export class UsuariosService {
 
   async listar(
     filtros: FiltrosUsuarioDto,
+    actor: Usuario,
   ): Promise<RespuestaPaginadaUsuariosDto> {
     const pagina = filtros.pagina ?? 1;
     const limite = filtros.limite ?? 10;
@@ -61,6 +64,16 @@ export class UsuariosService {
     }
 
     query.andWhere('usuario.eliminadoEn IS NULL');
+    if (!usuarioEsCuantiva(actor)) {
+      query.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM usuario_roles ur
+          JOIN roles r ON r.id = ur.rol_id
+          WHERE ur.usuario_id = usuario.id AND r.nombre = :rolOculto
+        )`,
+        { rolOculto: RolSistema.CUANTIVA },
+      );
+    }
 
     if (filtros.estaActivo !== undefined) {
       query.andWhere('usuario.estaActivo = :estaActivo', {
@@ -76,12 +89,16 @@ export class UsuariosService {
     return aRespuestaPaginadaUsuarios(datos, total, pagina, limite);
   }
 
-  async obtenerUno(id: string): Promise<RespuestaUsuarioDto> {
+  async obtenerUno(id: string, actor: Usuario): Promise<RespuestaUsuarioDto> {
     const usuario = await this.buscarUsuario(id);
+    this.assertPuedeVerUsuario(actor, usuario);
     return aRespuestaUsuario(usuario);
   }
 
-  async crear(dto: CrearUsuarioDto): Promise<RespuestaUsuarioDto> {
+  async crear(
+    dto: CrearUsuarioDto,
+    actor: Usuario,
+  ): Promise<RespuestaUsuarioDto> {
     const existente = await this.usuarioRepository.findOne({
       where: { correo: dto.correo },
     });
@@ -105,6 +122,7 @@ export class UsuariosService {
 
     try {
       const roles = await this.obtenerRolesPorIds(dto.rolIds);
+      this.assertPuedeAsignarRoles(actor, roles);
       const usuario = this.usuarioRepository.create({
         firebaseUid: firebaseUser.uid,
         correo: dto.correo,
@@ -116,9 +134,9 @@ export class UsuariosService {
 
       const guardado = await this.usuarioRepository.save(usuario);
       if (proyectoIds.length) {
-        await this.reemplazarProyectosAsignados(guardado.id, proyectoIds);
+        await this.reemplazarProyectosAsignados(guardado.id, proyectoIds, actor);
       }
-      return this.obtenerUno(guardado.id);
+      return this.obtenerUno(guardado.id, actor);
     } catch (error) {
       await this.firebaseAdmin.eliminarUsuario(firebaseUser.uid);
       throw error;
@@ -131,6 +149,7 @@ export class UsuariosService {
     usuarioActual: Usuario,
   ): Promise<RespuestaUsuarioDto> {
     const usuario = await this.buscarUsuario(id);
+    this.assertPuedeVerUsuario(usuarioActual, usuario);
     this.verificarNoAutoDesactivacion(id, dto, usuarioActual);
 
     if (dto.correo && dto.correo !== usuario.correo) {
@@ -146,6 +165,8 @@ export class UsuariosService {
       dto.rolIds !== undefined
         ? await this.obtenerRolesPorIds(dto.rolIds)
         : undefined;
+    if (rolesNuevos) this.assertPuedeAsignarRoles(usuarioActual, rolesNuevos);
+    this.assertNoQuitaCuantiva(usuarioActual, usuario, rolesNuevos);
 
     await this.validarNoOrfandadAdmin(usuario, dto.estaActivo, rolesNuevos);
 
@@ -165,7 +186,7 @@ export class UsuariosService {
     if (rolesNuevos !== undefined) usuario.roles = rolesNuevos;
 
     await this.usuarioRepository.save(usuario);
-    return this.obtenerUno(id);
+    return this.obtenerUno(id, usuarioActual);
   }
 
   async desactivar(
@@ -177,6 +198,7 @@ export class UsuariosService {
     }
 
     const usuario = await this.buscarUsuario(id);
+    this.assertPuedeVerUsuario(usuarioActual, usuario);
     await this.validarNoOrfandadAdmin(usuario, false, undefined);
 
     usuario.estaActivo = false;
@@ -184,11 +206,12 @@ export class UsuariosService {
     await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
       deshabilitado: true,
     });
-    return this.obtenerUno(id);
+    return this.obtenerUno(id, usuarioActual);
   }
 
-  async reactivar(id: string): Promise<RespuestaUsuarioDto> {
+  async reactivar(id: string, actor: Usuario): Promise<RespuestaUsuarioDto> {
     const usuario = await this.buscarUsuario(id);
+    this.assertPuedeVerUsuario(actor, usuario);
     if (!usuario.estaActivo) {
       await this.firebaseAdmin.actualizarUsuario(usuario.firebaseUid, {
         deshabilitado: false,
@@ -196,19 +219,18 @@ export class UsuariosService {
       usuario.estaActivo = true;
       await this.usuarioRepository.save(usuario);
     }
-    return this.obtenerUno(id);
+    return this.obtenerUno(id, actor);
   }
-
-  /**
-   * Baja no reversible. El usuario desaparece del listado y pierde el acceso,
-   * pero proyectos, jornadas y documentos conservan su nombre.
-   */
   async eliminar(id: string, usuarioActual: Usuario): Promise<void> {
     if (usuarioActual.id === id) {
       throw new ForbiddenException('No puedes eliminar tu propia cuenta');
     }
 
     const usuario = await this.buscarUsuario(id);
+    this.assertPuedeVerUsuario(usuarioActual, usuario);
+    if (this.tieneRolCuantiva(usuario)) {
+      throw new ForbiddenException('Nadie puede eliminar una cuenta Cuantiva');
+    }
     await this.validarNoOrfandadAdmin(usuario, false, []);
 
     const firebaseUid = usuario.firebaseUid;
@@ -291,8 +313,10 @@ export class UsuariosService {
    */
   async listarProyectosAsignados(
     usuarioId: string,
+    actor: Usuario,
   ): Promise<Array<{ id: string; nombre: string }>> {
     const usuario = await this.buscarUsuario(usuarioId);
+    this.assertPuedeVerUsuario(actor, usuario);
     if (usuarioSoloJornadasAsignadas(usuario)) {
       const ids =
         await this.alcanceTerritorialService.idsProyectosPorJornadas(usuarioId);
@@ -318,8 +342,10 @@ export class UsuariosService {
   async reemplazarProyectosAsignados(
     usuarioId: string,
     proyectoIds: string[],
+    actor: Usuario,
   ): Promise<Array<{ id: string; nombre: string }>> {
     const usuario = await this.buscarUsuario(usuarioId);
+    this.assertPuedeVerUsuario(actor, usuario);
     this.asegurarAsignacionManual(usuario);
     const unicos = [...new Set(proyectoIds)];
     await this.asegurarProyectos(unicos);
@@ -338,7 +364,7 @@ export class UsuariosService {
         );
       }
     });
-    return this.listarProyectosAsignados(usuarioId);
+    return this.listarProyectosAsignados(usuarioId, actor);
   }
 
   /** Al técnico no se le asignan proyectos: salen de sus jornadas. */
@@ -359,6 +385,37 @@ export class UsuariosService {
       );
     if (filas.length !== proyectoIds.length) {
       throw new BadRequestException('Uno o más proyectos no existen');
+    }
+  }
+
+  private tieneRolCuantiva(usuario: Usuario): boolean {
+    return (usuario.roles ?? []).some((rol) => rol.nombre === RolSistema.CUANTIVA);
+  }
+
+  private assertPuedeVerUsuario(actor: Usuario, usuario: Usuario): void {
+    if (this.tieneRolCuantiva(usuario) && !usuarioEsCuantiva(actor)) {
+      throw new NotFoundException(`Usuario con id ${usuario.id} no encontrado`);
+    }
+  }
+
+  private assertPuedeAsignarRoles(actor: Usuario, roles: Rol[]): void {
+    if (usuarioEsCuantiva(actor)) return;
+    if (roles.some((rol) => rol.nombre === RolSistema.CUANTIVA)) {
+      throw new ForbiddenException('No puedes asignar el rol Cuantiva');
+    }
+  }
+
+  private assertNoQuitaCuantiva(
+    actor: Usuario,
+    usuario: Usuario,
+    rolesNuevos: Rol[] | undefined,
+  ): void {
+    if (!rolesNuevos || usuarioEsCuantiva(actor)) return;
+    if (
+      this.tieneRolCuantiva(usuario) &&
+      !rolesNuevos.some((rol) => rol.nombre === RolSistema.CUANTIVA)
+    ) {
+      throw new ForbiddenException('No puedes quitar el rol Cuantiva');
     }
   }
 

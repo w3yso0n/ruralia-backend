@@ -195,6 +195,11 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
         accion: 'gestionar_vinculos',
         descripcion: 'Vincular beneficiarios, asociaciones y territorios',
       },
+      {
+        accion: 'configurar_aprobaciones',
+        descripcion:
+          'Configurar los niveles de aprobación de las jornadas del proyecto',
+      },
     ],
     400,
   ),
@@ -524,14 +529,21 @@ const PERMISOS_VISUALIZADOR: string[] = [
   'documentos_externos.ver',
 ];
 
-/** Admin operativo: casi todo, sin poder destruir el rol Cuantiva (sigue pudiendo editar roles). */
-const PERMISOS_ADMINISTRADOR: string[] = CATALOGO_PERMISOS.map((p) => p.clave);
+/** Admin operativo: casi todo, sin la cadena de aprobación (esa solo la tienen Admin y Cuantiva). */
+const PERMISOS_OPERATIVOS: string[] = CATALOGO_PERMISOS.map((p) => p.clave).filter(
+  (clave) => clave !== 'proyectos.configurar_aprobaciones',
+);
+
+const PERMISOS_ADMINISTRADOR: string[] = [
+  ...PERMISOS_OPERATIVOS,
+  'proyectos.configurar_aprobaciones',
+];
 
 /** Permisos por defecto de cada rol de sistema (claves). */
 export const PERMISOS_POR_ROL_SISTEMA: Record<RolSistema, string[] | 'ALL'> = {
   [RolSistema.CUANTIVA]: 'ALL',
   [RolSistema.ADMINISTRADOR]: PERMISOS_ADMINISTRADOR,
-  [RolSistema.PROFESIONAL_OFICINA_PROYECTOS]: PERMISOS_ADMINISTRADOR,
+  [RolSistema.PROFESIONAL_OFICINA_PROYECTOS]: PERMISOS_OPERATIVOS,
   [RolSistema.COORDINADOR_DEPARTAMENTAL]: PERMISOS_COORDINADOR_DEPARTAMENTAL,
   [RolSistema.COORDINADOR_ZONA]: PERMISOS_COORDINADOR_ZONA,
   [RolSistema.COORDINADOR_PROYECTO]: PERMISOS_GESTION_PROYECTO_ASIGNADO,
@@ -542,7 +554,7 @@ export const PERMISOS_POR_ROL_SISTEMA: Record<RolSistema, string[] | 'ALL'> = {
 
 export const DESCRIPCIONES_ROL_SISTEMA: Record<RolSistema, string> = {
   [RolSistema.CUANTIVA]:
-    'Superacceso Cuantiva: todos los permisos. No se puede eliminar ni privar de permisos críticos.',
+    'Superacceso Cuantiva: todos los permisos. Nadie más ve este rol y no se puede eliminar.',
   [RolSistema.ADMINISTRADOR]:
     'Administración operativa de la plataforma y del equipo.',
   [RolSistema.PROFESIONAL_OFICINA_PROYECTOS]:

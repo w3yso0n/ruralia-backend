@@ -1811,6 +1811,21 @@ export class JornadasService {
           .filter(Boolean)
           .join(', ');
       }
+      const ubicacion = resp.valorJson as {
+        latitud?: unknown;
+        longitud?: unknown;
+        precisionMetros?: unknown;
+      };
+      if (
+        typeof ubicacion.latitud === 'number' &&
+        typeof ubicacion.longitud === 'number'
+      ) {
+        const precision =
+          typeof ubicacion.precisionMetros === 'number'
+            ? ` (±${Math.round(ubicacion.precisionMetros)} m)`
+            : '';
+        return `${ubicacion.latitud.toFixed(6)}, ${ubicacion.longitud.toFixed(6)}${precision}`;
+      }
       return JSON.stringify(resp.valorJson);
     }
     return null;

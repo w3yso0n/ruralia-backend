@@ -1,10 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { EntidadRevisable } from '../../common/workflow/entidad-revisable.enum';
 import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
@@ -76,6 +83,48 @@ export class ReenviarRevisionDto {
   @IsString()
   @MinLength(3)
   changeReason: string;
+}
+
+export class ReasignarPasoDto {
+  @ApiPropertyOptional({
+    description:
+      'Persona concreta. Quien tiene proyectos.editar puede ponerse a sí mismo y luego aprobar, si no es el técnico ni aprobó otro nivel.',
+  })
+  @IsOptional()
+  @IsUUID()
+  usuarioId?: string;
+
+  @ApiPropertyOptional({ description: 'Rol con al menos un candidato elegible' })
+  @IsOptional()
+  @IsUUID()
+  rolId?: string;
+}
+
+export class NivelAprobacionEntradaDto {
+  @ApiProperty({ minimum: 1, maximum: 4 })
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  orden: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  usuarioId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  rolId?: string;
+}
+
+export class GuardarNivelesAprobacionDto {
+  @ApiProperty({ type: [NivelAprobacionEntradaDto] })
+  @IsArray()
+  @ArrayMaxSize(4)
+  @ValidateNested({ each: true })
+  @Type(() => NivelAprobacionEntradaDto)
+  niveles: NivelAprobacionEntradaDto[];
 }
 
 export class FiltrosBandejaDto {

@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -16,6 +17,8 @@ import {
   AprobarDto,
   EnviarRevisionDto,
   FiltrosBandejaDto,
+  GuardarNivelesAprobacionDto,
+  ReasignarPasoDto,
   RechazarDto,
   ReenviarRevisionDto,
 } from './dto/aprobaciones.dto';
@@ -104,6 +107,45 @@ export class AprobacionesController {
   @ApiOperation({ summary: 'Contadores para notificaciones internas' })
   contadores(@UsuarioActual() usuario: Usuario) {
     return this.aprobacionesService.contadores(usuario);
+  }
+
+  @Post('aprobaciones/jornada/:jornadaId/reasignar')
+  @RequierePermisos('proyectos.editar')
+  @ApiOperation({
+    summary:
+      'Reasigna el paso pendiente. Exige alcance sobre el proyecto. Puede asignarse el paso a sí mismo y luego aprobarlo si no es el técnico ni aprobó otro nivel.',
+  })
+  reasignar(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @Body() dto: ReasignarPasoDto,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    return this.aprobacionesService.reasignarPaso(jornadaId, usuario, dto);
+  }
+
+  @Get('aprobaciones/proyecto/:proyectoId/niveles')
+  @RequierePermisos('proyectos.configurar_aprobaciones')
+  @ApiOperation({ summary: 'Cadena de aprobación configurada en el proyecto' })
+  listarNiveles(@Param('proyectoId', ParseUUIDPipe) proyectoId: string) {
+    return this.aprobacionesService.listarNiveles(proyectoId);
+  }
+
+  @Put('aprobaciones/proyecto/:proyectoId/niveles')
+  @RequierePermisos('proyectos.configurar_aprobaciones')
+  @ApiOperation({
+    summary:
+      'Reemplaza la cadena del proyecto y advierte niveles sin candidatos efectivos. No cambia jornadas ya enviadas.',
+  })
+  guardarNiveles(
+    @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
+    @Body() dto: GuardarNivelesAprobacionDto,
+    @UsuarioActual() usuario: Usuario,
+  ) {
+    return this.aprobacionesService.guardarNiveles(
+      proyectoId,
+      usuario,
+      dto.niveles,
+    );
   }
 
   @Get('aprobaciones/jornada/:jornadaId/rechazos')

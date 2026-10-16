@@ -63,7 +63,7 @@ export class RolesController {
         'No tiene permisos para acceder a este recurso',
       );
     }
-    return this.rolesService.listar();
+    return this.rolesService.listar(usuario);
   }
 
   @Get('roles/:id')
@@ -72,8 +72,9 @@ export class RolesController {
   @ApiResponse({ status: 200, type: RespuestaRolDetalleDto })
   obtenerUno(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
-    return this.rolesService.obtenerUno(id);
+    return this.rolesService.obtenerUno(id, usuario);
   }
 
   @Post('roles')
@@ -93,8 +94,9 @@ export class RolesController {
   @ApiResponse({ status: 201, type: RespuestaRolDetalleDto })
   clonar(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
-    return this.rolesService.clonar(id);
+    return this.rolesService.clonar(id, usuario);
   }
 
   @Patch('roles/:id')
@@ -104,8 +106,9 @@ export class RolesController {
   actualizar(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarRolDto,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
-    return this.rolesService.actualizar(id, dto);
+    return this.rolesService.actualizar(id, dto, usuario);
   }
 
   @Post('roles/:id/restablecer')
@@ -116,8 +119,9 @@ export class RolesController {
   @ApiResponse({ status: 200, type: RespuestaRolDetalleDto })
   restablecer(
     @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaRolDetalleDto> {
-    return this.rolesService.restablecerAValoresDeFabrica(id);
+    return this.rolesService.restablecerAValoresDeFabrica(id, usuario);
   }
 
   @Delete('roles/:id')
@@ -125,7 +129,10 @@ export class RolesController {
   @RequierePermisos('roles.eliminar')
   @ApiOperation({ summary: 'Eliminar un rol personalizado' })
   @ApiResponse({ status: 204, description: 'Rol eliminado' })
-  eliminar(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.rolesService.eliminar(id);
+  eliminar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<void> {
+    return this.rolesService.eliminar(id, usuario);
   }
 }

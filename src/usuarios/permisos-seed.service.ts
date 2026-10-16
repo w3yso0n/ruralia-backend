@@ -149,6 +149,35 @@ export class PermisosSeedService implements OnModuleInit {
         await this.rolRepository.save(rol);
       }
     }
+
+    await this.restringirConfiguracionAprobaciones(porClave);
+  }
+
+  /**
+   * La cadena de aprobación solo la configuran Administrador y Cuantiva.
+   * Cuantiva ya recibe el catálogo completo en el ciclo anterior.
+   */
+  private async restringirConfiguracionAprobaciones(
+    porClave: Map<string, Permiso>,
+  ): Promise<void> {
+    const permiso = porClave.get('proyectos.configurar_aprobaciones');
+    if (!permiso) return;
+
+    const roles = await this.rolRepository.find({ relations: { permisos: true } });
+    for (const rol of roles) {
+      const tiene = (rol.permisos ?? []).some((p) => p.id === permiso.id);
+      const permitido =
+        rol.nombre === RolSistema.CUANTIVA ||
+        rol.nombre === RolSistema.ADMINISTRADOR;
+      if (permitido && !tiene) {
+        rol.permisos = [...(rol.permisos ?? []), permiso];
+        await this.rolRepository.save(rol);
+      }
+      if (!permitido && tiene) {
+        rol.permisos = (rol.permisos ?? []).filter((p) => p.id !== permiso.id);
+        await this.rolRepository.save(rol);
+      }
+    }
   }
 
   /**
