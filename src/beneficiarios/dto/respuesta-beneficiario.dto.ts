@@ -90,6 +90,14 @@ export class RespuestaBeneficiarioDto {
   @Expose()
   estaActivo: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Datos adicionales del catálogo (columnas extra del Excel)',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @Expose()
+  datosAdicionales?: Record<string, string | number | boolean | null>;
+
   @ApiPropertyOptional({ type: RespuestaVeredaBeneficiarioDto })
   @Expose()
   @Type(() => RespuestaVeredaBeneficiarioDto)

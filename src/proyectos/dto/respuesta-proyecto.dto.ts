@@ -85,6 +85,14 @@ export class RespuestaBeneficiarioResumenDto {
   @ApiPropertyOptional()
   @Expose()
   reemplazadoEn?: Date | null;
+
+  @ApiPropertyOptional({
+    description: 'Datos propios de este proyecto (columnas extra del Excel). Solo en el listado paginado.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @Expose()
+  datosAdicionales?: Record<string, string | number | boolean | null>;
 }
 
 export class RespuestaAsociacionResumenDto {

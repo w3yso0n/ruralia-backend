@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import {
@@ -19,19 +20,39 @@ import {
   RespuestaUsoBeneficiarioDto,
 } from './dto/respuesta-beneficiario.dto';
 import { Beneficiario } from './entities/beneficiario.entity';
+import { CampoBeneficiario } from './entities/campo-beneficiario.entity';
 import {
+  analizarExcelBeneficiarios,
   asignarFilaABeneficiario,
+  leerExcelBeneficiarios,
+  leerMapeoFormulario,
   mensajeFilaNoCargada,
   normalizarIdentificador,
-  parsearExcelBeneficiarios,
   sqlCedulaIgual,
+  type AnalisisExcelBeneficiarios,
+  type ExcelBeneficiariosLeido,
 } from '../proyectos/utils/excel-beneficiarios';
-import { RespuestaCargaMasivaBeneficiariosDto } from '../proyectos/dto/carga-beneficiarios.dto';
+import {
+  RespuestaCampoBeneficiarioDto,
+  RespuestaCargaMasivaBeneficiariosDto,
+} from '../proyectos/dto/carga-beneficiarios.dto';
+import {
+  camposConocidos,
+  etiquetasDeCampos,
+  listarCamposBeneficiario,
+  registrarCamposBeneficiario,
+} from './utils/campos-beneficiario';
+import {
+  calcularCambios,
+  revisarFilasExistentes,
+  type FilaExcelRevisada,
+} from './utils/cambios-beneficiario';
 import {
   aRespuestaBeneficiario,
   aRespuestaPaginadaBeneficiarios,
 } from './utils/serializar-beneficiario';
 import { MENSAJE_DOCUMENTO_ELIMINADO } from './utils/mensajes-beneficiario';
+import { aplicarEdicionDatosAdicionales } from './utils/campos-beneficiario';
 
 @Injectable()
 export class BeneficiariosService {
@@ -40,6 +61,8 @@ export class BeneficiariosService {
     private readonly beneficiarioRepository: Repository<Beneficiario>,
     @InjectRepository(Vereda)
     private readonly veredaRepository: Repository<Vereda>,
+    @InjectRepository(CampoBeneficiario)
+    private readonly campoRepository: Repository<CampoBeneficiario>,
   ) {}
 
   async listar(
@@ -64,7 +87,7 @@ export class BeneficiariosService {
 
     if (filtros.busqueda) {
       query.andWhere(
-        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda OR beneficiario.municipio ILIKE :busqueda OR beneficiario.nombreAsociacion ILIKE :busqueda OR beneficiario.lineaProductiva ILIKE :busqueda)',
+        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda OR beneficiario.municipio ILIKE :busqueda OR beneficiario.nombreAsociacion ILIKE :busqueda OR beneficiario.lineaProductiva ILIKE :busqueda OR beneficiario.datos_adicionales::text ILIKE :busqueda)',
         { busqueda: `%${filtros.busqueda}%` },
       );
     }
@@ -117,9 +140,49 @@ export class BeneficiariosService {
     return { proyectos, jornadas, asociaciones, documentos };
   }
 
+  async listarCamposAdicionales(): Promise<RespuestaCampoBeneficiarioDto[]> {
+    const campos = await listarCamposBeneficiario(this.campoRepository, null);
+    return plainToInstance(RespuestaCampoBeneficiarioDto, campos, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  async analizarExcel(
+    archivo: Express.Multer.File,
+  ): Promise<AnalisisExcelBeneficiarios> {
+    return analizarExcelBeneficiarios(
+      archivo.buffer,
+      await camposConocidos(this.campoRepository, null),
+    );
+  }
+
+  async leerExcel(
+    archivo: Express.Multer.File,
+    mapeo?: string,
+  ): Promise<ExcelBeneficiariosLeido> {
+    return leerExcelBeneficiarios(archivo.buffer, {
+      mapeo: leerMapeoFormulario(mapeo),
+      camposConocidos: await camposConocidos(this.campoRepository, null),
+    });
+  }
+
+  /** Revisión antes de guardar: marca quién ya está en la plataforma y qué se le va a sobrescribir. */
+  async previsualizarExcel(
+    archivo: Express.Multer.File,
+    mapeo?: string,
+  ): Promise<FilaExcelRevisada[]> {
+    const { filas, camposExtra } = await this.leerExcel(archivo, mapeo);
+    return revisarFilasExistentes(
+      this.beneficiarioRepository,
+      filas,
+      etiquetasDeCampos(camposExtra),
+    );
+  }
+
   async importarExcel(
     archivo: Express.Multer.File,
     veredaId?: string,
+    mapeo?: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     const veredaSeleccionada = veredaId?.trim();
     if (veredaSeleccionada) {
@@ -134,11 +197,14 @@ export class BeneficiariosService {
       }
     }
 
-    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    const { filas, camposExtra } = await this.leerExcel(archivo, mapeo);
+    await registrarCamposBeneficiario(this.campoRepository, null, camposExtra);
+    const etiquetasExtra = etiquetasDeCampos(camposExtra);
     const detalle: RespuestaCargaMasivaBeneficiariosDto['detalle'] = [];
     const vistos = new Set<string>();
     let creados = 0;
     let asignadosExistentes = 0;
+    let actualizados = 0;
     let errores = 0;
 
     for (const fila of filas) {
@@ -181,6 +247,10 @@ export class BeneficiariosService {
         });
         continue;
       }
+      const cambios = existente
+        ? calcularCambios(existente, fila, etiquetasExtra)
+        : [];
+      if (cambios.length) actualizados += 1;
       if (existente && existente.estaActivo) {
         const documento = existente.numeroDocumento;
         asignarFilaABeneficiario(existente, fila, veredaSeleccionada);
@@ -194,7 +264,10 @@ export class BeneficiariosService {
           apellidos: fila.apellidos,
           resultado: 'asignado_existente',
           beneficiarioId: existente.id,
-          mensaje: 'La cédula ya existía: no se duplicó el registro',
+          mensaje: cambios.length
+            ? 'La cédula ya existía: se actualizaron sus datos sin duplicar el registro'
+            : 'La cédula ya existía: no se duplicó el registro',
+          cambios: cambios.length ? cambios : undefined,
         });
         continue;
       }
@@ -212,6 +285,7 @@ export class BeneficiariosService {
           resultado: 'creado',
           beneficiarioId: reactivado.id,
           mensaje: 'Se reactivó',
+          cambios: cambios.length ? cambios : undefined,
         });
         continue;
       }
@@ -237,6 +311,7 @@ export class BeneficiariosService {
       creados,
       asignadosExistentes,
       yaEnProyecto: 0,
+      actualizados,
       errores,
       detalle,
     };
@@ -336,6 +411,12 @@ export class BeneficiariosService {
     }
     if (dto.nombreAsociacion !== undefined) {
       beneficiario.nombreAsociacion = dto.nombreAsociacion || null;
+    }
+    if (dto.datosAdicionales !== undefined) {
+      beneficiario.datosAdicionales = aplicarEdicionDatosAdicionales(
+        beneficiario.datosAdicionales,
+        dto.datosAdicionales,
+      );
     }
 
     await this.beneficiarioRepository.save(beneficiario);

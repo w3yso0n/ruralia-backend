@@ -38,6 +38,7 @@ import {
   AsignarBeneficiariosProyectoDto,
 } from './dto/asignar-vinculos.dto';
 import {
+  RespuestaCampoBeneficiarioDto,
   RespuestaCargaMasivaBeneficiariosDto,
   RespuestaHistorialBeneficiarioProyectoDto,
   ReemplazarBeneficiarioProyectoDto,
@@ -57,7 +58,6 @@ import {
   ResumenProyectoDto,
 } from './dto/resumen-proyecto.dto';
 import { ProyectosService } from './proyectos.service';
-import { parsearExcelBeneficiarios } from './utils/excel-beneficiarios';
 
 @ApiTags('Proyectos')
 @ApiBearerAuth('bearer')
@@ -108,6 +108,40 @@ export class ProyectosController {
     res.send(buffer);
   }
 
+  @Post('beneficiarios-excel/analizar')
+  @RequierePermisos('proyectos.gestionar_vinculos')
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        archivo: { type: 'string', format: 'binary' },
+        proyectoId: {
+          type: 'string',
+          description: 'Opcional: reutiliza los datos adicionales que el proyecto ya tiene',
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary: 'Lee las columnas de cualquier Excel y propone a qué campo va cada una',
+  })
+  analizarBeneficiariosExcel(
+    @UploadedFile() archivo: Express.Multer.File,
+    @Body('proyectoId') proyectoId?: string,
+  ) {
+    if (!archivo?.buffer) {
+      throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
+    }
+    return this.proyectosService.analizarExcelBeneficiarios(archivo, proyectoId);
+  }
+
   @Post('beneficiarios-excel/previsualizar')
   @RequierePermisos('proyectos.gestionar_vinculos')
   @UseInterceptors(
@@ -120,11 +154,17 @@ export class ProyectosController {
   @ApiOperation({ summary: 'Lee el Excel de beneficiarios sin guardarlo' })
   async previsualizarBeneficiariosExcel(
     @UploadedFile() archivo: Express.Multer.File,
+    @Body('mapeo') mapeo?: string,
+    @Body('proyectoId') proyectoId?: string,
   ) {
     if (!archivo?.buffer) {
       throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
     }
-    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    const filas = await this.proyectosService.previsualizarExcelBeneficiarios(
+      archivo,
+      mapeo,
+      proyectoId,
+    );
     return { filas };
   }
 
@@ -277,6 +317,19 @@ export class ProyectosController {
     );
   }
 
+  @Get(':id/beneficiarios/campos')
+  @RequierePermisos('proyectos.ver')
+  @ApiOperation({
+    summary: 'Datos adicionales que maneja el proyecto (columnas extra de sus cargas)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaCampoBeneficiarioDto] })
+  listarCamposBeneficiario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaCampoBeneficiarioDto[]> {
+    return this.proyectosService.listarCamposBeneficiario(id, usuario);
+  }
+
   @Post(':id/beneficiarios/vincular')
   @RequierePermisos('proyectos.gestionar_vinculos')
   @ApiOperation({
@@ -353,7 +406,14 @@ export class ProyectosController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { archivo: { type: 'string', format: 'binary' } },
+      properties: {
+        archivo: { type: 'string', format: 'binary' },
+        veredaId: { type: 'string' },
+        mapeo: {
+          type: 'string',
+          description: 'JSON con la asignación de columnas. Vacío: automática.',
+        },
+      },
     },
   })
   @ApiOperation({
@@ -366,6 +426,7 @@ export class ProyectosController {
     @UploadedFile() archivo: Express.Multer.File,
     @Body('veredaId') veredaId: string,
     @UsuarioActual() usuario: Usuario,
+    @Body('mapeo') mapeo?: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     if (!archivo?.buffer) {
       throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
@@ -375,6 +436,7 @@ export class ProyectosController {
       archivo,
       usuario,
       veredaId,
+      mapeo,
     );
   }
 

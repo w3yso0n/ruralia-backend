@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Expose, Type } from 'class-transformer';
 import {
   IsEnum,
   IsNotEmpty,
@@ -55,6 +55,20 @@ export class ReemplazarBeneficiarioProyectoDto {
   nota?: string;
 }
 
+export class CambioDatoBeneficiarioDto {
+  @ApiProperty()
+  campo: string;
+
+  @ApiProperty()
+  etiqueta: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  antes: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  despues: string | null;
+}
+
 export class FilaCargaBeneficiarioDto {
   @ApiProperty()
   fila: number;
@@ -78,6 +92,13 @@ export class FilaCargaBeneficiarioDto {
 
   @ApiPropertyOptional()
   beneficiarioId?: string;
+
+  @ApiPropertyOptional({
+    type: [CambioDatoBeneficiarioDto],
+    description: 'La cédula ya existía: datos de la persona que se sobrescribieron',
+  })
+  @Type(() => CambioDatoBeneficiarioDto)
+  cambios?: CambioDatoBeneficiarioDto[];
 }
 
 export class RespuestaCargaMasivaBeneficiariosDto {
@@ -92,6 +113,11 @@ export class RespuestaCargaMasivaBeneficiariosDto {
 
   @ApiProperty()
   yaEnProyecto: number;
+
+  @ApiProperty({
+    description: 'Personas que ya existían y a las que se les modificó algún dato',
+  })
+  actualizados: number;
 
   @ApiProperty()
   errores: number;
@@ -157,4 +183,30 @@ export class RespuestaHistorialBeneficiarioProyectoDto {
   @ApiProperty({ type: [EventoJornadaHistorialDto] })
   @Type(() => EventoJornadaHistorialDto)
   jornadas: EventoJornadaHistorialDto[];
+}
+
+export class RespuestaCampoBeneficiarioDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty({ description: 'Llave dentro de datosAdicionales' })
+  @Expose()
+  clave: string;
+
+  @ApiProperty()
+  @Expose()
+  etiqueta: string;
+
+  @ApiProperty({ enum: ['texto', 'numero', 'fecha', 'booleano'] })
+  @Expose()
+  tipo: string;
+
+  @ApiProperty()
+  @Expose()
+  orden: number;
+
+  @ApiPropertyOptional()
+  @Expose()
+  columnaOrigen?: string | null;
 }

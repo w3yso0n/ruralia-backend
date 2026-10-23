@@ -5,6 +5,11 @@ import ExcelJS from 'exceljs';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Genero } from '../../beneficiarios/enums/genero.enum';
 import { TipoDocumento } from '../../beneficiarios/enums/tipo-documento.enum';
+import type {
+  DatosAdicionales,
+  TipoCampoBeneficiario,
+  ValorDatoAdicional,
+} from '../../beneficiarios/entities/campo-beneficiario.entity';
 
 export interface FilaExcelBeneficiario {
   fila: number;
@@ -23,9 +28,88 @@ export interface FilaExcelBeneficiario {
   municipio?: string | null;
   lineaProductiva?: string | null;
   nombreAsociacion?: string | null;
+  /** AAAA-MM-DD. */
+  fechaNacimiento?: string | null;
   /** Solo viene si el archivo tiene columna ESTADO. */
   estaActivo?: boolean;
+  /** Columnas mapeadas como dato adicional. Las celdas vacías no vienen. */
+  extras?: DatosAdicionales;
 }
+
+/** Campos del modelo `Beneficiario` a los que se puede asignar una columna. */
+export type CampoModeloBeneficiario =
+  | 'numeroDocumento'
+  | 'tipoDocumento'
+  | 'primerNombre'
+  | 'segundoNombre'
+  | 'primerApellido'
+  | 'segundoApellido'
+  | 'nombres'
+  | 'apellidos'
+  | 'telefono'
+  | 'correo'
+  | 'genero'
+  | 'edad'
+  | 'fechaNacimiento'
+  | 'municipio'
+  | 'lineaProductiva'
+  | 'nombreAsociacion'
+  | 'estado';
+
+export type DestinoColumna =
+  | { destino: 'modelo'; campo: CampoModeloBeneficiario }
+  | {
+      destino: 'extra';
+      clave: string;
+      etiqueta: string;
+      tipo: TipoCampoBeneficiario;
+    }
+  | { destino: 'ignorar' };
+
+export type ColumnaMapeo = DestinoColumna & { columna: number };
+
+export interface MapeoColumnasBeneficiarios {
+  filaEncabezado: number;
+  columnas: ColumnaMapeo[];
+}
+
+export interface ColumnaExcelAnalizada {
+  columna: number;
+  letra: string;
+  encabezado: string;
+  muestras: string[];
+  conDatos: number;
+  tipoDetectado: TipoCampoBeneficiario;
+  sugerencia: DestinoColumna;
+}
+
+export interface AnalisisExcelBeneficiarios {
+  hoja: string;
+  filaEncabezado: number;
+  totalFilas: number;
+  columnas: ColumnaExcelAnalizada[];
+}
+
+export interface CampoExtraLeido {
+  clave: string;
+  etiqueta: string;
+  tipo: TipoCampoBeneficiario;
+  columnaOrigen: string;
+}
+
+/** Definición ya guardada, para reutilizar la misma clave en la siguiente carga. */
+export interface CampoConocido {
+  clave: string;
+  etiqueta: string;
+  tipo: TipoCampoBeneficiario;
+  columnaOrigen: string | null;
+}
+
+const MAX_CAMPOS_EXTRA = 100;
+const MAX_COLUMNAS = 200;
+const MAX_LARGO_VALOR = 1000;
+const REGEX_CLAVE = /^[a-z][a-z0-9_]{0,59}$/;
+const TIPOS_CAMPO: TipoCampoBeneficiario[] = ['texto', 'numero', 'fecha', 'booleano'];
 
 const ALIAS_NOMBRE = ['nombre', 'nombres', 'nombre completo', 'nombre_completo'];
 const ALIAS_APELLIDOS = ['apellidos', 'apellido'];
@@ -69,6 +153,37 @@ const ALIAS_LINEA = [
   'línea productiva',
 ];
 const ALIAS_ESTADO = ['estado'];
+const ALIAS_FECHA_NACIMIENTO = [
+  'fecha_nacimiento',
+  'fecha nacimiento',
+  'fecha de nacimiento',
+  'f nacimiento',
+];
+
+/** En orden de prioridad: si una columna calza con dos campos, gana el primero. */
+const ALIAS_CAMPOS: Array<[CampoModeloBeneficiario, string[]]> = [
+  ['numeroDocumento', [...ALIAS_ID, 'numero de documento', 'no documento', 'documento de identidad', 'numero de identificacion', 'identificacion']],
+  ['tipoDocumento', [...ALIAS_TIPO, 'tipo de documento', 'tipo identificacion']],
+  ['primerNombre', ALIAS_PRIMER_NOMBRE],
+  ['segundoNombre', ALIAS_SEGUNDO_NOMBRE],
+  ['primerApellido', ALIAS_PRIMER_APELLIDO],
+  ['segundoApellido', ALIAS_SEGUNDO_APELLIDO],
+  ['nombres', [...ALIAS_NOMBRE, 'nombres y apellidos', 'nombre y apellidos', 'nombre del beneficiario']],
+  ['apellidos', ALIAS_APELLIDOS],
+  ['telefono', [...ALIAS_TELEFONO, 'telefono celular', 'numero de contacto', 'contacto']],
+  ['correo', [...ALIAS_CORREO, 'e mail']],
+  ['genero', ALIAS_SEXO],
+  ['edad', ALIAS_EDAD],
+  ['fechaNacimiento', ALIAS_FECHA_NACIMIENTO],
+  ['municipio', ALIAS_MUNICIPIO],
+  ['lineaProductiva', ALIAS_LINEA],
+  ['nombreAsociacion', [...ALIAS_ASOCIACION, 'nombre de la asociacion', 'organizacion']],
+  ['estado', ALIAS_ESTADO],
+];
+
+const CAMPOS_MODELO = new Set<CampoModeloBeneficiario>(
+  ALIAS_CAMPOS.map(([campo]) => campo),
+);
 
 const COLUMNAS_PLANTILLA = [
   { titulo: 'CEDULA', ancho: 16 },
@@ -236,33 +351,458 @@ function activoDesdeTexto(valor: string): boolean {
   return true;
 }
 
-function indiceColumna(encabezados: string[], alias: string[]): number {
-  return encabezados.findIndex((h) => alias.includes(h));
+/** Encabezado comparable: sin tildes, minúsculas y con `_ . - :` como espacio. */
+function claveEncabezado(valor: unknown): string {
+  return normalizarEncabezado(valor)
+    .replace(/[_.\-:#°º/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-function leerEncabezados(row: ExcelJS.Row): string[] {
-  const encabezados: string[] = [];
-  row.eachCell({ includeEmpty: true }, (celda, col) => {
-    encabezados[col] = normalizarEncabezado(celda.value);
-  });
-  return encabezados;
+let aliasNormalizados: Array<[CampoModeloBeneficiario, Set<string>]> | null =
+  null;
+
+function campoPorEncabezado(
+  encabezado: string,
+  usados: Set<CampoModeloBeneficiario>,
+): CampoModeloBeneficiario | null {
+  aliasNormalizados ??= ALIAS_CAMPOS.map(([campo, alias]) => [
+    campo,
+    new Set(alias.map(claveEncabezado)),
+  ]);
+  const clave = claveEncabezado(encabezado);
+  if (!clave) return null;
+  for (const [campo, alias] of aliasNormalizados) {
+    if (!usados.has(campo) && alias.has(clave)) return campo;
+  }
+  return null;
 }
 
-function buscarFilaEncabezado(hoja: ExcelJS.Worksheet): number {
-  let encontrada = 0;
-  const tope = Math.min(hoja.rowCount || 30, 30);
-  for (let numero = 1; numero <= tope; numero += 1) {
-    const encabezados = leerEncabezados(hoja.getRow(numero));
-    const tieneId = indiceColumna(encabezados, ALIAS_ID) >= 0;
-    const tieneNombre =
-      indiceColumna(encabezados, ALIAS_NOMBRE) >= 0 ||
-      indiceColumna(encabezados, ALIAS_PRIMER_NOMBRE) >= 0;
-    if (tieneId && tieneNombre) {
-      encontrada = numero;
-      break;
+/** Valor de la celda sin envoltorios de exceljs (fórmula, texto enriquecido, hipervínculo). */
+function valorPrimitivo(valor: unknown): string | number | boolean | Date | null {
+  if (valor == null) return null;
+  if (typeof valor === 'number' || typeof valor === 'boolean') return valor;
+  if (valor instanceof Date) return valor;
+  if (typeof valor === 'string') return limpiarTexto(valor) || null;
+  if (typeof valor === 'object') {
+    const objeto = valor as { result?: unknown; formula?: unknown; sharedFormula?: unknown };
+    if ('result' in objeto) return valorPrimitivo(objeto.result);
+    if ('formula' in objeto || 'sharedFormula' in objeto) return null;
+    return limpiarTexto(celdaTexto(valor)) || null;
+  }
+  return null;
+}
+
+function esFormula(valor: unknown): boolean {
+  return (
+    typeof valor === 'object' &&
+    valor !== null &&
+    ('formula' in valor || 'sharedFormula' in valor)
+  );
+}
+
+/** Número sin ceros a la izquierda (un "0123" es un código, no un número). */
+const REGEX_NUMERO = /^-?(0|[1-9]\d{0,14})([.,]\d+)?$/;
+const REGEX_FECHA_DMA = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/;
+const REGEX_FECHA_AMD = /^(\d{4})-(\d{2})-(\d{2})/;
+
+function fechaIso(fecha: Date): string {
+  return fecha.toISOString().slice(0, 10);
+}
+
+function fechaDesdeTexto(texto: string): string | null {
+  const amd = REGEX_FECHA_AMD.exec(texto);
+  if (amd) return `${amd[1]}-${amd[2]}-${amd[3]}`;
+  const dma = REGEX_FECHA_DMA.exec(texto);
+  if (!dma) return null;
+  const dia = Number(dma[1]);
+  const mes = Number(dma[2]);
+  if (dia < 1 || dia > 31 || mes < 1 || mes > 12) return null;
+  return `${dma[3]}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+function booleanoDesdeTexto(texto: string): boolean | null {
+  const clave = normalizarEncabezado(texto);
+  if (['si', 'verdadero', 'true'].includes(clave)) return true;
+  if (['no', 'falso', 'false'].includes(clave)) return false;
+  return null;
+}
+
+function tipoDeValor(
+  valor: string | number | boolean | Date,
+): TipoCampoBeneficiario {
+  if (typeof valor === 'number') return 'numero';
+  if (typeof valor === 'boolean') return 'booleano';
+  if (valor instanceof Date) return 'fecha';
+  if (REGEX_NUMERO.test(valor)) return 'numero';
+  if (fechaDesdeTexto(valor)) return 'fecha';
+  if (booleanoDesdeTexto(valor) !== null) return 'booleano';
+  return 'texto';
+}
+
+/** Convierte la celda al tipo del campo. Si no encaja, guarda el texto: nunca se pierde el dato. */
+function valorExtra(
+  valor: unknown,
+  tipo: TipoCampoBeneficiario,
+): ValorDatoAdicional | undefined {
+  const primitivo = valorPrimitivo(valor);
+  if (primitivo === null) return undefined;
+  if (tipo === 'numero') {
+    if (typeof primitivo === 'number') return primitivo;
+    if (typeof primitivo === 'string' && REGEX_NUMERO.test(primitivo)) {
+      return Number(primitivo.replace(',', '.'));
     }
   }
-  return encontrada;
+  if (tipo === 'fecha') {
+    if (primitivo instanceof Date) return fechaIso(primitivo);
+    if (typeof primitivo === 'string') {
+      const fecha = fechaDesdeTexto(primitivo);
+      if (fecha) return fecha;
+    }
+  }
+  if (tipo === 'booleano') {
+    if (typeof primitivo === 'boolean') return primitivo;
+    if (typeof primitivo === 'string') {
+      const booleano = booleanoDesdeTexto(primitivo);
+      if (booleano !== null) return booleano;
+    }
+  }
+  const texto =
+    primitivo instanceof Date ? fechaIso(primitivo) : String(primitivo);
+  return texto.slice(0, MAX_LARGO_VALOR) || undefined;
+}
+
+function fechaNacimientoDesdeCelda(valor: unknown): string | null {
+  const primitivo = valorPrimitivo(valor);
+  if (primitivo instanceof Date) return fechaIso(primitivo);
+  if (typeof primitivo === 'string') return fechaDesdeTexto(primitivo);
+  return null;
+}
+
+/** Clave para el jsonb a partir del encabezado: "Hectáreas sembradas" -> "hectareas_sembradas". */
+export function claveDesdeEncabezado(encabezado: string): string {
+  const base = normalizarEncabezado(encabezado)
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 50);
+  if (!base) return 'campo';
+  return /^[a-z]/.test(base) ? base : `campo_${base}`;
+}
+
+function claveUnica(base: string, usadas: Set<string>): string {
+  let clave = base;
+  let sufijo = 2;
+  while (usadas.has(clave)) {
+    clave = `${base}_${sufijo}`;
+    sufijo += 1;
+  }
+  usadas.add(clave);
+  return clave;
+}
+
+function letraColumna(numero: number): string {
+  let letra = '';
+  let resto = numero;
+  while (resto > 0) {
+    const modulo = (resto - 1) % 26;
+    letra = String.fromCharCode(65 + modulo) + letra;
+    resto = Math.floor((resto - 1) / 26);
+  }
+  return letra;
+}
+
+function textoEncabezado(row: ExcelJS.Row, columna: number): string {
+  const primitivo = valorPrimitivo(row.getCell(columna).value);
+  if (primitivo === null) return '';
+  return primitivo instanceof Date ? fechaIso(primitivo) : String(primitivo);
+}
+
+function contarColumnas(hoja: ExcelJS.Worksheet, filaEncabezado: number): number {
+  const encabezado = hoja.getRow(filaEncabezado).cellCount;
+  return Math.min(Math.max(hoja.columnCount, encabezado), MAX_COLUMNAS);
+}
+
+/**
+ * Fila de encabezados: la primera que tenga cédula y nombre con alias conocidos.
+ * Si no hay ninguna, la que tenga más celdas de texto entre las primeras 30.
+ */
+function buscarFilaEncabezado(hoja: ExcelJS.Worksheet): number {
+  const tope = Math.min(hoja.rowCount || 30, 30);
+  let mejor = 0;
+  let mejorConteo = 1;
+  for (let numero = 1; numero <= tope; numero += 1) {
+    const row = hoja.getRow(numero);
+    const usados = new Set<CampoModeloBeneficiario>();
+    let textos = 0;
+    row.eachCell((celda) => {
+      const primitivo = valorPrimitivo(celda.value);
+      if (typeof primitivo === 'string' && tipoDeValor(primitivo) === 'texto') {
+        textos += 1;
+      }
+      const campo = campoPorEncabezado(celdaTexto(celda.value), usados);
+      if (campo) usados.add(campo);
+    });
+    const tieneNombre = usados.has('nombres') || usados.has('primerNombre');
+    if (usados.has('numeroDocumento') && tieneNombre) return numero;
+    if (textos > mejorConteo) {
+      mejor = numero;
+      mejorConteo = textos;
+    }
+  }
+  return mejor;
+}
+
+interface HojaLeida {
+  hoja: ExcelJS.Worksheet;
+  filaEncabezado: number;
+}
+
+/** Firma de los .xls (Excel 97-2003); exceljs solo lee .xlsx. */
+const FIRMA_XLS = Buffer.from([0xd0, 0xcf, 0x11, 0xe0]);
+
+export const MENSAJE_SOLO_XLSX =
+  'El archivo debe ser Excel .xlsx. Si es .xls (Excel 97-2003), ábrelo en Excel y usa "Guardar como" > "Libro de Excel (.xlsx)".';
+
+async function cargarHoja(buffer: Buffer): Promise<HojaLeida> {
+  if (buffer.subarray(0, 4).equals(FIRMA_XLS)) {
+    throw new BadRequestException(MENSAJE_SOLO_XLSX);
+  }
+  const wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+  } catch {
+    throw new BadRequestException(
+      'No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.',
+    );
+  }
+  const hoja = wb.worksheets.find((h) => h.rowCount > 0) ?? wb.worksheets[0];
+  if (!hoja) {
+    throw new BadRequestException('El archivo no tiene hojas');
+  }
+  const filaEncabezado = buscarFilaEncabezado(hoja);
+  if (filaEncabezado < 1) {
+    throw new BadRequestException(
+      'No se encontró la fila de títulos. La primera fila con datos debe tener el nombre de cada columna.',
+    );
+  }
+  return { hoja, filaEncabezado };
+}
+
+function sugerirDestino(
+  titulo: string,
+  encabezado: string,
+  tipo: TipoCampoBeneficiario,
+  soloFormulas: boolean,
+  conDatos: number,
+  usados: Set<CampoModeloBeneficiario>,
+  clavesUsadas: Set<string>,
+  conocidos: Map<string, CampoConocido>,
+): DestinoColumna {
+  const campo = campoPorEncabezado(titulo, usados);
+  if (campo) {
+    usados.add(campo);
+    return { destino: 'modelo', campo };
+  }
+  if (!conDatos || soloFormulas) return { destino: 'ignorar' };
+  const conocido = titulo ? conocidos.get(claveEncabezado(titulo)) : undefined;
+  if (conocido && !clavesUsadas.has(conocido.clave)) {
+    clavesUsadas.add(conocido.clave);
+    return {
+      destino: 'extra',
+      clave: conocido.clave,
+      etiqueta: conocido.etiqueta,
+      tipo: conocido.tipo,
+    };
+  }
+  return {
+    destino: 'extra',
+    clave: claveUnica(claveDesdeEncabezado(encabezado), clavesUsadas),
+    etiqueta: encabezado.slice(0, 120),
+    tipo,
+  };
+}
+
+function analizarHoja(
+  { hoja, filaEncabezado }: HojaLeida,
+  camposConocidos: CampoConocido[],
+): AnalisisExcelBeneficiarios {
+  const totalColumnas = contarColumnas(hoja, filaEncabezado);
+  const filaTitulos = hoja.getRow(filaEncabezado);
+  const estadisticas = Array.from({ length: totalColumnas + 1 }, () => ({
+    conDatos: 0,
+    formulas: 0,
+    tipos: new Map<TipoCampoBeneficiario, number>(),
+    muestras: [] as string[],
+  }));
+
+  let totalFilas = 0;
+  hoja.eachRow((row, numero) => {
+    if (numero <= filaEncabezado) return;
+    let tieneDatos = false;
+    for (let columna = 1; columna <= totalColumnas; columna += 1) {
+      const valor = row.getCell(columna).value;
+      const primitivo = valorPrimitivo(valor);
+      if (primitivo === null) continue;
+      tieneDatos = true;
+      const stats = estadisticas[columna];
+      stats.conDatos += 1;
+      if (esFormula(valor)) stats.formulas += 1;
+      const tipo = tipoDeValor(primitivo);
+      stats.tipos.set(tipo, (stats.tipos.get(tipo) ?? 0) + 1);
+      if (stats.muestras.length < 3) {
+        stats.muestras.push(
+          primitivo instanceof Date ? fechaIso(primitivo) : String(primitivo),
+        );
+      }
+    }
+    if (tieneDatos) totalFilas += 1;
+  });
+
+  const conocidos = new Map<string, CampoConocido>();
+  for (const campo of camposConocidos) {
+    conocidos.set(claveEncabezado(campo.columnaOrigen ?? campo.etiqueta), campo);
+    conocidos.set(claveEncabezado(campo.etiqueta), campo);
+  }
+  const usados = new Set<CampoModeloBeneficiario>();
+  const clavesUsadas = new Set<string>();
+  const columnas: ColumnaExcelAnalizada[] = [];
+  for (let columna = 1; columna <= totalColumnas; columna += 1) {
+    const stats = estadisticas[columna];
+    const titulo = textoEncabezado(filaTitulos, columna);
+    if (!titulo && !stats.conDatos) continue;
+    const letra = letraColumna(columna);
+    const encabezado = titulo || `Columna ${letra}`;
+    const tipoDetectado =
+      stats.conDatos && stats.tipos.size === 1
+        ? [...stats.tipos.keys()][0]
+        : 'texto';
+    columnas.push({
+      columna,
+      letra,
+      encabezado,
+      muestras: stats.muestras,
+      conDatos: stats.conDatos,
+      tipoDetectado,
+      sugerencia: sugerirDestino(
+        titulo,
+        encabezado,
+        tipoDetectado,
+        stats.conDatos > 0 && stats.formulas === stats.conDatos,
+        stats.conDatos,
+        usados,
+        clavesUsadas,
+        conocidos,
+      ),
+    });
+  }
+
+  return { hoja: hoja.name, filaEncabezado, totalFilas, columnas };
+}
+
+/** Lee el Excel sin guardar nada y propone a qué campo va cada columna. */
+export async function analizarExcelBeneficiarios(
+  buffer: Buffer,
+  camposConocidos: CampoConocido[] = [],
+): Promise<AnalisisExcelBeneficiarios> {
+  return analizarHoja(await cargarHoja(buffer), camposConocidos);
+}
+
+function mapeoDesdeAnalisis(
+  analisis: AnalisisExcelBeneficiarios,
+): MapeoColumnasBeneficiarios {
+  return {
+    filaEncabezado: analisis.filaEncabezado,
+    columnas: analisis.columnas.map((c) => ({ ...c.sugerencia, columna: c.columna })),
+  };
+}
+
+/** Valida el mapeo que manda el cliente. Lanza un mensaje claro si algo no cuadra. */
+export function validarMapeo(entrada: unknown): MapeoColumnasBeneficiarios {
+  const invalido = (detalle: string) =>
+    new BadRequestException(`El mapeo de columnas no es válido: ${detalle}`);
+  if (typeof entrada !== 'object' || entrada === null) throw invalido('formato');
+  const { filaEncabezado, columnas } = entrada as Record<string, unknown>;
+  if (!Number.isInteger(filaEncabezado) || (filaEncabezado as number) < 1) {
+    throw invalido('fila de títulos');
+  }
+  if (!Array.isArray(columnas) || columnas.length > MAX_COLUMNAS) {
+    throw invalido('columnas');
+  }
+
+  const vistasColumnas = new Set<number>();
+  const campos = new Set<CampoModeloBeneficiario>();
+  const claves = new Set<string>();
+  const resultado: ColumnaMapeo[] = [];
+  for (const item of columnas as Array<Record<string, unknown>>) {
+    const columna = item?.columna;
+    if (!Number.isInteger(columna) || (columna as number) < 1) {
+      throw invalido('número de columna');
+    }
+    if (vistasColumnas.has(columna as number)) throw invalido('columna repetida');
+    vistasColumnas.add(columna as number);
+
+    if (item.destino === 'ignorar') {
+      resultado.push({ columna: columna as number, destino: 'ignorar' });
+      continue;
+    }
+    if (item.destino === 'modelo') {
+      const campo = item.campo as CampoModeloBeneficiario;
+      if (!CAMPOS_MODELO.has(campo)) throw invalido(`campo "${String(campo)}"`);
+      if (campos.has(campo)) {
+        throw invalido(`dos columnas van al mismo campo (${campo})`);
+      }
+      campos.add(campo);
+      resultado.push({ columna: columna as number, destino: 'modelo', campo });
+      continue;
+    }
+    if (item.destino === 'extra') {
+      const clave = typeof item.clave === 'string' ? item.clave : '';
+      const etiqueta = limpiarTexto(
+        typeof item.etiqueta === 'string' ? item.etiqueta : '',
+      ).slice(0, 120);
+      const tipo = item.tipo as TipoCampoBeneficiario;
+      if (!REGEX_CLAVE.test(clave)) throw invalido(`clave "${clave}"`);
+      if (claves.has(clave)) throw invalido(`clave repetida "${clave}"`);
+      if (!etiqueta) throw invalido('un dato adicional no tiene nombre');
+      if (!TIPOS_CAMPO.includes(tipo)) throw invalido(`tipo "${String(tipo)}"`);
+      claves.add(clave);
+      resultado.push({
+        columna: columna as number,
+        destino: 'extra',
+        clave,
+        etiqueta,
+        tipo,
+      });
+      continue;
+    }
+    throw invalido('destino');
+  }
+
+  if (claves.size > MAX_CAMPOS_EXTRA) {
+    throw new BadRequestException(
+      `Se admiten hasta ${MAX_CAMPOS_EXTRA} datos adicionales por carga`,
+    );
+  }
+  if (!campos.has('numeroDocumento') || !(campos.has('nombres') || campos.has('primerNombre'))) {
+    throw new BadRequestException(
+      'Indica qué columna es la cédula (o identificador) y cuál el nombre (o primer nombre).',
+    );
+  }
+  return { filaEncabezado: filaEncabezado as number, columnas: resultado };
+}
+
+/** El mapeo llega como texto JSON en el formulario multipart. Vacío: se usa el automático. */
+export function leerMapeoFormulario(
+  texto: string | undefined,
+): MapeoColumnasBeneficiarios | undefined {
+  if (!texto?.trim()) return undefined;
+  let json: unknown;
+  try {
+    json = JSON.parse(texto);
+  } catch {
+    throw new BadRequestException('El mapeo de columnas no es JSON válido');
+  }
+  return validarMapeo(json);
 }
 
 function textoColumna(row: ExcelJS.Row, columna: number): string {
@@ -299,44 +839,58 @@ const TEAL_SOFT = 'FFEEF3F2';
 const TEAL_TEXTO = 'FF2D524D';
 const BLANCO = 'FFFFFFFF';
 
-export async function parsearExcelBeneficiarios(
+export interface ExcelBeneficiariosLeido {
+  filas: FilaExcelBeneficiario[];
+  mapeo: MapeoColumnasBeneficiarios;
+  camposExtra: CampoExtraLeido[];
+}
+
+/**
+ * Lee las personas del Excel. Con `mapeo` usa la asignación de columnas que eligió
+ * el usuario; sin él, la automática por alias (la plantilla de la matriz encaja sola).
+ * Las columnas mapeadas como dato adicional quedan en `fila.extras`.
+ */
+export async function leerExcelBeneficiarios(
   buffer: Buffer,
-): Promise<FilaExcelBeneficiario[]> {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
-  const hoja = wb.worksheets[0];
-  if (!hoja) return [];
-
-  const filaEncabezado = buscarFilaEncabezado(hoja);
-  if (filaEncabezado < 1) {
-    throw new BadRequestException(
-      'El Excel debe tener cédula (o identificador) y primer nombre (o nombres).',
+  opciones: {
+    mapeo?: MapeoColumnasBeneficiarios;
+    camposConocidos?: CampoConocido[];
+  } = {},
+): Promise<ExcelBeneficiariosLeido> {
+  const leida = await cargarHoja(buffer);
+  const mapeo =
+    opciones.mapeo ??
+    validarMapeo(
+      mapeoDesdeAnalisis(analizarHoja(leida, opciones.camposConocidos ?? [])),
     );
-  }
+  const { hoja } = leida;
+  const filaEncabezado = mapeo.filaEncabezado;
+  const filaTitulos = hoja.getRow(filaEncabezado);
 
-  const encabezados = leerEncabezados(hoja.getRow(filaEncabezado));
-  const colNombre = indiceColumna(encabezados, ALIAS_NOMBRE);
-  const colApellidos = indiceColumna(encabezados, ALIAS_APELLIDOS);
-  const colPrimerNombre = indiceColumna(encabezados, ALIAS_PRIMER_NOMBRE);
-  const colSegundoNombre = indiceColumna(encabezados, ALIAS_SEGUNDO_NOMBRE);
-  const colPrimerApellido = indiceColumna(encabezados, ALIAS_PRIMER_APELLIDO);
-  const colSegundoApellido = indiceColumna(encabezados, ALIAS_SEGUNDO_APELLIDO);
-  const colId = indiceColumna(encabezados, ALIAS_ID);
-  const colTipo = indiceColumna(encabezados, ALIAS_TIPO);
-  const colTel = indiceColumna(encabezados, ALIAS_TELEFONO);
-  const colCorreo = indiceColumna(encabezados, ALIAS_CORREO);
-  const colSexo = indiceColumna(encabezados, ALIAS_SEXO);
-  const colEdad = indiceColumna(encabezados, ALIAS_EDAD);
-  const colAsociacion = indiceColumna(encabezados, ALIAS_ASOCIACION);
-  const colMunicipio = indiceColumna(encabezados, ALIAS_MUNICIPIO);
-  const colLinea = indiceColumna(encabezados, ALIAS_LINEA);
-  const colEstado = indiceColumna(encabezados, ALIAS_ESTADO);
-
-  if (colId < 1 || (colNombre < 1 && colPrimerNombre < 1)) {
-    throw new BadRequestException(
-      'El Excel debe tener cédula (o identificador) y primer nombre (o nombres).',
-    );
+  const col = new Map<CampoModeloBeneficiario, number>();
+  const extras: Array<Extract<ColumnaMapeo, { destino: 'extra' }>> = [];
+  for (const columna of mapeo.columnas) {
+    if (columna.destino === 'modelo') col.set(columna.campo, columna.columna);
+    if (columna.destino === 'extra') extras.push(columna);
   }
+  const c = (campo: CampoModeloBeneficiario) => col.get(campo) ?? -1;
+  const colNombre = c('nombres');
+  const colApellidos = c('apellidos');
+  const colPrimerNombre = c('primerNombre');
+  const colSegundoNombre = c('segundoNombre');
+  const colPrimerApellido = c('primerApellido');
+  const colSegundoApellido = c('segundoApellido');
+  const colId = c('numeroDocumento');
+  const colTipo = c('tipoDocumento');
+  const colTel = c('telefono');
+  const colCorreo = c('correo');
+  const colSexo = c('genero');
+  const colEdad = c('edad');
+  const colFechaNacimiento = c('fechaNacimiento');
+  const colAsociacion = c('nombreAsociacion');
+  const colMunicipio = c('municipio');
+  const colLinea = c('lineaProductiva');
+  const colEstado = c('estado');
 
   const filas: FilaExcelBeneficiario[] = [];
   hoja.eachRow((row, numero) => {
@@ -383,12 +937,34 @@ export async function parsearExcelBeneficiarios(
     ponerSiHayColumna(fila, colAsociacion, 'nombreAsociacion', row);
     if (colSexo > 0) fila.genero = generoDesdeTexto(textoColumna(row, colSexo));
     if (colEdad > 0) fila.edad = edadDesdeTexto(textoColumna(row, colEdad));
+    if (colFechaNacimiento > 0) {
+      const fecha = fechaNacimientoDesdeCelda(row.getCell(colFechaNacimiento).value);
+      if (fecha) fila.fechaNacimiento = fecha;
+    }
     if (colEstado > 0) fila.estaActivo = activoDesdeTexto(textoColumna(row, colEstado));
+
+    if (extras.length) {
+      const datos: DatosAdicionales = {};
+      for (const extra of extras) {
+        const valor = valorExtra(row.getCell(extra.columna).value, extra.tipo);
+        if (valor !== undefined) datos[extra.clave] = valor;
+      }
+      fila.extras = datos;
+    }
 
     filas.push(fila);
   });
 
-  return filas;
+  const camposExtra = extras.map((extra) => ({
+    clave: extra.clave,
+    etiqueta: extra.etiqueta,
+    tipo: extra.tipo,
+    columnaOrigen:
+      textoEncabezado(filaTitulos, extra.columna) ||
+      `Columna ${letraColumna(extra.columna)}`,
+  }));
+
+  return { filas, mapeo, camposExtra };
 }
 
 function tieneClave(
@@ -398,7 +974,7 @@ function tieneClave(
   return Object.prototype.hasOwnProperty.call(fila, clave);
 }
 
-/** Copia al beneficiario los campos que sí vienen en la fila. No borra la vereda si el archivo no trae una. */
+/** Copia al beneficiario los campos que sí vienen en la fila, incluidos los datos adicionales. No borra la vereda si el archivo no trae una. */
 export function asignarFilaABeneficiario(
   beneficiario: Beneficiario,
   fila: FilaExcelBeneficiario,
@@ -430,6 +1006,17 @@ export function asignarFilaABeneficiario(
   }
   if (tieneClave(fila, 'nombreAsociacion')) {
     beneficiario.nombreAsociacion = fila.nombreAsociacion ?? null;
+  }
+  if (fila.fechaNacimiento) {
+    // Texto AAAA-MM-DD a propósito: un Date se guardaría con la zona local y correría un día.
+    beneficiario.fechaNacimiento = fila.fechaNacimiento as unknown as Date;
+  }
+  if (fila.extras && Object.keys(fila.extras).length) {
+    // La persona es una sola en la plataforma: lo nuevo pisa lo anterior y las celdas vacías no borran.
+    beneficiario.datosAdicionales = {
+      ...(beneficiario.datosAdicionales ?? {}),
+      ...fila.extras,
+    };
   }
   if (tieneClave(fila, 'estaActivo') && fila.estaActivo !== undefined) {
     beneficiario.estaActivo = fila.estaActivo;

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActividadesModule } from '../actividades/actividades.module';
 import { Asociacion } from '../asociaciones/entities/asociacion.entity';
 import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import { CampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
 import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity';
 import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
@@ -30,6 +31,7 @@ import { ProyectosService } from './proyectos.service';
       ProyectoAsociacion,
       Geocerca,
       Beneficiario,
+      CampoBeneficiario,
       Asociacion,
       Vereda,
       Municipio,

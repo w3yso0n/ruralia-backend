@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
+import { isUUID } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { ActividadesService } from '../actividades/actividades.service';
@@ -47,10 +48,24 @@ import {
   RolEquipoResumenDto,
 } from './dto/resumen-proyecto.dto';
 import {
+  RespuestaCampoBeneficiarioDto,
   RespuestaCargaMasivaBeneficiariosDto,
   RespuestaHistorialBeneficiarioProyectoDto,
   ReemplazarBeneficiarioProyectoDto,
 } from './dto/carga-beneficiarios.dto';
+import { CampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
+import {
+  camposConocidos,
+  etiquetasDeCampos,
+  listarCamposBeneficiario,
+  registrarCamposBeneficiario,
+} from '../beneficiarios/utils/campos-beneficiario';
+import {
+  calcularCambios,
+  revisarFilasExistentes,
+  type CambioDatoBeneficiario,
+  type FilaExcelRevisada,
+} from '../beneficiarios/utils/cambios-beneficiario';
 import { Proyecto } from './entities/proyecto.entity';
 import { ProyectoAsociacion } from './entities/proyecto-asociacion.entity';
 import { ProyectoBeneficiario } from './entities/proyecto-beneficiario.entity';
@@ -64,14 +79,18 @@ import {
   aVistaLimitadaProyecto,
 } from './utils/serializar-proyecto';
 import {
+  analizarExcelBeneficiarios,
   asignarFilaABeneficiario,
   FilaExcelBeneficiario,
   generarPlantillaExcelBeneficiarios,
+  leerExcelBeneficiarios,
+  leerMapeoFormulario,
   mensajeFilaNoCargada,
   normalizarIdentificador,
-  parsearExcelBeneficiarios,
   partirNombreCompleto,
   sqlCedulaIgual,
+  type AnalisisExcelBeneficiarios,
+  type ExcelBeneficiariosLeido,
 } from './utils/excel-beneficiarios';
 import {
   mapearVinculoBeneficiario,
@@ -112,6 +131,8 @@ export class ProyectosService {
     private readonly indicadorRepository: Repository<Indicador>,
     @InjectRepository(RegistroIndicador)
     private readonly registroIndicadorRepository: Repository<RegistroIndicador>,
+    @InjectRepository(CampoBeneficiario)
+    private readonly campoBeneficiarioRepository: Repository<CampoBeneficiario>,
     private readonly actividadesService: ActividadesService,
     private readonly alcanceTerritorialService: AlcanceTerritorialService,
   ) {}
@@ -718,7 +739,7 @@ export class ProyectosService {
     const termino = filtros.busqueda?.trim();
     if (termino) {
       qb.andWhere(
-        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda)',
+        '(beneficiario.nombres ILIKE :busqueda OR beneficiario.apellidos ILIKE :busqueda OR beneficiario.numeroDocumento ILIKE :busqueda OR beneficiario.datos_adicionales::text ILIKE :busqueda)',
         { busqueda: `%${termino}%` },
       );
     }
@@ -732,7 +753,14 @@ export class ProyectosService {
     const [filas, total] = await qb.getManyAndCount();
     const datos = filas.flatMap((vinculo) => {
       const resumen = mapearVinculoBeneficiario(vinculo);
-      return resumen ? [resumen] : [];
+      return resumen
+        ? [
+            {
+              ...resumen,
+              datosAdicionales: vinculo.beneficiario.datosAdicionales ?? {},
+            },
+          ]
+        : [];
     });
 
     return plainToInstance(
@@ -881,11 +909,75 @@ export class ProyectosService {
     return generarPlantillaExcelBeneficiarios();
   }
 
+  async listarCamposBeneficiario(
+    proyectoId: string,
+    usuario: Usuario,
+  ): Promise<RespuestaCampoBeneficiarioDto[]> {
+    await this.alcanceTerritorialService.assertProyectoVisible(
+      usuario,
+      proyectoId,
+    );
+    const campos = await listarCamposBeneficiario(
+      this.campoBeneficiarioRepository,
+      proyectoId,
+    );
+    return plainToInstance(RespuestaCampoBeneficiarioDto, campos, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  /** Solo para sugerir claves ya usadas; un id inválido se ignora (el asistente aún no tiene proyecto). */
+  private async camposConocidosDe(proyectoId?: string) {
+    const id = proyectoId?.trim();
+    if (!id || !isUUID(id)) return [];
+    return camposConocidos(this.campoBeneficiarioRepository, id);
+  }
+
+  async analizarExcelBeneficiarios(
+    archivo: Express.Multer.File,
+    proyectoId?: string,
+  ): Promise<AnalisisExcelBeneficiarios> {
+    return analizarExcelBeneficiarios(
+      archivo.buffer,
+      await this.camposConocidosDe(proyectoId),
+    );
+  }
+
+  async leerExcelBeneficiarios(
+    archivo: Express.Multer.File,
+    mapeo?: string,
+    proyectoId?: string,
+  ): Promise<ExcelBeneficiariosLeido> {
+    return leerExcelBeneficiarios(archivo.buffer, {
+      mapeo: leerMapeoFormulario(mapeo),
+      camposConocidos: await this.camposConocidosDe(proyectoId),
+    });
+  }
+
+  /** Revisión antes de guardar: marca quién ya está en la plataforma y qué se le va a sobrescribir. */
+  async previsualizarExcelBeneficiarios(
+    archivo: Express.Multer.File,
+    mapeo?: string,
+    proyectoId?: string,
+  ): Promise<FilaExcelRevisada[]> {
+    const { filas, camposExtra } = await this.leerExcelBeneficiarios(
+      archivo,
+      mapeo,
+      proyectoId,
+    );
+    return revisarFilasExistentes(
+      this.beneficiarioRepository,
+      filas,
+      etiquetasDeCampos(camposExtra),
+    );
+  }
+
   async importarBeneficiariosExcel(
     proyectoId: string,
     archivo: Express.Multer.File,
     usuarioActual: Usuario,
     veredaIdSolicitada: string,
+    mapeo?: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     const proyecto = await this.buscarProyectoConPersonal(proyectoId);
     await this.verificarPermisoGestion(proyecto, usuarioActual);
@@ -913,13 +1005,32 @@ export class ProyectosService {
       }
     }
 
-    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    const { filas, camposExtra } = await this.leerExcelBeneficiarios(
+      archivo,
+      mapeo,
+      proyectoId,
+    );
+    // El dato queda en la persona (una sola por cédula), así que también se describe en el catálogo.
+    await Promise.all([
+      registrarCamposBeneficiario(
+        this.campoBeneficiarioRepository,
+        proyectoId,
+        camposExtra,
+      ),
+      registrarCamposBeneficiario(
+        this.campoBeneficiarioRepository,
+        null,
+        camposExtra,
+      ),
+    ]);
+    const etiquetasExtra = etiquetasDeCampos(camposExtra);
     const detalleResultado: RespuestaCargaMasivaBeneficiariosDto['detalle'] =
       [];
     const vistos = new Set<string>();
     let creados = 0;
     let asignadosExistentes = 0;
     let yaEnProyecto = 0;
+    let actualizados = 0;
     let errores = 0;
 
     for (const fila of filas) {
@@ -950,15 +1061,17 @@ export class ProyectosService {
       vistos.add(fila.identificador);
 
       try {
-        const { beneficiario, creado, yaEstaba } =
+        const { beneficiario, creado, yaEstaba, cambios } =
           await this.asegurarBeneficiarioEnProyecto({
             proyectoId,
             fila,
             veredaId,
+            etiquetasExtra,
           });
         if (creado) creados += 1;
         else if (yaEstaba) yaEnProyecto += 1;
         else asignadosExistentes += 1;
+        if (cambios.length) actualizados += 1;
         detalleResultado.push({
           fila: fila.fila,
           identificador: fila.identificador,
@@ -975,6 +1088,7 @@ export class ProyectosService {
             : yaEstaba
               ? 'La cédula ya estaba en el proyecto'
               : 'La cédula ya existía: se vinculó al proyecto sin duplicar',
+          cambios: cambios.length ? cambios : undefined,
         });
       } catch (err) {
         errores += 1;
@@ -994,6 +1108,7 @@ export class ProyectosService {
       creados,
       asignadosExistentes,
       yaEnProyecto,
+      actualizados,
       errores,
       detalle: detalleResultado,
     };
@@ -1053,6 +1168,7 @@ export class ProyectosService {
           tipoDocumento: dto.tipoDocumento ?? TipoDocumento.CC,
         },
         veredaId: veredaId!,
+        etiquetasExtra: new Map(),
       });
       nuevo = creado.beneficiario;
     }
@@ -1201,12 +1317,15 @@ export class ProyectosService {
     proyectoId: string;
     fila: FilaExcelBeneficiario;
     veredaId?: string;
+    etiquetasExtra: Map<string, string>;
   }): Promise<{
     beneficiario: Beneficiario;
     creado: boolean;
     yaEstaba: boolean;
+    cambios: CambioDatoBeneficiario[];
   }> {
-    const { beneficiario, creado } = await this.buscarOCrearBeneficiario(opts);
+    const { beneficiario, creado, cambios } =
+      await this.buscarOCrearBeneficiario(opts);
     const vinculo = await this.proyectoBeneficiarioRepository.findOne({
       where: {
         proyecto: { id: opts.proyectoId },
@@ -1218,7 +1337,7 @@ export class ProyectosService {
         vinculo.estaActivoEnProyecto = true;
         await this.proyectoBeneficiarioRepository.save(vinculo);
       }
-      return { beneficiario, creado, yaEstaba: true };
+      return { beneficiario, creado, yaEstaba: true, cambios };
     }
     try {
       await this.proyectoBeneficiarioRepository.save(
@@ -1230,21 +1349,27 @@ export class ProyectosService {
       );
     } catch (err) {
       if (!esLlaveDuplicada(err)) throw err;
-      return { beneficiario, creado, yaEstaba: true };
+      return { beneficiario, creado, yaEstaba: true, cambios };
     }
-    return { beneficiario, creado, yaEstaba: false };
+    return { beneficiario, creado, yaEstaba: false, cambios };
   }
 
   private async buscarOCrearBeneficiario(opts: {
     fila: FilaExcelBeneficiario;
     veredaId?: string;
-  }): Promise<{ beneficiario: Beneficiario; creado: boolean }> {
+    etiquetasExtra: Map<string, string>;
+  }): Promise<{
+    beneficiario: Beneficiario;
+    creado: boolean;
+    cambios: CambioDatoBeneficiario[];
+  }> {
     const identificador = normalizarIdentificador(opts.fila.identificador);
     const existente = await this.buscarBeneficiarioPorCedula(identificador);
     if (existente) {
       if (existente.eliminadoEn) {
         throw new ConflictException(MENSAJE_DOCUMENTO_ELIMINADO);
       }
+      const cambios = calcularCambios(existente, opts.fila, opts.etiquetasExtra);
       const documento = existente.numeroDocumento;
       asignarFilaABeneficiario(existente, opts.fila, opts.veredaId);
       existente.numeroDocumento = documento;
@@ -1254,6 +1379,7 @@ export class ProyectosService {
       return {
         beneficiario: await this.beneficiarioRepository.save(existente),
         creado: false,
+        cambios,
       };
     }
 
@@ -1267,12 +1393,13 @@ export class ProyectosService {
       return {
         beneficiario: await this.beneficiarioRepository.save(creado),
         creado: true,
+        cambios: [],
       };
     } catch (err) {
       if (!esLlaveDuplicada(err)) throw err;
       const repetido = await this.buscarBeneficiarioPorCedula(identificador);
       if (!repetido || repetido.eliminadoEn) throw err;
-      return { beneficiario: repetido, creado: false };
+      return { beneficiario: repetido, creado: false, cambios: [] };
     }
   }
 

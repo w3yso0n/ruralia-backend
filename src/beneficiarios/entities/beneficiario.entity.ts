@@ -11,6 +11,7 @@ import { ProyectoBeneficiario } from '../../proyectos/entities/proyecto-benefici
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Genero } from '../enums/genero.enum';
 import { TipoDocumento } from '../enums/tipo-documento.enum';
+import type { DatosAdicionales } from './campo-beneficiario.entity';
 
 @Entity('beneficiarios')
 export class Beneficiario {
@@ -64,6 +65,14 @@ export class Beneficiario {
 
   @Column({ name: 'nombre_asociacion', type: 'varchar', nullable: true })
   nombreAsociacion: string | null;
+
+  /** Columnas del Excel del catálogo que no existen en el modelo. Etiquetas en `campos_beneficiario` (proyecto nulo). */
+  @Column({
+    name: 'datos_adicionales',
+    type: 'jsonb',
+    default: () => "'{}'::jsonb",
+  })
+  datosAdicionales: DatosAdicionales;
 
   @Column({ name: 'esta_activo', default: true })
   estaActivo: boolean;

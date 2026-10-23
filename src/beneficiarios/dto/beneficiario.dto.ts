@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -199,6 +200,16 @@ export class ActualizarBeneficiarioDto {
   @IsString()
   @IsOptional()
   nombreAsociacion?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Datos adicionales a cambiar. Un valor null o vacío borra ese dato; las claves que no vienen no se tocan.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsObject()
+  @IsOptional()
+  datosAdicionales?: Record<string, string | number | boolean | null>;
 }
 
 export enum EstadoFiltroBeneficiario {

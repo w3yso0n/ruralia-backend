@@ -38,8 +38,11 @@ import {
   RespuestaPaginadaBeneficiariosDto,
   RespuestaUsoBeneficiarioDto,
 } from './dto/respuesta-beneficiario.dto';
-import { RespuestaCargaMasivaBeneficiariosDto } from '../proyectos/dto/carga-beneficiarios.dto';
-import { parsearExcelBeneficiarios, generarPlantillaExcelBeneficiarios } from '../proyectos/utils/excel-beneficiarios';
+import {
+  RespuestaCampoBeneficiarioDto,
+  RespuestaCargaMasivaBeneficiariosDto,
+} from '../proyectos/dto/carga-beneficiarios.dto';
+import { generarPlantillaExcelBeneficiarios } from '../proyectos/utils/excel-beneficiarios';
 
 @ApiTags('Beneficiarios')
 @ApiBearerAuth('bearer')
@@ -73,6 +76,35 @@ export class BeneficiariosController {
     res.send(buffer);
   }
 
+  @Get('campos-adicionales')
+  @RequierePermisos('contrapartes.ver')
+  @ApiOperation({
+    summary: 'Datos adicionales del catálogo (columnas extra de cargas anteriores)',
+  })
+  @ApiResponse({ status: 200, type: [RespuestaCampoBeneficiarioDto] })
+  listarCamposAdicionales(): Promise<RespuestaCampoBeneficiarioDto[]> {
+    return this.beneficiariosService.listarCamposAdicionales();
+  }
+
+  @Post('analizar-excel')
+  @RequierePermisos('contrapartes.editar')
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Lee las columnas de cualquier Excel y propone a qué campo va cada una',
+  })
+  analizarExcel(@UploadedFile() archivo: Express.Multer.File) {
+    if (!archivo?.buffer) {
+      throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
+    }
+    return this.beneficiariosService.analizarExcel(archivo);
+  }
+
   @Post('previsualizar')
   @RequierePermisos('contrapartes.editar')
   @UseInterceptors(
@@ -83,11 +115,17 @@ export class BeneficiariosController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Lee el Excel de beneficiarios sin guardarlo' })
-  async previsualizar(@UploadedFile() archivo: Express.Multer.File) {
+  async previsualizar(
+    @UploadedFile() archivo: Express.Multer.File,
+    @Body('mapeo') mapeo?: string,
+  ) {
     if (!archivo?.buffer) {
       throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
     }
-    const filas = await parsearExcelBeneficiarios(archivo.buffer);
+    const filas = await this.beneficiariosService.previsualizarExcel(
+      archivo,
+      mapeo,
+    );
     return { filas };
   }
 
@@ -106,6 +144,10 @@ export class BeneficiariosController {
       properties: {
         archivo: { type: 'string', format: 'binary' },
         veredaId: { type: 'string' },
+        mapeo: {
+          type: 'string',
+          description: 'JSON con la asignación de columnas. Vacío: automática.',
+        },
       },
     },
   })
@@ -117,11 +159,12 @@ export class BeneficiariosController {
   importar(
     @UploadedFile() archivo: Express.Multer.File,
     @Body('veredaId') veredaId: string,
+    @Body('mapeo') mapeo?: string,
   ): Promise<RespuestaCargaMasivaBeneficiariosDto> {
     if (!archivo?.buffer) {
       throw new BadRequestException('Adjunta un archivo Excel (.xlsx)');
     }
-    return this.beneficiariosService.importarExcel(archivo, veredaId);
+    return this.beneficiariosService.importarExcel(archivo, veredaId, mapeo);
   }
 
   @Get(':id')
