@@ -27,9 +27,15 @@ import {
   AsignarSubactividadesDto,
   AsignarUsuariosDto,
   ActualizarEnvioFormularioDto,
+  CorregirEnvioFormularioDto,
   CrearPlantillaFormularioDto,
   EnviarFormularioDto,
 } from './dto/formulario.dto';
+import {
+  AutocompletadoFormularioService,
+  type AutocompletadoJornada,
+  type OrigenesAutocompletado,
+} from './autocompletado-formulario.service';
 import {
   RespuestaAsignacionPlantillasProcesoDto,
   RespuestaDetalleRespuestaDto,
@@ -49,7 +55,31 @@ export class FormulariosController {
     private readonly plantillasService: PlantillasFormularioService,
     private readonly enviosService: EnviosFormularioService,
     private readonly alcanceTerritorialService: AlcanceTerritorialService,
+    private readonly autocompletadoService: AutocompletadoFormularioService,
   ) {}
+
+  @Get('autocompletado/origenes')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Datos del beneficiario con los que se puede llenar una pregunta (ficha y datos adicionales)',
+  })
+  listarOrigenesAutocompletado(): Promise<OrigenesAutocompletado> {
+    return this.autocompletadoService.listarOrigenes();
+  }
+
+  @Get('autocompletado/jornada/:jornadaId')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Valores ya resueltos de los formularios de la jornada, por beneficiario (la app los guarda para trabajar sin conexión)',
+  })
+  obtenerAutocompletadoJornada(
+    @Param('jornadaId', ParseUUIDPipe) jornadaId: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<AutocompletadoJornada> {
+    return this.autocompletadoService.datosDeJornada(jornadaId, usuario);
+  }
 
   @Post('plantillas')
   @RequierePermisos('formularios.crear')
@@ -164,9 +194,15 @@ export class FormulariosController {
   obtenerEnvioPrevio(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('jornadaId') jornadaId: string | undefined,
+    @Query('beneficiarioId') beneficiarioId: string | undefined,
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaEnvioPrevioDto> {
-    return this.enviosService.obtenerEnvioPrevio(id, usuario, jornadaId);
+    return this.enviosService.obtenerEnvioPrevio(
+      id,
+      usuario,
+      jornadaId,
+      beneficiarioId || undefined,
+    );
   }
 
   @Get('plantillas/:id')
@@ -276,6 +312,21 @@ export class FormulariosController {
     @UsuarioActual() usuario: Usuario,
   ): Promise<RespuestaEnvioFormularioDto> {
     return this.enviosService.actualizar(id, dto, usuario);
+  }
+
+  @Patch('envios/:id/correccion')
+  @RequierePermisos('formularios.corregir_respuestas')
+  @ApiOperation({
+    summary:
+      'Corregir respuestas de un envío (administración): incluye las autocompletadas y jornadas cerradas. Queda en la auditoría.',
+  })
+  @ApiResponse({ status: 200, type: RespuestaEnvioFormularioDto })
+  corregirEnvio(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorregirEnvioFormularioDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaEnvioFormularioDto> {
+    return this.enviosService.corregir(id, dto, usuario);
   }
 
   @Get('envios/jornada/:jornadaId')

@@ -4,7 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { AccionAuditoria } from '../common/workflow/accion-auditoria.enum';
 import { ColaEnviosService } from '../cola/cola-envios.service';
 import {
   CronologiaService,
@@ -16,7 +18,13 @@ import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
   EnviarFormularioDto,
   ActualizarEnvioFormularioDto,
+  CorregirEnvioFormularioDto,
 } from './dto/formulario.dto';
+import { AutocompletadoFormularioService } from './autocompletado-formulario.service';
+import {
+  aplicarAutocompletado,
+  type CampoConAutocompletado,
+} from './utils/autocompletado';
 import {
   RespuestaDetalleRespuestaDto,
   RespuestaEnvioFormularioDto,
@@ -41,6 +49,29 @@ interface RespuestaEntrada {
   valor: unknown;
 }
 
+function corregidasDe(envio: EnvioFormulario): string[] {
+  const lista = (envio.datosRaw as { corregidasPorAdmin?: unknown } | null)
+    ?.corregidasPorAdmin;
+  return Array.isArray(lista)
+    ? lista.filter((c): c is string => typeof c === 'string')
+    : [];
+}
+
+/** Valor de una respuesta en forma simple, para comparar y auditar cambios. */
+function valorComparable(respuesta: RespuestaFormulario): unknown {
+  return (
+    respuesta.valorJson ??
+    (respuesta.valorFecha instanceof Date
+      ? respuesta.valorFecha.toISOString().slice(0, 10)
+      : respuesta.valorFecha) ??
+    (respuesta.valorNumero != null ? Number(respuesta.valorNumero) : null) ??
+    respuesta.valorBooleano ??
+    respuesta.urlArchivo ??
+    respuesta.valorTexto ??
+    null
+  );
+}
+
 @Injectable()
 export class EnviosFormularioService {
   constructor(
@@ -56,7 +87,36 @@ export class EnviosFormularioService {
     private readonly jornadasService: JornadasService,
     private readonly colaEnviosService: ColaEnviosService,
     private readonly cronologiaService: CronologiaService,
+    private readonly autocompletadoService: AutocompletadoFormularioService,
+    private readonly auditoriaService: AuditoriaService,
   ) {}
+
+  /**
+   * Reemplaza con la ficha del beneficiario las respuestas autocompletadas: el
+   * técnico no las puede cambiar, así que el valor final lo pone el servidor.
+   */
+  private async aplicarFicha(opciones: {
+    plantilla: PlantillaFormulario;
+    jornadaId?: string | null;
+    beneficiarioId?: string | null;
+    respuestas: RespuestaEntrada[];
+    corregidasPorAdmin?: string[];
+  }) {
+    const campos = (opciones.plantilla.campos ?? []) as CampoConAutocompletado[];
+    const contexto = await this.autocompletadoService.contextoEnvio({
+      jornadaId: opciones.jornadaId,
+      tipoPlantilla: opciones.plantilla.tipoPlantilla,
+      campos,
+      beneficiarioId: opciones.beneficiarioId,
+      corregidasPorAdmin: opciones.corregidasPorAdmin,
+    });
+    const { respuestas, registro } = aplicarAutocompletado(
+      campos,
+      opciones.respuestas,
+      contexto,
+    );
+    return { respuestas, registro, beneficiarioId: contexto.beneficiarioId };
+  }
 
   async enviar(
     dto: EnviarFormularioDto,
@@ -82,19 +142,26 @@ export class EnviosFormularioService {
       throw new BadRequestException('La plantilla no está publicada');
     }
 
-    this.validarCamposObligatorios(
-      plantilla.campos ?? [],
-      dto.respuestas as RespuestaEntrada[],
-    );
-
     const indiceFila = dto.indiceFila ?? 0;
+    const conFicha = await this.aplicarFicha({
+      plantilla,
+      jornadaId: dto.jornadaId,
+      beneficiarioId: dto.beneficiarioId,
+      respuestas: dto.respuestas as RespuestaEntrada[],
+    });
+
+    this.validarCamposObligatorios(plantilla.campos ?? [], conFicha.respuestas);
 
     if (dto.jornadaId) {
+      // Un envío por jornada, plantilla y persona (sin persona: el envío único de siempre).
       const existente = await this.envioRepository.findOne({
         where: {
           jornada: { id: dto.jornadaId },
           plantillaFormulario: { id: dto.plantillaFormularioId },
           indiceFila,
+          beneficiario: conFicha.beneficiarioId
+            ? { id: conFicha.beneficiarioId }
+            : IsNull(),
         },
       });
       if (existente) {
@@ -114,15 +181,22 @@ export class EnviosFormularioService {
         sincronizadoEn: ahora,
         esOffline: false,
         indiceFila,
-        datosRaw: { respuestas: dto.respuestas, usuarioId: usuarioActual.id },
+        datosRaw: {
+          respuestas: dto.respuestas,
+          usuarioId: usuarioActual.id,
+          autocompletado: conFicha.registro,
+        },
         jornada: dto.jornadaId ? { id: dto.jornadaId } : null,
+        beneficiario: conFicha.beneficiarioId
+          ? { id: conFicha.beneficiarioId }
+          : null,
         usuario: { id: usuarioActual.id },
         plantillaFormulario: { id: dto.plantillaFormularioId },
       });
 
       const guardado = await manager.save(EnvioFormulario, envio);
 
-      for (const entrada of dto.respuestas) {
+      for (const entrada of conFicha.respuestas) {
         const campo = plantilla.campos?.find(
           (c) => c.clave === entrada.claveCampo,
         );
@@ -148,7 +222,7 @@ export class EnviosFormularioService {
       await this.guardarUbicacionDeJornada(
         dto.jornadaId,
         plantilla.campos ?? [],
-        dto.respuestas as RespuestaEntrada[],
+        conFicha.respuestas,
       );
       await this.colaEnviosService.encolarProcesarEnvio({
         envioId: envioGuardado.id,
@@ -178,7 +252,12 @@ export class EnviosFormularioService {
 
     const envioCompleto = await this.envioRepository.findOne({
       where: { id: envioGuardado.id },
-      relations: { jornada: true, usuario: true, plantillaFormulario: true },
+      relations: {
+        jornada: true,
+        usuario: true,
+        plantillaFormulario: true,
+        beneficiario: true,
+      },
     });
 
     return aRespuestaEnvio(envioCompleto!);
@@ -195,6 +274,7 @@ export class EnviosFormularioService {
         jornada: true,
         usuario: true,
         plantillaFormulario: true,
+        beneficiario: true,
       },
       order: { indiceFila: 'ASC', enviadoEn: 'DESC' },
     });
@@ -255,6 +335,7 @@ export class EnviosFormularioService {
     plantillaFormularioId: string,
     usuario: Usuario,
     jornadaId?: string,
+    beneficiarioId?: string,
   ): Promise<RespuestaEnvioPrevioDto> {
     const plantilla = await this.plantillaRepository.findOne({
       where: { id: plantillaFormularioId },
@@ -275,12 +356,18 @@ export class EnviosFormularioService {
       .leftJoinAndSelect('envio.jornada', 'jornada')
       .leftJoinAndSelect('envio.usuario', 'usuario')
       .leftJoinAndSelect('envio.plantillaFormulario', 'plantillaFormulario')
+      .leftJoinAndSelect('envio.beneficiario', 'beneficiario')
       .where('envio.plantilla_formulario_id = :plantillaId', {
         plantillaId: plantillaFormularioId,
       });
 
     if (jornadaId) {
       qb.andWhere('envio.jornada_id = :jornadaId', { jornadaId });
+      if (beneficiarioId) {
+        qb.andWhere('envio.beneficiario_id = :beneficiarioId', {
+          beneficiarioId,
+        });
+      }
     } else {
       qb.andWhere('envio.jornada_id IS NULL').andWhere(
         'envio.usuario_id = :usuarioId',
@@ -309,6 +396,7 @@ export class EnviosFormularioService {
         plantillaFormulario: { campos: true },
         jornada: true,
         usuario: true,
+        beneficiario: true,
       },
     });
 
@@ -326,10 +414,22 @@ export class EnviosFormularioService {
       throw new NotFoundException('Plantilla del envío no encontrada');
     }
 
-    this.validarCamposObligatorios(
-      plantilla.campos ?? [],
-      dto.respuestas as RespuestaEntrada[],
+    const corregidasPorAdmin = corregidasDe(envio);
+    const conFicha = await this.aplicarFicha({
+      plantilla,
+      jornadaId: envio.jornada?.id,
+      beneficiarioId: envio.beneficiario?.id,
+      respuestas: dto.respuestas as RespuestaEntrada[],
+      corregidasPorAdmin,
+    });
+    // Lo que corrigió un administrador no lo cambia el técnico al reenviar.
+    const respuestasFinales = await this.conservarCorreccionesAdmin(
+      envioId,
+      conFicha.respuestas,
+      corregidasPorAdmin,
     );
+
+    this.validarCamposObligatorios(plantilla.campos ?? [], respuestasFinales);
 
     const ahora = new Date();
 
@@ -338,7 +438,7 @@ export class EnviosFormularioService {
         envioFormulario: { id: envioId },
       });
 
-      for (const entrada of dto.respuestas) {
+      for (const entrada of respuestasFinales) {
         const campo = plantilla.campos?.find(
           (c) => c.clave === entrada.claveCampo,
         );
@@ -364,6 +464,8 @@ export class EnviosFormularioService {
           respuestas: dto.respuestas,
           usuarioId: usuarioActual.id,
           actualizadoPor: usuarioActual.id,
+          autocompletado: conFicha.registro,
+          corregidasPorAdmin,
         },
       });
     });
@@ -372,7 +474,7 @@ export class EnviosFormularioService {
       await this.guardarUbicacionDeJornada(
         envio.jornada.id,
         plantilla.campos ?? [],
-        dto.respuestas as RespuestaEntrada[],
+        respuestasFinales,
       );
       await this.colaEnviosService.encolarProcesarEnvio({
         envioId,
@@ -382,10 +484,143 @@ export class EnviosFormularioService {
 
     const actualizado = await this.envioRepository.findOne({
       where: { id: envioId },
-      relations: { jornada: true, usuario: true, plantillaFormulario: true },
+      relations: {
+        jornada: true,
+        usuario: true,
+        plantillaFormulario: true,
+        beneficiario: true,
+      },
     });
 
     return aRespuestaEnvio(actualizado!);
+  }
+
+  /**
+   * Corrección de un administrador: puede cambiar cualquier respuesta, incluidas
+   * las autocompletadas y las de jornadas en revisión o completadas. Cada cambio
+   * queda en la auditoría y esas preguntas ya no se recalculan desde la ficha.
+   */
+  async corregir(
+    envioId: string,
+    dto: CorregirEnvioFormularioDto,
+    usuarioActual: Usuario,
+  ): Promise<RespuestaEnvioFormularioDto> {
+    const envio = await this.envioRepository.findOne({
+      where: { id: envioId },
+      relations: {
+        plantillaFormulario: { campos: true },
+        jornada: { proyecto: true },
+        beneficiario: true,
+      },
+    });
+    if (!envio) {
+      throw new NotFoundException(`Envío ${envioId} no encontrado`);
+    }
+    const plantilla = envio.plantillaFormulario;
+    const campos = plantilla?.campos ?? [];
+    const motivo = dto.motivo.trim();
+
+    const anteriores = new Map(
+      (await this.respuestaRepository.find({
+        where: { envioFormulario: { id: envioId } },
+      })).map((r) => [r.claveCampo, valorComparable(r)]),
+    );
+
+    const cambiadas: Array<{ clave: string; antes: unknown; despues: unknown }> = [];
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(RespuestaFormulario, {
+        envioFormulario: { id: envioId },
+      });
+      for (const entrada of dto.respuestas) {
+        const campo = campos.find((c) => c.clave === entrada.claveCampo);
+        if (!campo) continue;
+        const respuesta = this.mapearRespuesta(manager, envioId, campo, entrada.valor);
+        await manager.save(RespuestaFormulario, respuesta);
+        const despues = valorComparable(respuesta);
+        if (JSON.stringify(anteriores.get(campo.clave) ?? null) !== JSON.stringify(despues)) {
+          cambiadas.push({
+            clave: campo.clave,
+            antes: anteriores.get(campo.clave) ?? null,
+            despues,
+          });
+        }
+      }
+      for (const [clave, antes] of anteriores) {
+        if (dto.respuestas.some((r) => r.claveCampo === clave)) continue;
+        cambiadas.push({ clave, antes, despues: null });
+      }
+
+      const corregidas = [
+        ...new Set([...corregidasDe(envio), ...cambiadas.map((c) => c.clave)]),
+      ];
+      await manager.update(EnvioFormulario, envioId, {
+        datosRaw: {
+          ...(envio.datosRaw ?? {}),
+          corregidasPorAdmin: corregidas,
+          ultimaCorreccion: {
+            usuarioId: usuarioActual.id,
+            en: new Date().toISOString(),
+            motivo,
+          },
+        },
+      });
+    });
+
+    const proyectoId = envio.jornada?.proyecto?.id;
+    if (proyectoId) {
+      for (const cambio of cambiadas) {
+        await this.auditoriaService.registrar({
+          entityType: 'envio_formulario',
+          entityId: envioId,
+          field: cambio.clave,
+          previousValue: cambio.antes,
+          newValue: cambio.despues,
+          reason: motivo,
+          action: AccionAuditoria.UPDATE,
+          user: usuarioActual,
+          projectId: proyectoId,
+          jornadaId: envio.jornada?.id ?? null,
+        });
+      }
+    }
+
+    const actualizado = await this.envioRepository.findOne({
+      where: { id: envioId },
+      relations: {
+        jornada: true,
+        usuario: true,
+        plantillaFormulario: true,
+        beneficiario: true,
+      },
+    });
+    return aRespuestaEnvio(actualizado!);
+  }
+
+  /** Para las claves corregidas por un administrador, deja el valor que él guardó. */
+  private async conservarCorreccionesAdmin(
+    envioId: string,
+    respuestas: RespuestaEntrada[],
+    corregidas: string[],
+  ): Promise<RespuestaEntrada[]> {
+    if (!corregidas.length) return respuestas;
+    const guardadas = await this.obtenerRespuestas(envioId);
+    const porClave = new Map(guardadas.map((r) => [r.claveCampo, r]));
+    const resultado = respuestas.filter((r) => !corregidas.includes(r.claveCampo));
+    for (const clave of corregidas) {
+      const guardada = porClave.get(clave);
+      if (!guardada) continue;
+      const valor =
+        guardada.valorJson ??
+        guardada.valorFecha ??
+        guardada.valorNumero ??
+        guardada.valorBooleano ??
+        guardada.urlArchivo ??
+        guardada.valorTexto;
+      if (valor !== undefined && valor !== null) {
+        resultado.push({ claveCampo: clave, valor });
+      }
+    }
+    return resultado;
   }
 
   private async asegurarJornadaEditableParaCaptura(

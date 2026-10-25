@@ -52,6 +52,15 @@ export class CrearCampoFormularioDto {
   @IsObject()
   @IsOptional()
   reglasValidacion?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Dato del beneficiario con el que se llena la pregunta: { origen: "beneficiario.telefono" } o { origen: "beneficiario.extra.<clave>" }. null para quitarlo.',
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  autocompletar?: { origen: string } | null;
 }
 
 export class CrearPlantillaFormularioDto {
@@ -161,6 +170,15 @@ export class ActualizarCampoFormularioDto {
   @IsObject()
   @IsOptional()
   reglasValidacion?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Dato del beneficiario con el que se llena la pregunta: { origen: "beneficiario.telefono" } o { origen: "beneficiario.extra.<clave>" }. null para quitarlo.',
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  autocompletar?: { origen: string } | null;
 }
 
 export class ActualizarPlantillaFormularioDto {
@@ -305,6 +323,14 @@ export class EnviarFormularioDto {
   @IsOptional()
   indiceFila?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Beneficiario de la jornada al que corresponde el formulario (formularios por persona, con preguntas autocompletadas)',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  beneficiarioId?: string;
+
   @ApiProperty({
     type: [RespuestaEnviarDto],
     description: 'Respuestas del formulario',
@@ -324,4 +350,21 @@ export class ActualizarEnvioFormularioDto {
   @ValidateNested({ each: true })
   @Type(() => RespuestaEnviarDto)
   respuestas: RespuestaEnviarDto[];
+}
+
+export class CorregirEnvioFormularioDto {
+  @ApiProperty({
+    type: [RespuestaEnviarDto],
+    description:
+      'Respuestas corregidas (reemplaza el conjunto completo). Puede cambiar también las autocompletadas.',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RespuestaEnviarDto)
+  respuestas: RespuestaEnviarDto[];
+
+  @ApiProperty({ description: 'Motivo de la corrección (queda en la auditoría)' })
+  @IsString()
+  @IsNotEmpty()
+  motivo: string;
 }

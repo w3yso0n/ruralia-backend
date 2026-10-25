@@ -13,6 +13,7 @@ import {
   MIGRACION_NOMBRES_ROL_LEGACY,
   NIVEL_ACCESO_POR_ROL_SISTEMA,
   PERMISOS_CRITICOS_CUANTIVA,
+  PERMISOS_NUEVOS_POR_ROL,
   PERMISOS_POR_ROL_SISTEMA,
   RolSistema,
 } from './catalogo-permisos';
@@ -35,13 +36,16 @@ export class PermisosSeedService implements OnModuleInit {
   }
 
   async asegurarCatalogoYRoles(): Promise<void> {
-    await this.asegurarPermisos();
+    const creados = await this.asegurarPermisos();
     await this.migrarNombresRolesLegacy();
     await this.asegurarRolesSistema();
+    await this.asignarPermisosNuevos(creados);
     await this.asegurarPermisosCriticosCuantiva();
   }
 
-  private async asegurarPermisos(): Promise<void> {
+  /** Devuelve las claves que se crearon en este arranque. */
+  private async asegurarPermisos(): Promise<Set<string>> {
+    const creados = new Set<string>();
     for (const def of CATALOGO_PERMISOS) {
       const existente = await this.permisoRepository.findOne({
         where: { clave: def.clave },
@@ -62,6 +66,27 @@ export class PermisosSeedService implements OnModuleInit {
             orden: def.orden,
           }),
         );
+        creados.add(def.clave);
+      }
+    }
+    return creados;
+  }
+
+  /** Permiso recién creado: se le da a los roles de sistema que lo deben traer (una sola vez). */
+  private async asignarPermisosNuevos(creados: Set<string>): Promise<void> {
+    for (const [clave, roles] of Object.entries(PERMISOS_NUEVOS_POR_ROL)) {
+      if (!creados.has(clave)) continue;
+      const permiso = await this.permisoRepository.findOne({ where: { clave } });
+      if (!permiso) continue;
+      for (const nombre of roles) {
+        const rol = await this.rolRepository.findOne({
+          where: { nombre },
+          relations: { permisos: true },
+        });
+        if (!rol || rol.permisos?.some((p) => p.id === permiso.id)) continue;
+        rol.permisos = [...(rol.permisos ?? []), permiso];
+        await this.rolRepository.save(rol);
+        this.logger.log(`Permiso ${clave} asignado al rol ${nombre}`);
       }
     }
   }

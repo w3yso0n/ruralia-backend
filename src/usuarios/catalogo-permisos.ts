@@ -288,6 +288,11 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
         accion: 'enviar',
         descripcion: 'Enviar respuestas de formularios',
       },
+      {
+        accion: 'corregir_respuestas',
+        descripcion:
+          'Corregir cualquier respuesta enviada, incluidas las autocompletadas y las de jornadas cerradas',
+      },
     ],
     800,
   ),
@@ -537,7 +542,17 @@ const PERMISOS_OPERATIVOS: string[] = CATALOGO_PERMISOS.map((p) => p.clave).filt
 const PERMISOS_ADMINISTRADOR: string[] = [
   ...PERMISOS_OPERATIVOS,
   'proyectos.configurar_aprobaciones',
+  'formularios.corregir_respuestas',
 ];
+
+/**
+ * Permisos agregados al catálogo después de que los roles ya existían. El seed
+ * no vuelve a aplicar los presets, así que estos se asignan una sola vez: el día
+ * en que el permiso se crea. Si luego alguien lo quita desde /roles, no vuelve.
+ */
+export const PERMISOS_NUEVOS_POR_ROL: Record<string, RolSistema[]> = {
+  'formularios.corregir_respuestas': [RolSistema.ADMINISTRADOR],
+};
 
 /** Permisos por defecto de cada rol de sistema (claves). */
 export const PERMISOS_POR_ROL_SISTEMA: Record<RolSistema, string[] | 'ALL'> = {

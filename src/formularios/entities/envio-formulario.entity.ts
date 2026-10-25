@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
 import { Jornada } from '../../jornadas/entities/jornada.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
 import { CampoFormulario } from './campo-formulario.entity';
@@ -16,6 +17,7 @@ import { RespuestaFormulario } from './respuesta-formulario.entity';
 
 @Entity('envios_formulario')
 @Index('IDX_envios_formulario_jornada_id', ['jornada'])
+@Index('IDX_envios_formulario_beneficiario_id', ['beneficiario'])
 @Unique('UQ_envio_dispositivo_id_local', ['dispositivoId', 'idLocal'])
 export class EnvioFormulario {
   @PrimaryGeneratedColumn('uuid')
@@ -50,6 +52,14 @@ export class EnvioFormulario {
   @ManyToOne(() => Usuario, { nullable: false })
   @JoinColumn({ name: 'usuario_id' })
   usuario: Usuario;
+
+  /**
+   * Persona a la que corresponde el envío en un formulario por persona (con
+   * preguntas autocompletadas). Nulo en los envíos de siempre: uno por jornada.
+   */
+  @ManyToOne(() => Beneficiario, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'beneficiario_id' })
+  beneficiario: Beneficiario | null;
 
   @ManyToOne(() => PlantillaFormulario, (plantilla) => plantilla.envios, {
     nullable: false,

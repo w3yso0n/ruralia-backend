@@ -35,6 +35,13 @@ export class RespuestaCampoFormularioDto {
   @ApiPropertyOptional({ description: 'Reglas de validación del campo' })
   @Expose()
   reglasValidacion?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Dato del beneficiario con el que se llena la pregunta',
+    nullable: true,
+  })
+  @Expose()
+  autocompletar?: { origen: string } | null;
 }
 
 export class RespuestaPlantillaFormularioDto {
@@ -128,6 +135,15 @@ export class RespuestaAsignacionPlantillasProcesoDto {
   plantillaGrupal?: RespuestaPlantillaFormularioDto | null;
 }
 
+/** Lo que leen los @Transform del envío (la entidad con su beneficiario y datosRaw). */
+interface EnvioConBeneficiario {
+  beneficiario?: { id: string; nombres?: string; apellidos?: string } | null;
+  datosRaw?: {
+    autocompletado?: unknown[];
+    corregidasPorAdmin?: string[];
+  } | null;
+}
+
 export class RespuestaEnvioFormularioDto {
   @ApiProperty({ description: 'ID del envío' })
   @Expose()
@@ -167,6 +183,41 @@ export class RespuestaEnvioFormularioDto {
   })
   @Expose()
   indiceFila: number;
+
+  @ApiPropertyOptional({
+    description: 'Beneficiario del formulario (formularios por persona)',
+  })
+  @Expose()
+  @Transform(({ obj }: { obj: EnvioConBeneficiario }) => obj.beneficiario?.id ?? null)
+  beneficiarioId?: string | null;
+
+  @ApiPropertyOptional({ description: 'Nombre del beneficiario del formulario' })
+  @Expose()
+  @Transform(({ obj }: { obj: EnvioConBeneficiario }) =>
+    obj.beneficiario
+      ? `${obj.beneficiario.nombres ?? ''} ${obj.beneficiario.apellidos ?? ''}`.trim()
+      : null,
+  )
+  beneficiarioNombre?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Qué respuestas vinieron de la ficha del beneficiario y cuáles corrigió un administrador',
+  })
+  @Expose()
+  @Transform(({ obj }: { obj: EnvioConBeneficiario }) => ({
+    autocompletado: obj.datosRaw?.autocompletado ?? [],
+    corregidasPorAdmin: obj.datosRaw?.corregidasPorAdmin ?? [],
+  }))
+  origenRespuestas?: {
+    autocompletado: Array<{
+      clave: string;
+      origen: string;
+      columna?: string;
+      beneficiarioId?: string;
+    }>;
+    corregidasPorAdmin: string[];
+  };
 }
 
 export class RespuestaDetalleRespuestaDto {

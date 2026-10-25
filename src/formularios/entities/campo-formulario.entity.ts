@@ -36,6 +36,14 @@ export class CampoFormulario {
   @Column({ name: 'reglas_validacion', type: 'jsonb', nullable: true })
   reglasValidacion: Record<string, unknown> | null;
 
+  /**
+   * `{ origen }`: la pregunta se llena sola con ese dato del beneficiario y el
+   * técnico no la puede cambiar. Las columnas de una tabla lo llevan en
+   * `opciones.columnas[i].autocompletar`.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  autocompletar: { origen: string } | null;
+
   @ManyToOne(
     () => PlantillaFormulario,
     (plantilla) => plantilla.campos,

@@ -14,12 +14,17 @@ import { EnviosFormularioService } from './envios-formulario.service';
 import { FormulariosController } from './formularios.controller';
 import { PlantillasFormularioService } from './plantillas-formulario.service';
 import { UsuariosModule } from '../usuarios/usuarios.module';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { Beneficiario } from '../beneficiarios/entities/beneficiario.entity';
+import { CampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
+import { AutocompletadoFormularioService } from './autocompletado-formulario.service';
 
 @Module({
   imports: [
     UsuariosModule,
     JornadasModule,
     CronologiaModule,
+    AuditoriaModule,
     TypeOrmModule.forFeature([
       PlantillaFormulario,
       CampoFormulario,
@@ -29,10 +34,16 @@ import { UsuariosModule } from '../usuarios/usuarios.module';
       Subactividad,
       Usuario,
       Jornada,
+      Beneficiario,
+      CampoBeneficiario,
     ]),
   ],
   controllers: [FormulariosController],
-  providers: [PlantillasFormularioService, EnviosFormularioService],
+  providers: [
+    PlantillasFormularioService,
+    EnviosFormularioService,
+    AutocompletadoFormularioService,
+  ],
   exports: [
     TypeOrmModule,
     PlantillasFormularioService,

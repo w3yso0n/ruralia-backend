@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { Proceso } from '../actividades/entities/proceso.entity';
 import { Subactividad } from '../actividades/entities/subactividad.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
@@ -25,8 +25,11 @@ import {
 } from './dto/respuesta-formulario.dto';
 import { CampoFormulario } from './entities/campo-formulario.entity';
 import { PlantillaFormulario } from './entities/plantilla-formulario.entity';
+import { TipoCampo } from './enums/tipo-campo.enum';
 import { TipoPlantilla } from './enums/tipo-plantilla.enum';
 import { aRespuestaPlantilla } from './utils/serializar-formulario';
+import { validarAutocompletadoPlantilla } from './utils/autocompletado';
+import { CampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
 import { TipoJornada } from '../jornadas/enums/tipo-jornada.enum';
 
 @Injectable()
@@ -43,7 +46,35 @@ export class PlantillasFormularioService {
     private readonly usuarioRepository: Repository<Usuario>,
     @InjectRepository(Jornada)
     private readonly jornadaRepository: Repository<Jornada>,
+    @InjectRepository(CampoBeneficiario)
+    private readonly campoBeneficiarioRepository: Repository<CampoBeneficiario>,
   ) {}
+
+  /** Origen conocido y compatible con el tipo de cada pregunta que se autocompleta. */
+  private async validarAutocompletado(
+    tipoPlantilla: TipoPlantilla,
+    campos: Array<{
+      clave: string;
+      etiqueta: string;
+      tipoCampo: TipoCampo;
+      opciones?: Record<string, unknown> | null;
+      autocompletar?: unknown;
+    }>,
+  ): Promise<void> {
+    const usaAdicionales = JSON.stringify(
+      campos.map((c) => [c.autocompletar, c.opciones]),
+    ).includes('beneficiario.extra.');
+    const adicionales = usaAdicionales
+      ? await this.campoBeneficiarioRepository.find({
+          where: { proyecto: IsNull() },
+        })
+      : [];
+    validarAutocompletadoPlantilla(
+      tipoPlantilla,
+      campos,
+      new Map(adicionales.map((campo) => [campo.clave, campo.tipo])),
+    );
+  }
 
   private asegurarClavesCamposUnicas(
     campos: { clave: string; etiqueta?: string }[],
@@ -69,6 +100,10 @@ export class PlantillasFormularioService {
     dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
     this.asegurarClavesCamposUnicas(dto.campos);
+    await this.validarAutocompletado(
+      dto.tipoPlantilla ?? TipoPlantilla.INDIVIDUAL,
+      dto.campos,
+    );
     const procesos = await this.resolverProcesos(dto.procesoIds);
     const subactividades = await this.resolverSubactividades(
       dto.subactividadIds,
@@ -99,6 +134,7 @@ export class PlantillasFormularioService {
             esObligatorio: campoDto.esObligatorio ?? false,
             orden: campoDto.orden ?? indice,
             reglasValidacion: campoDto.reglasValidacion ?? null,
+            autocompletar: campoDto.autocompletar ?? null,
             plantillaFormulario: { id: guardada.id },
           }),
         );
@@ -139,6 +175,11 @@ export class PlantillasFormularioService {
     if (!plantilla) {
       throw new NotFoundException(`Plantilla ${id} no encontrada`);
     }
+
+    await this.validarAutocompletado(
+      dto.tipoPlantilla ?? plantilla.tipoPlantilla,
+      dto.campos ?? plantilla.campos ?? [],
+    );
 
     const subactividades = dto.subactividadIds
       ? await this.resolverSubactividades(dto.subactividadIds)
@@ -184,6 +225,7 @@ export class PlantillasFormularioService {
             esObligatorio: campoDto.esObligatorio ?? false,
             orden: campoDto.orden ?? indice,
             reglasValidacion: campoDto.reglasValidacion ?? null,
+            autocompletar: campoDto.autocompletar ?? null,
           };
 
           if (campoDto.id) {
@@ -523,6 +565,7 @@ export class PlantillasFormularioService {
           esObligatorio: campo.esObligatorio,
           orden: campo.orden,
           reglasValidacion: campo.reglasValidacion,
+          autocompletar: campo.autocompletar,
           plantillaFormulario: { id: guardada.id },
         }),
       );

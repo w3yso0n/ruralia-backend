@@ -1609,7 +1609,7 @@ export class JornadasService {
 
     const envios = await this.envioRepository.find({
       where: { jornada: { id: jornadaId } },
-      relations: { plantillaFormulario: { campos: true } },
+      relations: { plantillaFormulario: { campos: true }, beneficiario: true },
       order: { enviadoEn: 'ASC', indiceFila: 'ASC' },
     });
 
@@ -1682,11 +1682,19 @@ export class JornadasService {
         where: { envioFormulario: { id: envio.id } },
       });
 
+      // Formulario por persona: cada bloque del PDF lleva el nombre del beneficiario.
+      const persona = envio.beneficiario
+        ? `${envio.beneficiario.nombres} ${envio.beneficiario.apellidos}`.trim()
+        : '';
       const prefijo = variosEnvios
         ? `${plantilla.nombre}${
-            envio.indiceFila > 0 ? ` · fila ${envio.indiceFila + 1}` : ''
+            persona
+              ? ` · ${persona}`
+              : envio.indiceFila > 0
+                ? ` · fila ${envio.indiceFila + 1}`
+                : ''
           }`
-        : '';
+        : persona;
 
       for (const campo of camposSimples) {
         const resp = respuestas.find((r) => r.claveCampo === campo.clave);
