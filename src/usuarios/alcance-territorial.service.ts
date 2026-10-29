@@ -262,27 +262,45 @@ export class AlcanceTerritorialService {
     const municipios = porTipo(TipoAlcanceTerritorial.MUNICIPIO);
     const veredas = porTipo(TipoAlcanceTerritorial.VEREDA);
 
+    // Condiciones de región, departamento y municipio: aplican tanto a las
+    // veredas del proyecto como a los municipios que tiene sin vereda.
     const condiciones: string[] = [];
     const params: unknown[] = [];
-    const agregar = (sql: string, ids: string[]) => {
+    const agregar = (destino: string[], sql: string, ids: string[]) => {
       if (!ids.length) return;
       params.push(ids);
-      condiciones.push(sql.replace('$?', `$${params.length}`));
+      destino.push(sql.replace('$?', `$${params.length}`));
     };
-    agregar('d.region_id = ANY($?::uuid[])', regiones);
-    agregar('d.id = ANY($?::uuid[])', departamentos);
-    agregar('m.id = ANY($?::uuid[])', municipios);
-    agregar('v.id = ANY($?::uuid[])', veredas);
-    if (!condiciones.length) return [];
+    agregar(condiciones, 'd.region_id = ANY($?::uuid[])', regiones);
+    agregar(condiciones, 'd.id = ANY($?::uuid[])', departamentos);
+    agregar(condiciones, 'm.id = ANY($?::uuid[])', municipios);
+    // Una vereda asignada solo cubre proyectos que tengan esa vereda, no
+    // todo el municipio que la contiene.
+    const condicionesVereda = [...condiciones];
+    agregar(condicionesVereda, 'v.id = ANY($?::uuid[])', veredas);
+    if (!condicionesVereda.length) return [];
+
+    const consultas = [
+      `SELECT pv.proyecto_id
+       FROM proyecto_veredas pv
+       JOIN veredas v ON v.id = pv.vereda_id
+       JOIN municipios m ON m.id = v.municipio_id
+       JOIN departamentos d ON d.id = m.departamento_id
+       WHERE ${condicionesVereda.join(' OR ')}`,
+    ];
+    if (condiciones.length) {
+      consultas.push(
+        `SELECT pm.proyecto_id
+         FROM proyecto_municipios pm
+         JOIN municipios m ON m.id = pm.municipio_id
+         JOIN departamentos d ON d.id = m.departamento_id
+         WHERE ${condiciones.join(' OR ')}`,
+      );
+    }
 
     const filas: Array<{ proyecto_id: string }> =
       await this.proyectoRepository.manager.query(
-        `SELECT DISTINCT pv.proyecto_id
-         FROM proyecto_veredas pv
-         JOIN veredas v ON v.id = pv.vereda_id
-         JOIN municipios m ON m.id = v.municipio_id
-         JOIN departamentos d ON d.id = m.departamento_id
-         WHERE ${condiciones.join(' OR ')}`,
+        consultas.join(' UNION '),
         params,
       );
     return filas.map((fila) => fila.proyecto_id);
