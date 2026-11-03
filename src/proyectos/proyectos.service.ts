@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { LineasProductivasService } from '../lineas-productivas/lineas-productivas.service';
 import { plainToInstance } from 'class-transformer';
 import { isUUID } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -135,6 +136,7 @@ export class ProyectosService {
     private readonly campoBeneficiarioRepository: Repository<CampoBeneficiario>,
     private readonly actividadesService: ActividadesService,
     private readonly alcanceTerritorialService: AlcanceTerritorialService,
+    private readonly lineasProductivasService: LineasProductivasService,
   ) {}
 
   async crear(
@@ -736,6 +738,14 @@ export class ProyectosService {
       qb.andWhere('pb.estaActivoEnProyecto = true');
     }
 
+    if (filtros.linea === 'sin-linea') {
+      qb.andWhere('beneficiario.lineaProductivaId IS NULL');
+    } else if (filtros.linea) {
+      qb.andWhere('beneficiario.lineaProductivaId = :lineaId', {
+        lineaId: filtros.linea,
+      });
+    }
+
     const termino = filtros.busqueda?.trim();
     if (termino) {
       qb.andWhere(
@@ -799,6 +809,11 @@ export class ProyectosService {
       throw new NotFoundException('Uno o más beneficiarios no existen');
     }
 
+    if (ids.length > 1) {
+      await this.vincularEnLote(proyectoId, ids);
+      return this.obtenerUno(proyectoId);
+    }
+
     const existentes = await this.proyectoBeneficiarioRepository.find({
       where: { proyecto: { id: proyectoId }, beneficiario: { id: In(ids) } },
       relations: { beneficiario: true },
@@ -834,6 +849,28 @@ export class ProyectosService {
     }
 
     return this.obtenerUno(proyectoId);
+  }
+
+  /**
+   * Alta masiva en una sola consulta por lote: crea los vínculos que faltan y
+   * reactiva los que se habían quitado. Nunca reactiva a quien salió por reemplazo.
+   */
+  private async vincularEnLote(proyectoId: string, ids: string[]) {
+    const lote = 1000;
+    for (let i = 0; i < ids.length; i += lote) {
+      await this.proyectoBeneficiarioRepository.query(
+        `
+        INSERT INTO proyecto_beneficiarios
+          (proyecto_id, beneficiario_id, es_principal, esta_activo_en_proyecto)
+        SELECT $1, id, false, true FROM unnest($2::uuid[]) AS id
+        ON CONFLICT (proyecto_id, beneficiario_id) DO UPDATE
+          SET esta_activo_en_proyecto = true
+          WHERE proyecto_beneficiarios.esta_activo_en_proyecto = false
+            AND proyecto_beneficiarios.reemplazado_por_id IS NULL
+        `,
+        [proyectoId, ids.slice(i, i + lote)],
+      );
+    }
   }
 
   async desvincularBeneficiario(
@@ -965,11 +1002,12 @@ export class ProyectosService {
       mapeo,
       proyectoId,
     );
-    return revisarFilasExistentes(
+    const revisadas = await revisarFilasExistentes(
       this.beneficiarioRepository,
       filas,
       etiquetasDeCampos(camposExtra),
     );
+    return this.lineasProductivasService.marcarLineasNuevas(revisadas);
   }
 
   async importarBeneficiariosExcel(
@@ -1102,6 +1140,10 @@ export class ProyectosService {
         });
       }
     }
+
+    await this.lineasProductivasService.sincronizarBeneficiarios(
+      detalleResultado.map((d) => d.beneficiarioId),
+    );
 
     return {
       totalFilas: filas.length,

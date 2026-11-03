@@ -109,6 +109,12 @@ export class RespuestaSubactividadDto {
   @ApiProperty({ description: 'Progreso de la subactividad (0-100)' })
   progresoPorcentaje: number;
 
+  @ApiPropertyOptional({
+    description: 'Línea productiva que atiende (opcional)',
+    nullable: true,
+  })
+  lineaProductiva?: { id: string; nombre: string } | null;
+
   @ApiPropertyOptional({ type: [RespuestaProcesoPlanDto] })
   procesos?: RespuestaProcesoPlanDto[];
 }

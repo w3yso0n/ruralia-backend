@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { LineaProductiva } from '../../lineas-productivas/entities/linea-productiva.entity';
 import { ProyectoBeneficiario } from '../../proyectos/entities/proyecto-beneficiario.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Genero } from '../enums/genero.enum';
@@ -14,6 +16,7 @@ import { TipoDocumento } from '../enums/tipo-documento.enum';
 import type { DatosAdicionales } from './campo-beneficiario.entity';
 
 @Entity('beneficiarios')
+@Index('IDX_beneficiarios_linea_productiva_id', ['lineaProductivaId'])
 export class Beneficiario {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -60,8 +63,20 @@ export class Beneficiario {
   @Column({ type: 'varchar', nullable: true })
   municipio: string | null;
 
+  /**
+   * Texto original de la línea productiva. Se conserva tal cual mientras el
+   * catálogo nuevo se valida; cada escritura nueva lo mantiene igual al nombre
+   * de `lineaProductivaCatalogo`.
+   */
   @Column({ name: 'linea_productiva', type: 'varchar', nullable: true })
   lineaProductiva: string | null;
+
+  @Column({ name: 'linea_productiva_id', type: 'uuid', nullable: true })
+  lineaProductivaId: string | null;
+
+  @ManyToOne(() => LineaProductiva, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'linea_productiva_id' })
+  lineaProductivaCatalogo?: LineaProductiva | null;
 
   @Column({ name: 'nombre_asociacion', type: 'varchar', nullable: true })
   nombreAsociacion: string | null;

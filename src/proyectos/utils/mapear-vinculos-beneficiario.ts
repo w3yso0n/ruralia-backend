@@ -24,6 +24,7 @@ export function mapearVinculoBeneficiario(
     nombres: b.nombres,
     apellidos: b.apellidos,
     numeroDocumento: b.numeroDocumento,
+    lineaProductiva: b.lineaProductiva ?? null,
     estaActivoEnProyecto: pb.estaActivoEnProyecto,
     reemplazaA: resumenDeBeneficiario(pb.reemplazaA ?? undefined),
     reemplazadoPor: resumenDeBeneficiario(pb.reemplazadoPor ?? undefined),

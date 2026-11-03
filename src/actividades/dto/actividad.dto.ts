@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CrearActividadDto {
   @ApiProperty({ description: 'Nombre de la actividad' })
@@ -58,6 +65,16 @@ export class CrearSubactividadDto {
   @Min(0)
   @IsOptional()
   orden?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Línea productiva (nombre). Si no existe en el catálogo se crea. Vacío o null la quita.',
+    nullable: true,
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  lineaProductiva?: string | null;
 }
 
 export class ActualizarSubactividadDto {
@@ -81,6 +98,16 @@ export class ActualizarSubactividadDto {
   @Min(0)
   @IsOptional()
   orden?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Línea productiva (nombre). Si no existe en el catálogo se crea. Vacío o null la quita.',
+    nullable: true,
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  lineaProductiva?: string | null;
 }
 
 export class CompletarNodoPlanDto {

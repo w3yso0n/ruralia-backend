@@ -82,6 +82,10 @@ export class RespuestaBeneficiarioDto {
   @Expose()
   lineaProductiva?: string | null;
 
+  @ApiPropertyOptional({ description: 'Línea del catálogo de líneas productivas' })
+  @Expose()
+  lineaProductivaId?: string | null;
+
   @ApiPropertyOptional()
   @Expose()
   nombreAsociacion?: string | null;

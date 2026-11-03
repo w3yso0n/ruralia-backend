@@ -21,6 +21,7 @@ import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
 import { IndicadoresModule } from './indicadores/indicadores.module';
 import { JornadasModule } from './jornadas/jornadas.module';
+import { LineasProductivasModule } from './lineas-productivas/lineas-productivas.module';
 import { ProyectosModule } from './proyectos/proyectos.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { SaludModule } from './salud/salud.module';
@@ -53,6 +54,7 @@ const modulosBase = [
   TerritoriosModule,
   ProyectosModule,
   BeneficiariosModule,
+  LineasProductivasModule,
   AsociacionesModule,
   ActividadesModule,
   JornadasModule,

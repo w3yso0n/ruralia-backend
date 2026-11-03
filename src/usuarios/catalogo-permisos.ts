@@ -231,6 +231,17 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     600,
   ),
   ...defs(
+    'lineas_productivas',
+    [
+      {
+        accion: 'administrar',
+        descripcion:
+          'Administrar el catálogo de líneas productivas: renombrar, unificar duplicados y eliminar',
+      },
+    ],
+    650,
+  ),
+  ...defs(
     'jornadas',
     [
       { accion: 'ver', descripcion: 'Ver jornadas' },
@@ -552,6 +563,10 @@ const PERMISOS_ADMINISTRADOR: string[] = [
  */
 export const PERMISOS_NUEVOS_POR_ROL: Record<string, RolSistema[]> = {
   'formularios.corregir_respuestas': [RolSistema.ADMINISTRADOR],
+  'lineas_productivas.administrar': [
+    RolSistema.ADMINISTRADOR,
+    RolSistema.PROFESIONAL_OFICINA_PROYECTOS,
+  ],
 };
 
 /** Permisos por defecto de cada rol de sistema (claves). */

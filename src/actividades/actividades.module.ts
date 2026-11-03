@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CronologiaModule } from '../cronologia/cronologia.module';
+import { LineasProductivasModule } from '../lineas-productivas/lineas-productivas.module';
 import { UsuariosModule } from '../usuarios/usuarios.module';
 import { Jornada } from '../jornadas/entities/jornada.entity';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
@@ -18,6 +19,7 @@ import { ProcesosService } from './procesos.service';
   imports: [
     CronologiaModule,
     UsuariosModule,
+    LineasProductivasModule,
     TypeOrmModule.forFeature([
       Actividad,
       Subactividad,

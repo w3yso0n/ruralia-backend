@@ -8,6 +8,7 @@ import { EnvioFormulario } from '../formularios/entities/envio-formulario.entity
 import { Indicador } from '../indicadores/entities/indicador.entity';
 import { RegistroIndicador } from '../indicadores/entities/registro-indicador.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { LineasProductivasModule } from '../lineas-productivas/lineas-productivas.module';
 import { Municipio } from '../territorios/entities/municipio.entity';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import { UsuariosModule } from '../usuarios/usuarios.module';
@@ -25,6 +26,7 @@ import { ProyectosService } from './proyectos.service';
   imports: [
     ActividadesModule,
     UsuariosModule,
+    LineasProductivasModule,
     TypeOrmModule.forFeature([
       Proyecto,
       ProyectoBeneficiario,

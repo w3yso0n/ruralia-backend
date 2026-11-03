@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { LineasProductivasService } from '../lineas-productivas/lineas-productivas.service';
 import {
   sumarEjecutadoPorProyecto,
   sumarEjecutadoPorProyectos,
@@ -16,6 +17,7 @@ import {
   detalleConOrigen,
 } from '../cronologia/cronologia.service';
 import { Proyecto } from '../proyectos/entities/proyecto.entity';
+import { TipoProyecto } from '../proyectos/enums/tipo-proyecto.enum';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import {
@@ -38,6 +40,7 @@ import { Proceso } from './entities/proceso.entity';
 import { Subactividad } from './entities/subactividad.entity';
 import { EstadoAvanceActividad } from './enums/estado-avance-actividad.enum';
 import {
+  aLineaProductiva,
   aRespuestaActividad,
   aRespuestaPlan,
   aRespuestaProgreso,
@@ -63,6 +66,7 @@ export class ActividadesService {
     private readonly jornadaRepository: Repository<Jornada>,
     private readonly cronologiaService: CronologiaService,
     private readonly alcanceTerritorialService: AlcanceTerritorialService,
+    private readonly lineasProductivasService: LineasProductivasService,
   ) {}
 
   async crearActividad(
@@ -198,12 +202,18 @@ export class ActividadesService {
       await this.actividadRepository.save(actividad);
     }
 
+    // La línea productiva solo aplica a proyectos agrícolas.
+    const linea =
+      proyecto.tipo === TipoProyecto.AGRICOLA
+        ? await this.lineasProductivasService.asegurar(dto.lineaProductiva)
+        : null;
     const subactividad = this.subactividadRepository.create({
       nombre: dto.nombre,
       descripcion: dto.descripcion,
       objetivo: dto.objetivo,
       orden: dto.orden ?? 0,
       actividad: { id: actividadId },
+      lineaProductivaId: linea?.id ?? null,
     });
 
     const guardada = await this.subactividadRepository.save(subactividad);
@@ -232,6 +242,16 @@ export class ActividadesService {
     }
     if (dto.orden !== undefined) {
       subactividad.orden = dto.orden;
+    }
+    if (
+      dto.lineaProductiva !== undefined &&
+      proyecto.tipo === TipoProyecto.AGRICOLA
+    ) {
+      const linea = await this.lineasProductivasService.asegurar(
+        dto.lineaProductiva,
+      );
+      subactividad.lineaProductivaId = linea?.id ?? null;
+      subactividad.lineaProductiva = undefined;
     }
 
     await this.subactividadRepository.save(subactividad);
@@ -427,7 +447,7 @@ export class ActividadesService {
   ): Promise<RespuestaSubactividadDto> {
     const sub = await this.subactividadRepository.findOne({
       where: { id },
-      relations: { completadaPor: true },
+      relations: { completadaPor: true, lineaProductiva: true },
     });
 
     if (!sub) {
@@ -452,6 +472,7 @@ export class ActividadesService {
         : undefined,
       progresoPorcentaje:
         sub.estadoAvance === EstadoAvanceActividad.COMPLETADA ? 100 : 0,
+      lineaProductiva: aLineaProductiva(sub.lineaProductiva),
     };
   }
 
@@ -464,6 +485,7 @@ export class ActividadesService {
         subactividades: {
           procesos: { metas: { periodos: true } },
           completadaPor: true,
+          lineaProductiva: true,
         },
         completadaPor: true,
       },

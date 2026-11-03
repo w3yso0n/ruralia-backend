@@ -1,5 +1,6 @@
 import { Repository } from 'typeorm';
 import { Beneficiario } from '../entities/beneficiario.entity';
+import { claveLineaProductiva } from '../../lineas-productivas/utils/normalizar-linea';
 import {
   asignarFilaABeneficiario,
   normalizarIdentificador,
@@ -17,6 +18,8 @@ export interface CambioDatoBeneficiario {
 export type FilaExcelRevisada = FilaExcelBeneficiario & {
   yaExiste: boolean;
   cambios: CambioDatoBeneficiario[];
+  /** La línea productiva de la fila no existe en el catálogo: se creará al cargar. */
+  lineaProductivaNueva?: boolean;
 };
 
 const CAMPOS_COMPARADOS: Array<[keyof Beneficiario, string]> = [
@@ -62,6 +65,13 @@ export function calcularCambios(
   for (const [campo, etiqueta] of CAMPOS_COMPARADOS) {
     const antes = comoTexto(campo, actual[campo]);
     const despues = comoTexto(campo, copia[campo]);
+    // "mango " y "Mango" son la misma línea: no se reporta como cambio.
+    if (
+      campo === 'lineaProductiva' &&
+      claveLineaProductiva(antes) === claveLineaProductiva(despues)
+    ) {
+      continue;
+    }
     if (antes !== despues) cambios.push({ campo, etiqueta, antes, despues });
   }
   for (const [clave, valor] of Object.entries(fila.extras ?? {})) {

@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
+import { LineasProductivasService } from '../lineas-productivas/lineas-productivas.service';
 import { Vereda } from '../territorios/entities/vereda.entity';
 import {
   ActualizarBeneficiarioDto,
@@ -63,6 +64,7 @@ export class BeneficiariosService {
     private readonly veredaRepository: Repository<Vereda>,
     @InjectRepository(CampoBeneficiario)
     private readonly campoRepository: Repository<CampoBeneficiario>,
+    private readonly lineasProductivasService: LineasProductivasService,
   ) {}
 
   async listar(
@@ -172,11 +174,12 @@ export class BeneficiariosService {
     mapeo?: string,
   ): Promise<FilaExcelRevisada[]> {
     const { filas, camposExtra } = await this.leerExcel(archivo, mapeo);
-    return revisarFilasExistentes(
+    const revisadas = await revisarFilasExistentes(
       this.beneficiarioRepository,
       filas,
       etiquetasDeCampos(camposExtra),
     );
+    return this.lineasProductivasService.marcarLineasNuevas(revisadas);
   }
 
   async importarExcel(
@@ -306,6 +309,10 @@ export class BeneficiariosService {
       });
     }
 
+    await this.lineasProductivasService.sincronizarBeneficiarios(
+      detalle.map((d) => d.beneficiarioId),
+    );
+
     return {
       totalFilas: filas.length,
       creados,
@@ -357,6 +364,7 @@ export class BeneficiariosService {
     });
 
     const guardado = await this.beneficiarioRepository.save(beneficiario);
+    await this.lineasProductivasService.sincronizarBeneficiarios([guardado.id]);
     return this.obtenerUno(guardado.id);
   }
 
@@ -420,6 +428,9 @@ export class BeneficiariosService {
     }
 
     await this.beneficiarioRepository.save(beneficiario);
+    if (dto.lineaProductiva !== undefined) {
+      await this.lineasProductivasService.sincronizarBeneficiarios([id]);
+    }
     return this.obtenerUno(id);
   }
 

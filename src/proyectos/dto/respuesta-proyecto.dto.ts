@@ -62,6 +62,10 @@ export class RespuestaBeneficiarioResumenDto {
   @Expose()
   numeroDocumento?: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  @Expose()
+  lineaProductiva?: string | null;
+
   @ApiPropertyOptional()
   @Expose()
   estaActivoEnProyecto?: boolean;

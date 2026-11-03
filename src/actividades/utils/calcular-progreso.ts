@@ -157,6 +157,12 @@ export function actividadesCompletadas(
   ).length;
 }
 
+export function aLineaProductiva(
+  linea: { id: string; nombre: string } | null | undefined,
+): { id: string; nombre: string } | null {
+  return linea ? { id: linea.id, nombre: linea.nombre } : null;
+}
+
 function aRespuestaSubactividad(
   sub: Subactividad,
   ejecutadoPorMeta: Map<string, number>,
@@ -178,6 +184,7 @@ function aRespuestaSubactividad(
     completadaEn: sub.completadaEn,
     completadaPor: aCompletadaPor(sub.completadaPor),
     progresoPorcentaje: progresoSubactividad(sub, ejecutadoPorMeta),
+    lineaProductiva: aLineaProductiva(sub.lineaProductiva),
     procesos: procesos.length > 0 ? procesos : undefined,
   };
 }
