@@ -39,6 +39,12 @@ import {
   RespuestaUsoBeneficiarioDto,
 } from './dto/respuesta-beneficiario.dto';
 import {
+  CorregirUbicacionBeneficiarioDto,
+  RespuestaTerritorioBeneficiariosDto,
+} from './dto/territorio-beneficiario.dto';
+import { UsuarioActual } from '../autenticacion/decorators/usuario-actual.decorator';
+import { Usuario } from '../usuarios/entities/usuario.entity';
+import {
   RespuestaCampoBeneficiarioDto,
   RespuestaCargaMasivaBeneficiariosDto,
 } from '../proyectos/dto/carga-beneficiarios.dto';
@@ -58,6 +64,16 @@ export class BeneficiariosController {
     @Query() filtros: FiltrosBeneficiarioDto,
   ): Promise<RespuestaPaginadaBeneficiariosDto> {
     return this.beneficiariosService.listar(filtros);
+  }
+
+  @Get('territorio')
+  @RequierePermisos('contrapartes.ver')
+  @ApiOperation({
+    summary: 'Beneficiarios activos con su ubicación para el mapa de territorio',
+  })
+  @ApiResponse({ status: 200, type: RespuestaTerritorioBeneficiariosDto })
+  listarTerritorio(): Promise<RespuestaTerritorioBeneficiariosDto> {
+    return this.beneficiariosService.listarTerritorio();
   }
 
   @Get('plantilla-excel')
@@ -194,6 +210,34 @@ export class BeneficiariosController {
     @Body() dto: ActualizarBeneficiarioDto,
   ): Promise<RespuestaBeneficiarioDto> {
     return this.beneficiariosService.actualizar(id, dto);
+  }
+
+  @Patch(':id/ubicacion')
+  @RequierePermisos('contrapartes.editar')
+  @ApiOperation({
+    summary: 'Corregir la ubicación propia del beneficiario (revisión de Territorio)',
+  })
+  @ApiResponse({ status: 200, type: RespuestaBeneficiarioDto })
+  corregirUbicacion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorregirUbicacionBeneficiarioDto,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaBeneficiarioDto> {
+    return this.beneficiariosService.corregirUbicacion(id, dto, usuario.id);
+  }
+
+  @Post(':id/ubicacion/confirmar')
+  @RequierePermisos('contrapartes.editar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Confirmar que la ubicación propia del beneficiario es correcta',
+  })
+  @ApiResponse({ status: 200, type: RespuestaBeneficiarioDto })
+  confirmarUbicacion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: Usuario,
+  ): Promise<RespuestaBeneficiarioDto> {
+    return this.beneficiariosService.confirmarUbicacion(id, usuario.id);
   }
 
   @Get(':id/uso')

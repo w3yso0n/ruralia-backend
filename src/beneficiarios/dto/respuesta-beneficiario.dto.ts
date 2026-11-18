@@ -90,6 +90,38 @@ export class RespuestaBeneficiarioDto {
   @Expose()
   nombreAsociacion?: string | null;
 
+  @ApiPropertyOptional({ description: 'Latitud propia del beneficiario (predio)' })
+  @Expose()
+  latitud?: number | null;
+
+  @ApiPropertyOptional({ description: 'Longitud propia del beneficiario (predio)' })
+  @Expose()
+  longitud?: number | null;
+
+  @ApiPropertyOptional({ description: 'Altitud del predio (m s. n. m.)' })
+  @Expose()
+  altitud?: number | null;
+
+  @ApiPropertyOptional({ enum: ['GPS', 'MANUAL', 'EXCEL'] })
+  @Expose()
+  ubicacionFuente?: string | null;
+
+  @ApiPropertyOptional({ enum: ['GPS', 'ULTIMA_CONOCIDA', 'ULTIMA_REGISTRADA'] })
+  @Expose()
+  ubicacionOrigenGps?: string | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  ubicacionPrecisionMetros?: number | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  ubicacionCapturadaEn?: Date | null;
+
+  @ApiPropertyOptional()
+  @Expose()
+  ubicacionConfirmadaEn?: Date | null;
+
   @ApiProperty()
   @Expose()
   estaActivo: boolean;

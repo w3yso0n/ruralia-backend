@@ -20,6 +20,11 @@ import {
   RespuestaPaginadaBeneficiariosDto,
   RespuestaUsoBeneficiarioDto,
 } from './dto/respuesta-beneficiario.dto';
+import {
+  ProyectoTerritorioDto,
+  PuntoTerritorioBeneficiarioDto,
+  RespuestaTerritorioBeneficiariosDto,
+} from './dto/territorio-beneficiario.dto';
 import { Beneficiario } from './entities/beneficiario.entity';
 import { CampoBeneficiario } from './entities/campo-beneficiario.entity';
 import {
@@ -52,8 +57,79 @@ import {
   aRespuestaBeneficiario,
   aRespuestaPaginadaBeneficiarios,
 } from './utils/serializar-beneficiario';
+import {
+  ETIQUETA_MOTIVO_COORDENADA,
+  interpretarAltitud,
+  interpretarCoordenada,
+} from './utils/coordenadas';
+import {
+  aplicarUbicacion,
+  gpsDebeReemplazar,
+  leerPuntoGps,
+  quitarUbicacion,
+} from './utils/ubicacion-beneficiario';
 import { MENSAJE_DOCUMENTO_ELIMINADO } from './utils/mensajes-beneficiario';
 import { aplicarEdicionDatosAdicionales } from './utils/campos-beneficiario';
+
+/** Coordenadas escritas por una persona: deben caer en Colombia. */
+function validarPuntoManual(
+  latitud: number,
+  longitud: number,
+): { latitud: number; longitud: number } {
+  const lat = interpretarCoordenada(latitud, 'latitud');
+  const lng = interpretarCoordenada(longitud, 'longitud');
+  if (!lat.ok || !lng.ok) {
+    const motivo = !lat.ok
+      ? lat.motivo
+      : !lng.ok
+        ? lng.motivo
+        : 'formato_no_reconocido';
+    throw new BadRequestException(
+      `Ubicación no válida: ${ETIQUETA_MOTIVO_COORDENADA[motivo]}`,
+    );
+  }
+  return { latitud: lat.valor, longitud: lng.valor };
+}
+
+function validarAltitud(altitud: number | null): number | null {
+  if (altitud === null) return null;
+  const valor = interpretarAltitud(altitud);
+  if (valor === null) throw new BadRequestException('Altitud no válida');
+  return valor;
+}
+
+/**
+ * Ubicación propia enviada a mano desde la ficha. Solo toca lo que viene en el
+ * DTO, para no borrar lo guardado en una edición parcial. Si las coordenadas
+ * no cambian, conserva la fuente original (por ejemplo GPS).
+ */
+function aplicarUbicacionManual(
+  beneficiario: Beneficiario,
+  dto: { latitud?: number | null; longitud?: number | null; altitud?: number | null },
+): void {
+  const altitud =
+    dto.altitud === undefined ? undefined : validarAltitud(dto.altitud);
+  if (dto.latitud !== undefined || dto.longitud !== undefined) {
+    if (dto.latitud == null && dto.longitud == null) {
+      quitarUbicacion(beneficiario);
+      return;
+    }
+    if (dto.latitud == null || dto.longitud == null) {
+      throw new BadRequestException(
+        'La ubicación necesita latitud y longitud juntas',
+      );
+    }
+    const punto = validarPuntoManual(dto.latitud, dto.longitud);
+    if (
+      punto.latitud !== beneficiario.latitud ||
+      punto.longitud !== beneficiario.longitud
+    ) {
+      aplicarUbicacion(beneficiario, { ...punto, altitud, fuente: 'MANUAL' });
+      return;
+    }
+  }
+  if (altitud !== undefined) beneficiario.altitud = altitud;
+}
 
 @Injectable()
 export class BeneficiariosService {
@@ -101,6 +177,96 @@ export class BeneficiariosService {
 
     const datos = beneficiarios.map(aRespuestaBeneficiario);
     return aRespuestaPaginadaBeneficiarios(datos, total, pagina, limite);
+  }
+
+  /**
+   * Todos los beneficiarios activos con su ubicación propia (latitud/longitud
+   * del beneficiario, no la de la vereda) y sus códigos territoriales, en una
+   * sola consulta. Solo se unen relaciones ManyToOne (vereda -> municipio ->
+   * departamento), así que no hay multiplicación de filas.
+   */
+  async listarTerritorio(): Promise<RespuestaTerritorioBeneficiariosDto> {
+    // Tres consultas independientes en paralelo: ninguna une colecciones.
+    const [filas, vinculos, proyectos] = await Promise.all([
+      this.consultarPuntosTerritorio(),
+      this.beneficiarioRepository.manager.query<
+        Array<{ beneficiarioId: string; proyectoId: string }>
+      >(
+        `SELECT pb.beneficiario_id AS "beneficiarioId", pb.proyecto_id AS "proyectoId"
+           FROM proyecto_beneficiarios pb
+          WHERE pb.esta_activo_en_proyecto = true`,
+      ),
+      this.beneficiarioRepository.manager.query<ProyectoTerritorioDto[]>(
+        `SELECT p.id, p.nombre, p.estado::text AS estado
+           FROM proyectos p
+          WHERE EXISTS (
+            SELECT 1 FROM proyecto_beneficiarios pb
+             WHERE pb.proyecto_id = p.id AND pb.esta_activo_en_proyecto = true
+          )
+          ORDER BY p.nombre ASC`,
+      ),
+    ]);
+
+    const proyectosPorBeneficiario = new Map<string, string[]>();
+    for (const v of vinculos) {
+      const lista = proyectosPorBeneficiario.get(v.beneficiarioId);
+      if (lista) lista.push(v.proyectoId);
+      else proyectosPorBeneficiario.set(v.beneficiarioId, [v.proyectoId]);
+    }
+
+    const beneficiarios = filas.map((fila) => ({
+      ...fila,
+      latitud: fila.latitud == null ? null : Number(fila.latitud),
+      longitud: fila.longitud == null ? null : Number(fila.longitud),
+      altitud: fila.altitud == null ? null : Number(fila.altitud),
+      ubicacionPrecisionMetros:
+        fila.ubicacionPrecisionMetros == null
+          ? null
+          : Number(fila.ubicacionPrecisionMetros),
+      ubicacionConfirmada: Boolean(fila.ubicacionConfirmada),
+      proyectoIds: proyectosPorBeneficiario.get(fila.id) ?? [],
+    }));
+
+    return { beneficiarios, proyectos };
+  }
+
+  private consultarPuntosTerritorio() {
+    return this.beneficiarioRepository
+      .createQueryBuilder('beneficiario')
+      .leftJoin('beneficiario.vereda', 'vereda')
+      .leftJoin('vereda.municipio', 'municipio')
+      .leftJoin('municipio.departamento', 'departamento')
+      .select([
+        'beneficiario.id AS id',
+        'beneficiario.nombres AS nombres',
+        'beneficiario.apellidos AS apellidos',
+        'beneficiario.numero_documento AS "numeroDocumento"',
+        'beneficiario.linea_productiva AS "lineaProductiva"',
+        'beneficiario.nombre_asociacion AS "nombreAsociacion"',
+        'beneficiario.municipio AS "municipioTexto"',
+        'vereda.id AS "veredaId"',
+        'vereda.nombre AS "veredaNombre"',
+        'vereda.codigo AS "veredaCodigo"',
+        'beneficiario.latitud AS latitud',
+        'beneficiario.longitud AS longitud',
+        'beneficiario.altitud AS altitud',
+        'beneficiario.ubicacion_fuente AS "ubicacionFuente"',
+        'beneficiario.ubicacion_origen_gps AS "ubicacionOrigenGps"',
+        'beneficiario.ubicacion_precision_m AS "ubicacionPrecisionMetros"',
+        'beneficiario.ubicacion_confirmada_en IS NOT NULL AS "ubicacionConfirmada"',
+        // Texto tal como llegó, para revisar las ubicaciones que no se pudieron leer.
+        "beneficiario.datos_adicionales->>'latitud' AS \"latitudOriginal\"",
+        "beneficiario.datos_adicionales->>'longitud' AS \"longitudOriginal\"",
+        "beneficiario.datos_adicionales->>'ubicacion_por_revisar' AS \"ubicacionPorRevisar\"",
+        'municipio.nombre AS "municipioNombre"',
+        'municipio.codigo AS "municipioCodigo"',
+        'departamento.nombre AS "departamentoNombre"',
+        'departamento.codigo AS "departamentoCodigo"',
+      ])
+      .where('beneficiario.eliminadoEn IS NULL')
+      .andWhere('beneficiario.estaActivo = true')
+      .orderBy('beneficiario.apellidos', 'ASC')
+      .getRawMany<Omit<PuntoTerritorioBeneficiarioDto, 'proyectoIds'>>();
   }
 
   async obtenerUno(id: string): Promise<RespuestaBeneficiarioDto> {
@@ -362,6 +528,7 @@ export class BeneficiariosService {
       nombreAsociacion: dto.nombreAsociacion || null,
       vereda: { id: dto.veredaId },
     });
+    aplicarUbicacionManual(beneficiario, dto);
 
     const guardado = await this.beneficiarioRepository.save(beneficiario);
     await this.lineasProductivasService.sincronizarBeneficiarios([guardado.id]);
@@ -414,6 +581,7 @@ export class BeneficiariosService {
       beneficiario.fechaNacimiento = new Date(dto.fechaNacimiento);
     }
     if (dto.municipio !== undefined) beneficiario.municipio = dto.municipio || null;
+    aplicarUbicacionManual(beneficiario, dto);
     if (dto.lineaProductiva !== undefined) {
       beneficiario.lineaProductiva = dto.lineaProductiva || null;
     }
@@ -464,6 +632,84 @@ export class BeneficiariosService {
       beneficiario.eliminadoEn = new Date();
       await manager.save(beneficiario);
     });
+  }
+
+  /**
+   * Guarda en el beneficiario el valor de un campo GPS de formulario
+   * (`{ latitud, longitud, precisionMetros, capturadoEn, origen }`).
+   *
+   * Es la entrada prevista para los formularios de levantamiento de datos:
+   * el GPS es la fuente de mayor prioridad y entra siempre, salvo que ya haya
+   * una lectura GPS más confiable (en vivo frente a "última conocida", o más
+   * reciente). Ver `utils/ubicacion-beneficiario.ts`.
+   *
+   * Devuelve si la ubicación se actualizó. No lanza error si el valor no trae
+   * un punto válido: devuelve `false`.
+   */
+  async registrarUbicacionGps(
+    beneficiarioId: string,
+    valorCampoGps: unknown,
+    opciones: { envioId?: string | null; altitud?: number | null } = {},
+  ): Promise<boolean> {
+    const punto = leerPuntoGps(valorCampoGps);
+    if (!punto) return false;
+    const beneficiario = await this.buscarNoEliminado(beneficiarioId);
+    if (!gpsDebeReemplazar(beneficiario, punto)) return false;
+
+    aplicarUbicacion(beneficiario, {
+      latitud: punto.latitud,
+      longitud: punto.longitud,
+      altitud:
+        opciones.altitud === undefined
+          ? undefined
+          : (interpretarAltitud(opciones.altitud) ?? null),
+      fuente: 'GPS',
+      origenGps: punto.origen,
+      precisionMetros: punto.precisionMetros,
+      capturadaEn: punto.capturadoEn,
+      envioId: opciones.envioId ?? null,
+    });
+    await this.beneficiarioRepository.save(beneficiario);
+    return true;
+  }
+
+  /** Revisión en Territorio: la ubicación actual es correcta aunque parezca dudosa. */
+  async confirmarUbicacion(
+    id: string,
+    usuarioId: string,
+  ): Promise<RespuestaBeneficiarioDto> {
+    const beneficiario = await this.buscarNoEliminado(id);
+    if (beneficiario.latitud === null || beneficiario.longitud === null) {
+      throw new BadRequestException(
+        'El beneficiario no tiene ubicación para confirmar; corrígela primero',
+      );
+    }
+    beneficiario.ubicacionConfirmadaEn = new Date();
+    beneficiario.ubicacionConfirmadaPorId = usuarioId;
+    await this.beneficiarioRepository.save(beneficiario);
+    return this.obtenerUno(id);
+  }
+
+  /**
+   * Revisión en Territorio: una persona escribe la ubicación correcta. Queda
+   * como fuente MANUAL y confirmada por quien la corrigió.
+   */
+  async corregirUbicacion(
+    id: string,
+    dto: { latitud: number; longitud: number; altitud?: number | null },
+    usuarioId: string,
+  ): Promise<RespuestaBeneficiarioDto> {
+    const beneficiario = await this.buscarNoEliminado(id);
+    const punto = validarPuntoManual(dto.latitud, dto.longitud);
+    aplicarUbicacion(beneficiario, {
+      ...punto,
+      altitud: dto.altitud === undefined ? undefined : validarAltitud(dto.altitud),
+      fuente: 'MANUAL',
+    });
+    beneficiario.ubicacionConfirmadaEn = new Date();
+    beneficiario.ubicacionConfirmadaPorId = usuarioId;
+    await this.beneficiarioRepository.save(beneficiario);
+    return this.obtenerUno(id);
   }
 
   private async buscarNoEliminado(id: string): Promise<Beneficiario> {

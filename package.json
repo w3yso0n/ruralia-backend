@@ -21,7 +21,8 @@
     "seed:territorios": "ts-node -r tsconfig-paths/register src/territorios/importar-veredas-csv.ts",
     "seed:cronologia-demo": "ts-node -r tsconfig-paths/register src/cronologia/seed-cronologia-demo.ts",
     "seed:plataforma": "ts-node -r tsconfig-paths/register src/seeds/seed-plataforma.ts",
-    "importar:usuarios-produccion": "ts-node -r tsconfig-paths/register src/usuarios/importar-usuarios-produccion.ts"
+    "importar:usuarios-produccion": "ts-node -r tsconfig-paths/register src/usuarios/importar-usuarios-produccion.ts",
+    "migrar:ubicacion-beneficiarios": "ts-node -r tsconfig-paths/register src/beneficiarios/migrar-ubicacion-beneficiarios.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.4",

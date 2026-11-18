@@ -3,6 +3,11 @@ import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { Beneficiario } from '../../beneficiarios/entities/beneficiario.entity';
+import {
+  interpretarAltitud,
+  interpretarUbicacion,
+} from '../../beneficiarios/utils/coordenadas';
+import { aplicarUbicacion } from '../../beneficiarios/utils/ubicacion-beneficiario';
 import { Genero } from '../../beneficiarios/enums/genero.enum';
 import { TipoDocumento } from '../../beneficiarios/enums/tipo-documento.enum';
 import type {
@@ -28,6 +33,13 @@ export interface FilaExcelBeneficiario {
   municipio?: string | null;
   lineaProductiva?: string | null;
   nombreAsociacion?: string | null;
+  /**
+   * Ubicación propia del beneficiario (predio), ya validada. Solo viene si la
+   * fila trae una ubicación interpretable; si no, la guardada no se toca.
+   */
+  latitud?: number;
+  longitud?: number;
+  altitud?: number;
   /** AAAA-MM-DD. */
   fechaNacimiento?: string | null;
   /** Solo viene si el archivo tiene columna ESTADO. */
@@ -52,6 +64,9 @@ export type CampoModeloBeneficiario =
   | 'edad'
   | 'fechaNacimiento'
   | 'municipio'
+  | 'latitud'
+  | 'longitud'
+  | 'altitud'
   | 'lineaProductiva'
   | 'nombreAsociacion'
   | 'estado';
@@ -107,6 +122,10 @@ export interface CampoConocido {
 
 const MAX_CAMPOS_EXTRA = 100;
 const MAX_COLUMNAS = 200;
+
+/** Dato adicional donde queda el texto de una ubicación que no se pudo validar. */
+export const CLAVE_UBICACION_POR_REVISAR = 'ubicacion_por_revisar';
+export const ETIQUETA_UBICACION_POR_REVISAR = 'Ubicación por revisar (latitud | longitud)';
 const MAX_LARGO_VALOR = 1000;
 const REGEX_CLAVE = /^[a-z][a-z0-9_]{0,59}$/;
 const TIPOS_CAMPO: TipoCampoBeneficiario[] = ['texto', 'numero', 'fecha', 'booleano'];
@@ -146,6 +165,9 @@ const ALIAS_SEXO = ['sexo', 'genero', 'género'];
 const ALIAS_EDAD = ['edad'];
 const ALIAS_ASOCIACION = ['asociacion', 'asociación', 'nombre_asociacion'];
 const ALIAS_MUNICIPIO = ['municipio'];
+const ALIAS_LATITUD = ['latitud', 'lat', 'coordenada latitud', 'latitud predio'];
+const ALIAS_LONGITUD = ['longitud', 'lon', 'lng', 'long', 'coordenada longitud', 'longitud predio'];
+const ALIAS_ALTITUD = ['altitud', 'altitud m s n m', 'altitud msnm', 'msnm', 'm s n m', 'altura'];
 const ALIAS_LINEA = [
   'linea_productiva',
   'linea productiva',
@@ -176,6 +198,9 @@ const ALIAS_CAMPOS: Array<[CampoModeloBeneficiario, string[]]> = [
   ['edad', ALIAS_EDAD],
   ['fechaNacimiento', ALIAS_FECHA_NACIMIENTO],
   ['municipio', ALIAS_MUNICIPIO],
+  ['latitud', ALIAS_LATITUD],
+  ['longitud', ALIAS_LONGITUD],
+  ['altitud', ALIAS_ALTITUD],
   ['lineaProductiva', ALIAS_LINEA],
   ['nombreAsociacion', [...ALIAS_ASOCIACION, 'nombre de la asociacion', 'organizacion']],
   ['estado', ALIAS_ESTADO],
@@ -200,6 +225,9 @@ const COLUMNAS_PLANTILLA = [
   { titulo: 'MUNICIPIO', ancho: 24 },
   { titulo: 'LINEA_PRODUCTIVA', ancho: 22 },
   { titulo: 'ESTADO', ancho: 14 },
+  { titulo: 'LATITUD', ancho: 14 },
+  { titulo: 'LONGITUD', ancho: 14 },
+  { titulo: 'ALTITUD', ancho: 12 },
 ] as const;
 
 function normalizarEncabezado(valor: unknown): string {
@@ -889,6 +917,10 @@ export async function leerExcelBeneficiarios(
   const colFechaNacimiento = c('fechaNacimiento');
   const colAsociacion = c('nombreAsociacion');
   const colMunicipio = c('municipio');
+  const colLatitud = c('latitud');
+  const colLongitud = c('longitud');
+  const colAltitud = c('altitud');
+  let hayUbicacionPorRevisar = false;
   const colLinea = c('lineaProductiva');
   const colEstado = c('estado');
 
@@ -943,6 +975,28 @@ export async function leerExcelBeneficiarios(
     }
     if (colEstado > 0) fila.estaActivo = activoDesdeTexto(textoColumna(row, colEstado));
 
+    const ubicacionPorRevisar: DatosAdicionales = {};
+    if (colLatitud > 0 || colLongitud > 0) {
+      const latCrudo = textoColumna(row, colLatitud);
+      const lngCrudo = textoColumna(row, colLongitud);
+      if (latCrudo || lngCrudo) {
+        const ubicacion = interpretarUbicacion(latCrudo, lngCrudo);
+        if (ubicacion.ok) {
+          fila.latitud = ubicacion.latitud;
+          fila.longitud = ubicacion.longitud;
+        } else {
+          // No se adivina: el texto original queda como dato para revisar.
+          ubicacionPorRevisar[CLAVE_UBICACION_POR_REVISAR] =
+            `${latCrudo || '(vacía)'} | ${lngCrudo || '(vacía)'}`;
+          hayUbicacionPorRevisar = true;
+        }
+      }
+    }
+    if (colAltitud > 0) {
+      const altitud = interpretarAltitud(textoColumna(row, colAltitud));
+      if (altitud !== null) fila.altitud = altitud;
+    }
+
     if (extras.length) {
       const datos: DatosAdicionales = {};
       for (const extra of extras) {
@@ -950,6 +1004,9 @@ export async function leerExcelBeneficiarios(
         if (valor !== undefined) datos[extra.clave] = valor;
       }
       fila.extras = datos;
+    }
+    if (Object.keys(ubicacionPorRevisar).length) {
+      fila.extras = { ...(fila.extras ?? {}), ...ubicacionPorRevisar };
     }
 
     filas.push(fila);
@@ -963,6 +1020,15 @@ export async function leerExcelBeneficiarios(
       textoEncabezado(filaTitulos, extra.columna) ||
       `Columna ${letraColumna(extra.columna)}`,
   }));
+
+  if (hayUbicacionPorRevisar) {
+    camposExtra.push({
+      clave: CLAVE_UBICACION_POR_REVISAR,
+      etiqueta: ETIQUETA_UBICACION_POR_REVISAR,
+      tipo: 'texto',
+      columnaOrigen: 'Latitud | Longitud',
+    });
+  }
 
   return { filas, mapeo, camposExtra };
 }
@@ -1001,6 +1067,25 @@ export function asignarFilaABeneficiario(
   if (tieneClave(fila, 'genero')) beneficiario.genero = fila.genero ?? null;
   if (tieneClave(fila, 'edad')) beneficiario.edad = fila.edad ?? null;
   if (tieneClave(fila, 'municipio')) beneficiario.municipio = fila.municipio ?? null;
+  // El Excel nunca reemplaza una ubicación tomada por GPS en campo.
+  const tieneGps = beneficiario.ubicacionFuente === 'GPS';
+  if (!tieneGps && fila.latitud !== undefined && fila.longitud !== undefined) {
+    if (
+      fila.latitud !== beneficiario.latitud ||
+      fila.longitud !== beneficiario.longitud
+    ) {
+      aplicarUbicacion(beneficiario, {
+        latitud: fila.latitud,
+        longitud: fila.longitud,
+        altitud: fila.altitud,
+        fuente: 'EXCEL',
+      });
+    } else if (fila.altitud !== undefined) {
+      beneficiario.altitud = fila.altitud;
+    }
+  } else if (!tieneGps && fila.altitud !== undefined) {
+    beneficiario.altitud = fila.altitud;
+  }
   if (tieneClave(fila, 'lineaProductiva')) {
     beneficiario.lineaProductiva = fila.lineaProductiva ?? null;
   }
@@ -1129,6 +1214,9 @@ export async function generarPlantillaExcelBeneficiarios(): Promise<Buffer> {
     ['MUNICIPIO', 'Municipio de la persona. Cada fila puede traer el suyo.'],
     ['LINEA_PRODUCTIVA', 'Por ejemplo ñame, yuca, plátano, cacao, maíz, aguacate, frijol o ají.'],
     ['ESTADO', 'ACTIVO o INACTIVO. Si lo omites, queda activo.'],
+    ['LATITUD', 'Ubicación propia de la persona (su predio), en grados decimales con punto o coma. Ej. 9.7309'],
+    ['LONGITUD', 'Grados decimales. En Colombia es oeste: 75.1868 o -75.1868 se guardan igual. No escribas el número sin separador (752923): se marca para revisión.'],
+    ['ALTITUD', 'Metros sobre el nivel del mar. Opcional.'],
   ];
   notas.forEach((nota, indice) => {
     const fila = indice + 3;

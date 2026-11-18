@@ -14,6 +14,10 @@ import { Vereda } from '../../territorios/entities/vereda.entity';
 import { Genero } from '../enums/genero.enum';
 import { TipoDocumento } from '../enums/tipo-documento.enum';
 import type { DatosAdicionales } from './campo-beneficiario.entity';
+import type {
+  FuenteUbicacion,
+  OrigenGps,
+} from '../utils/ubicacion-beneficiario';
 
 @Entity('beneficiarios')
 @Index('IDX_beneficiarios_linea_productiva_id', ['lineaProductivaId'])
@@ -80,6 +84,51 @@ export class Beneficiario {
 
   @Column({ name: 'nombre_asociacion', type: 'varchar', nullable: true })
   nombreAsociacion: string | null;
+
+  /**
+   * Ubicación propia del beneficiario (su predio), en grados decimales WGS84.
+   * No es la ubicación de la vereda: esa vive en `vereda.latitud/longitud`.
+   * Latitud y longitud se guardan siempre juntas (ambas o ninguna).
+   */
+  @Column({ type: 'double precision', nullable: true })
+  latitud: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  longitud: number | null;
+
+  /** Altitud del predio en metros sobre el nivel del mar. */
+  @Column({ type: 'double precision', nullable: true })
+  altitud: number | null;
+
+  /**
+   * De dónde salió la ubicación. GPS (campo GPS de un formulario) es la fuente
+   * de mayor confianza: ni el Excel la reemplaza. Ver `utils/ubicacion-beneficiario.ts`.
+   */
+  @Column({ name: 'ubicacion_fuente', type: 'varchar', length: 20, nullable: true })
+  ubicacionFuente: FuenteUbicacion | null;
+
+  /** Solo con fuente GPS: lectura en vivo o última posición que tenía el teléfono. */
+  @Column({ name: 'ubicacion_origen_gps', type: 'varchar', length: 20, nullable: true })
+  ubicacionOrigenGps: OrigenGps | null;
+
+  /** Solo con fuente GPS: precisión reportada por el teléfono, en metros. */
+  @Column({ name: 'ubicacion_precision_m', type: 'double precision', nullable: true })
+  ubicacionPrecisionMetros: number | null;
+
+  /** Momento de la captura (GPS) o de la carga/edición. */
+  @Column({ name: 'ubicacion_capturada_en', type: 'timestamptz', nullable: true })
+  ubicacionCapturadaEn: Date | null;
+
+  /** Envío de formulario que aportó el GPS, para trazabilidad. */
+  @Column({ name: 'ubicacion_envio_id', type: 'uuid', nullable: true })
+  ubicacionEnvioId: string | null;
+
+  /** Una persona revisó la ubicación y la dio por buena. Se limpia si cambia. */
+  @Column({ name: 'ubicacion_confirmada_en', type: 'timestamptz', nullable: true })
+  ubicacionConfirmadaEn: Date | null;
+
+  @Column({ name: 'ubicacion_confirmada_por_id', type: 'uuid', nullable: true })
+  ubicacionConfirmadaPorId: string | null;
 
   /** Columnas del Excel del catálogo que no existen en el modelo. Etiquetas en `campos_beneficiario` (proyecto nulo). */
   @Column({

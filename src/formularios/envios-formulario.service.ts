@@ -1,3 +1,4 @@
+import { huellaAdjunto } from '../common/utils/data-url';
 import {
   BadRequestException,
   Injectable,
@@ -66,7 +67,8 @@ function valorComparable(respuesta: RespuestaFormulario): unknown {
       : respuesta.valorFecha) ??
     (respuesta.valorNumero != null ? Number(respuesta.valorNumero) : null) ??
     respuesta.valorBooleano ??
-    respuesta.urlArchivo ??
+    // El adjunto se resume en una huella: la bitácora no copia el archivo.
+    (respuesta.urlArchivo != null ? huellaAdjunto(respuesta.urlArchivo) : null) ??
     respuesta.valorTexto ??
     null
   );

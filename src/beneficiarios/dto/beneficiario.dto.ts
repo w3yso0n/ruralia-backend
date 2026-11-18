@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsNumber,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -101,6 +102,30 @@ export class CrearBeneficiarioDto {
   @IsOptional()
   municipio?: string;
 
+  @ApiPropertyOptional({
+    description: 'Latitud propia del beneficiario (predio). Va junto con longitud; null la borra.',
+    nullable: true,
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  latitud?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Longitud propia del beneficiario (predio). Va junto con latitud; null la borra.',
+    nullable: true,
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  longitud?: number | null;
+
+  @ApiPropertyOptional({ description: 'Altitud del predio (m s. n. m.)', nullable: true })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  altitud?: number | null;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
@@ -190,6 +215,30 @@ export class ActualizarBeneficiarioDto {
   @IsString()
   @IsOptional()
   municipio?: string;
+
+  @ApiPropertyOptional({
+    description: 'Latitud propia del beneficiario (predio). Va junto con longitud; null la borra.',
+    nullable: true,
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  latitud?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Longitud propia del beneficiario (predio). Va junto con latitud; null la borra.',
+    nullable: true,
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  longitud?: number | null;
+
+  @ApiPropertyOptional({ description: 'Altitud del predio (m s. n. m.)', nullable: true })
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @IsOptional()
+  altitud?: number | null;
 
   @ApiPropertyOptional()
   @IsString()

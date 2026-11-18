@@ -1,3 +1,4 @@
+import { leerDataUrl } from '../common/utils/data-url';
 import {
   BadRequestException,
   Injectable,
@@ -162,7 +163,7 @@ export class ExpedienteDescargaService {
               contenido: adjunto.contenido,
               rutaZip: this.rutaUnica(
                 usadas,
-                `${carpeta}/adjuntos-formulario/${etiqueta}.${adjunto.extension}`,
+                `${carpeta}/adjuntos-formulario/${etiqueta}${adjunto.extension}`,
               ),
             });
           }
@@ -268,6 +269,17 @@ export class ExpedienteDescargaService {
     | { tipo: 'archivo'; rutaDisco: string; extension: string }
     | { tipo: 'buffer'; contenido: Buffer; extension: string }
     | null {
+    // Fotos, firmas y archivos de la app llegan como data URL en urlArchivo.
+    const data =
+      leerDataUrl(respuesta.urlArchivo) ?? leerDataUrl(respuesta.valorTexto);
+    if (data) {
+      const deNombre = data.nombre ? path.extname(data.nombre) : '';
+      return {
+        tipo: 'buffer',
+        contenido: Buffer.from(data.base64, 'base64'),
+        extension: deNombre || this.extensionMime(data.mime),
+      };
+    }
     if (respuesta.urlArchivo) {
       const disco = this.resolverRuta(respuesta.urlArchivo);
       if (!disco) return null;
@@ -277,14 +289,7 @@ export class ExpedienteDescargaService {
         extension: path.extname(respuesta.urlArchivo) || this.extensionMime(''),
       };
     }
-    const texto = respuesta.valorTexto ?? '';
-    const data = texto.match(/^data:([^;]+);base64,(.+)$/);
-    if (!data) return null;
-    return {
-      tipo: 'buffer',
-      contenido: Buffer.from(data[2], 'base64'),
-      extension: this.extensionMime(data[1]),
-    };
+    return null;
   }
 
   private resolverRuta(filePath: string): string | null {
@@ -345,6 +350,10 @@ export class ExpedienteDescargaService {
     if (mime.includes('webp')) return '.webp';
     if (mime.includes('pdf')) return '.pdf';
     if (mime.includes('gif')) return '.gif';
+    if (mime.includes('wordprocessingml')) return '.docx';
+    if (mime.includes('msword')) return '.doc';
+    if (mime.includes('spreadsheetml')) return '.xlsx';
+    if (mime.includes('ms-excel')) return '.xls';
     return '.bin';
   }
 

@@ -1,3 +1,4 @@
+import { valorLegibleAdjunto } from '../common/utils/data-url';
 import {
   BadRequestException,
   ForbiddenException,
@@ -1790,7 +1791,7 @@ export class JornadasService {
   }
 
   private valorRespuestaTexto(resp: RespuestaFormulario): string | null {
-    if (resp.urlArchivo != null) return resp.urlArchivo;
+    if (resp.urlArchivo != null) return valorLegibleAdjunto(resp.urlArchivo);
     if (resp.valorBooleano != null) return resp.valorBooleano ? 'Sí' : 'No';
     if (resp.valorTexto != null) {
       const texto = resp.valorTexto.trim();
