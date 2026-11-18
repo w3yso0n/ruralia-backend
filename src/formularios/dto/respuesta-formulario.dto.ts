@@ -42,7 +42,7 @@ export class RespuestaCampoFormularioDto {
     nullable: true,
   })
   @Expose()
-  autocompletar?: { origen: string } | null;
+  autocompletar?: { origen: string; editable?: boolean } | null;
 
   @ApiPropertyOptional({
     description:

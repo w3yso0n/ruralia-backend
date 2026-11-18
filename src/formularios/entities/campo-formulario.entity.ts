@@ -43,7 +43,7 @@ export class CampoFormulario {
    * `opciones.columnas[i].autocompletar`.
    */
   @Column({ type: 'jsonb', nullable: true })
-  autocompletar: { origen: string } | null;
+  autocompletar: { origen: string; editable?: boolean } | null;
 
   /**
    * Solo en formularios de línea base: al aprobar la jornada, la respuesta se

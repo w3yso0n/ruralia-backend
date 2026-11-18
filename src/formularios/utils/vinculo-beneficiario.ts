@@ -16,12 +16,12 @@ import { tiposCompatibles } from './autocompletado';
  * o `beneficiario.extra.<clave>`), así la misma pregunta lee y escribe el
  * mismo dato.
  *
- * `permitirCambio`: hoy siempre false. Al guardar la plantilla, una pregunta
- * vinculada recibe `autocompletar` con el mismo dato: si el beneficiario ya lo
- * tiene, sale fijo y el técnico no lo puede modificar; si no lo tiene, el
- * técnico lo captura y al aprobar se guarda. Para dejar que el técnico corrija
- * un valor existente basta con enviar `permitirCambio: true`: la plantilla ya
- * no le pondrá `autocompletar` (ver `normalizarVinculos`).
+ * `permitirCambio` (true si no se indica): al guardar la plantilla, una
+ * pregunta vinculada recibe `autocompletar` con el mismo dato y
+ * `editable: true`. Si el beneficiario ya tiene el dato, sale prellenado y el
+ * técnico lo puede corregir; al aprobar, el valor nuevo se guarda y el
+ * anterior queda en el historial. Con `permitirCambio: false` el dato
+ * existente sale fijo y no se puede modificar (ver `normalizarVinculos`).
  */
 export interface VinculoBeneficiario {
   destino: string;
@@ -130,7 +130,7 @@ export function leerVinculo(valor: unknown): VinculoBeneficiario | null {
     permitirCambio?: unknown;
   };
   if (typeof destino !== 'string' || !destino) return null;
-  return { destino, permitirCambio: permitirCambio === true };
+  return { destino, permitirCambio: permitirCambio !== false };
 }
 
 export function esDestinoExtra(destino: string): boolean {
@@ -218,9 +218,10 @@ function sePuedePrellenar(
 }
 
 /**
- * Deja cada pregunta vinculada lista para guardarse: normaliza el vínculo y,
- * mientras `permitirCambio` sea false, le pone `autocompletar` con el mismo
- * dato para que salga fija cuando el beneficiario ya lo tiene.
+ * Deja cada pregunta vinculada lista para guardarse: normaliza el vínculo y le
+ * pone `autocompletar` con el mismo dato para que salga prellenada cuando el
+ * beneficiario ya lo tiene. Con `permitirCambio` (por defecto) queda editable;
+ * sin él, queda fija.
  */
 export function normalizarVinculos<T extends CampoConVinculo>(
   campos: T[],
@@ -229,11 +230,15 @@ export function normalizarVinculos<T extends CampoConVinculo>(
   return campos.map((campo) => {
     const vinculo = leerVinculo(campo.vincularBeneficiario);
     if (!vinculo) return { ...campo, vincularBeneficiario: null };
-    const autocompletar =
-      !vinculo.permitirCambio &&
-      sePuedePrellenar(vinculo.destino, campo.tipoCampo, tiposAdicionales)
-        ? { origen: vinculo.destino }
-        : campo.autocompletar;
+    const autocompletar = sePuedePrellenar(
+      vinculo.destino,
+      campo.tipoCampo,
+      tiposAdicionales,
+    )
+      ? vinculo.permitirCambio
+        ? { origen: vinculo.destino, editable: true }
+        : { origen: vinculo.destino }
+      : campo.autocompletar;
     return { ...campo, vincularBeneficiario: vinculo, autocompletar };
   });
 }

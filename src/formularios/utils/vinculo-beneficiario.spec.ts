@@ -111,7 +111,7 @@ describe('validarVinculosPlantilla', () => {
 });
 
 describe('normalizarVinculos', () => {
-  it('prellena (autocompletar fijo) cuando el tipo lo permite y no hay permitirCambio', () => {
+  it('prellena editable por defecto cuando el tipo lo permite', () => {
     const [tel, area, pdet, multiple] = normalizarVinculos(
       [
         {
@@ -141,15 +141,19 @@ describe('normalizarVinculos', () => {
       ],
       adicionales,
     );
-    expect(tel.autocompletar).toEqual({ origen: 'beneficiario.telefono' });
+    expect(tel.autocompletar).toEqual({
+      origen: 'beneficiario.telefono',
+      editable: true,
+    });
     expect(area.autocompletar).toEqual({
       origen: 'beneficiario.extra.area_finca',
+      editable: true,
     });
     expect(pdet.autocompletar).toBeUndefined();
     expect(multiple.autocompletar).toBeUndefined();
   });
 
-  it('no prellena si se permite el cambio', () => {
+  it('prellena fijo si no se permite el cambio', () => {
     const [tel] = normalizarVinculos(
       [
         {
@@ -158,16 +162,16 @@ describe('normalizarVinculos', () => {
           tipoCampo: TipoCampo.TEXTO,
           vincularBeneficiario: {
             destino: 'beneficiario.telefono',
-            permitirCambio: true,
+            permitirCambio: false,
           },
         },
       ],
       adicionales,
     );
-    expect(tel.autocompletar).toBeUndefined();
+    expect(tel.autocompletar).toEqual({ origen: 'beneficiario.telefono' });
     expect(tel.vincularBeneficiario).toEqual({
       destino: 'beneficiario.telefono',
-      permitirCambio: true,
+      permitirCambio: false,
     });
   });
 });

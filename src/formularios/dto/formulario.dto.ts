@@ -65,7 +65,7 @@ export class CrearCampoFormularioDto {
   })
   @IsObject()
   @IsOptional()
-  autocompletar?: { origen: string } | null;
+  autocompletar?: { origen: string; editable?: boolean } | null;
 
   @ApiPropertyOptional({
     description:
@@ -207,7 +207,7 @@ export class ActualizarCampoFormularioDto {
   })
   @IsObject()
   @IsOptional()
-  autocompletar?: { origen: string } | null;
+  autocompletar?: { origen: string; editable?: boolean } | null;
 
   @ApiPropertyOptional({
     description:

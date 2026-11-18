@@ -15,10 +15,15 @@ import { TipoPlantilla } from '../enums/tipo-plantilla.enum';
  * (dato adicional de las cargas por Excel). Si la persona tiene el dato, la
  * pregunta queda fija con ese valor y el técnico no la puede cambiar; si no lo
  * tiene, se llena normal. El servidor es quien decide el valor final.
+ *
+ * Con `editable: true` (preguntas de línea base vinculadas con opción a
+ * cambio) la pregunta sale prellenada pero el técnico la puede modificar: el
+ * servidor respeta lo que se envía.
  */
 
 export interface ConfigAutocompletado {
   origen: string;
+  editable?: boolean;
 }
 
 export interface OrigenAutocompletado {
@@ -118,8 +123,9 @@ export function tiposCompatibles(tipoCampo: string): TipoCampoBeneficiario[] {
 
 export function leerConfig(valor: unknown): ConfigAutocompletado | null {
   if (!valor || typeof valor !== 'object') return null;
-  const origen = (valor as { origen?: unknown }).origen;
-  return typeof origen === 'string' && origen ? { origen } : null;
+  const { origen, editable } = valor as { origen?: unknown; editable?: unknown };
+  if (typeof origen !== 'string' || !origen) return null;
+  return editable === true ? { origen, editable: true } : { origen };
 }
 
 interface ColumnaConfig {
@@ -412,7 +418,7 @@ function filasDe(valor: unknown): Record<string, unknown>[] {
 
 /**
  * Pisa con los datos de la ficha lo que mande el cliente en las preguntas
- * autocompletadas. Las tablas con columnas autocompletadas quedan con una fila
+ * autocompletadas (salvo las editables). Las tablas con columnas autocompletadas quedan con una fila
  * por beneficiario de la jornada (no se pueden quitar ni agregar).
  */
 export function aplicarAutocompletado(
@@ -468,7 +474,7 @@ export function aplicarAutocompletado(
     }
 
     const config = leerConfig(campo.autocompletar);
-    if (!config || !contexto.beneficiario) continue;
+    if (!config || config.editable || !contexto.beneficiario) continue;
     const valor = resolverValor(
       contexto.beneficiario,
       config.origen,
