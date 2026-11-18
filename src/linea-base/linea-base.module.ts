@@ -15,6 +15,7 @@ import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { UsuariosModule } from '../usuarios/usuarios.module';
 import { AplicacionLineaBaseService } from './aplicacion-linea-base.service';
+import { ExcelLineaBaseService } from './excel-linea-base.service';
 import { LineaBaseController } from './linea-base.controller';
 import { LineaBaseService } from './linea-base.service';
 
@@ -43,7 +44,11 @@ import { LineaBaseService } from './linea-base.service';
     LineasProductivasModule,
   ],
   controllers: [LineaBaseController],
-  providers: [LineaBaseService, AplicacionLineaBaseService],
+  providers: [
+    LineaBaseService,
+    AplicacionLineaBaseService,
+    ExcelLineaBaseService,
+  ],
   exports: [LineaBaseService, AplicacionLineaBaseService],
 })
 export class LineaBaseModule {}

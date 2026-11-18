@@ -7,7 +7,11 @@ import {
   Post,
   Put,
   Query,
+  Req,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -27,13 +31,55 @@ import {
   PaginaBeneficiariosLineaBaseDto,
   ResultadoAsignacionLineaBaseDto,
 } from './dto/linea-base.dto';
+import { ExcelLineaBaseService } from './excel-linea-base.service';
 import { LineaBaseService } from './linea-base.service';
+
+/** URL pública del backend para los enlaces de archivos del Excel. */
+function urlBase(req: Request): string {
+  const configurada = process.env.URL_PUBLICA_API?.replace(/\/+$/, '');
+  if (configurada) return configurada;
+  const proto =
+    (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0] ??
+    req.protocol;
+  const host =
+    (req.headers['x-forwarded-host'] as string | undefined) ?? req.get('host');
+  return `${proto}://${host}`;
+}
 
 @ApiTags('Línea base')
 @ApiBearerAuth('bearer')
 @Controller('proyectos/:proyectoId/linea-base')
 export class LineaBaseController {
-  constructor(private readonly lineaBaseService: LineaBaseService) {}
+  constructor(
+    private readonly lineaBaseService: LineaBaseService,
+    private readonly excelLineaBaseService: ExcelLineaBaseService,
+  ) {}
+
+  @Get('excel')
+  @RequierePermisos('linea_base.exportar')
+  @ApiOperation({
+    summary:
+      'Excel de línea base: una fila por beneficiario del proyecto y una columna por pregunta (para análisis, no para volver a cargar)',
+  })
+  async descargarExcel(
+    @Param('proyectoId', ParseUUIDPipe) proyectoId: string,
+    @UsuarioActual() usuario: Usuario,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, nombreArchivo } = await this.excelLineaBaseService.generar(
+      proyectoId,
+      usuario,
+      urlBase(req),
+    );
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(nombreArchivo)}"`,
+      'Access-Control-Expose-Headers': 'Content-Disposition',
+    });
+    return new StreamableFile(buffer);
+  }
 
   @Get()
   @RequierePermisos('linea_base.ver')
