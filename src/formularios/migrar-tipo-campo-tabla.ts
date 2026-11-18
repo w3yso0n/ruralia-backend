@@ -27,8 +27,11 @@ function cargarEnvLocal(): void {
 
 /**
  * TypeORM synchronize no añade valores nuevos a enums de Postgres de forma fiable.
- * Asegura que 'TABLA' exista en el enum de tipo_campo antes del sync.
+ * Asegura que los tipos agregados después de crear la tabla existan en el enum
+ * de tipo_campo antes del sync.
  */
+const VALORES_AGREGADOS = ['TABLA', 'VEREDA_PDET'];
+
 export async function migrarTipoCampoTablaAntesDeSync(): Promise<void> {
   cargarEnvLocal();
 
@@ -58,21 +61,21 @@ export async function migrarTipoCampoTablaAntesDeSync(): Promise<void> {
 
     const enumName = col.rows[0].udt_name as string;
 
-    const existe = await client.query(
-      `
-      SELECT 1
-      FROM pg_enum e
-      JOIN pg_type t ON t.oid = e.enumtypid
-      WHERE t.typname = $1 AND e.enumlabel = 'TABLA'
-      `,
-      [enumName],
-    );
-
-    if ((existe.rowCount ?? 0) > 0) {
-      return;
+    for (const valor of VALORES_AGREGADOS) {
+      const existe = await client.query(
+        `
+        SELECT 1
+        FROM pg_enum e
+        JOIN pg_type t ON t.oid = e.enumtypid
+        WHERE t.typname = $1 AND e.enumlabel = $2
+        `,
+        [enumName, valor],
+      );
+      if ((existe.rowCount ?? 0) > 0) continue;
+      await client.query(
+        `ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS '${valor}'`,
+      );
     }
-
-    await client.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS 'TABLA'`);
   } finally {
     await client.end();
   }

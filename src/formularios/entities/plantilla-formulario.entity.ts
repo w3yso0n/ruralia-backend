@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinTable,
   ManyToMany,
   OneToMany,
@@ -9,11 +10,13 @@ import {
 import { Proceso } from '../../actividades/entities/proceso.entity';
 import { Subactividad } from '../../actividades/entities/subactividad.entity';
 import { Usuario } from '../../usuarios/entities/usuario.entity';
+import { FaseFormulario } from '../enums/fase-formulario.enum';
 import { TipoPlantilla } from '../enums/tipo-plantilla.enum';
 import { CampoFormulario } from './campo-formulario.entity';
 import { EnvioFormulario } from './envio-formulario.entity';
 
 @Entity('plantillas_formulario')
+@Index('IDX_plantillas_formulario_fase', ['fase'])
 export class PlantillaFormulario {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -37,6 +40,17 @@ export class PlantillaFormulario {
     default: TipoPlantilla.INDIVIDUAL,
   })
   tipoPlantilla: TipoPlantilla;
+
+  /**
+   * Ejecución (plan, metas, métricas) o línea base (solo actualiza datos del
+   * beneficiario). Un formulario de una fase no se asigna a jornadas de la otra.
+   */
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: FaseFormulario.EJECUCION,
+  })
+  fase: FaseFormulario;
 
   @ManyToMany(() => Proceso, (proceso) => proceso.plantillasFormulario)
   @JoinTable({

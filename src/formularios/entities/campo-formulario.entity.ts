@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { TipoCampo } from '../enums/tipo-campo.enum';
+import type { VinculoBeneficiario } from '../utils/vinculo-beneficiario';
 import { PlantillaFormulario } from './plantilla-formulario.entity';
 import { RespuestaFormulario } from './respuesta-formulario.entity';
 
@@ -44,14 +45,24 @@ export class CampoFormulario {
   @Column({ type: 'jsonb', nullable: true })
   autocompletar: { origen: string } | null;
 
-  @ManyToOne(
-    () => PlantillaFormulario,
-    (plantilla) => plantilla.campos,
-    { nullable: false },
-  )
+  /**
+   * Solo en formularios de línea base: al aprobar la jornada, la respuesta se
+   * guarda en ese dato del beneficiario (inverso de `autocompletar`). `destino`
+   * usa los mismos nombres que el autocompletado: `beneficiario.<campo>` o
+   * `beneficiario.extra.<clave>`. Ver `utils/vinculo-beneficiario.ts`.
+   */
+  @Column({ name: 'vincular_beneficiario', type: 'jsonb', nullable: true })
+  vincularBeneficiario: VinculoBeneficiario | null;
+
+  @ManyToOne(() => PlantillaFormulario, (plantilla) => plantilla.campos, {
+    nullable: false,
+  })
   @JoinColumn({ name: 'plantilla_formulario_id' })
   plantillaFormulario: PlantillaFormulario;
 
-  @OneToMany(() => RespuestaFormulario, (respuesta) => respuesta.campoFormulario)
+  @OneToMany(
+    () => RespuestaFormulario,
+    (respuesta) => respuesta.campoFormulario,
+  )
   respuestas: RespuestaFormulario[];
 }

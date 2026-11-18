@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   JoinTable,
   ManyToMany,
@@ -12,6 +13,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Actividad } from '../../actividades/entities/actividad.entity';
+import { PlantillaFormulario } from '../../formularios/entities/plantilla-formulario.entity';
 import { Indicador } from '../../indicadores/entities/indicador.entity';
 import { Municipio } from '../../territorios/entities/municipio.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
@@ -23,6 +25,7 @@ import { ProyectoAsociacion } from './proyecto-asociacion.entity';
 import { ProyectoBeneficiario } from './proyecto-beneficiario.entity';
 
 @Entity('proyectos')
+@Index('IDX_proyectos_plantilla_linea_base_id', ['plantillaLineaBase'])
 @Unique('UQ_proyecto_nombre_tipo', ['nombre', 'tipo'])
 export class Proyecto {
   @PrimaryGeneratedColumn('uuid')
@@ -59,6 +62,17 @@ export class Proyecto {
   @ManyToOne(() => Usuario, { nullable: false })
   @JoinColumn({ name: 'creador_id' })
   creador: Usuario;
+
+  /**
+   * Formulario de línea base activo del proyecto (fase LINEA_BASE). Cambiarlo
+   * solo afecta a las jornadas nuevas: las ya creadas conservan el suyo.
+   */
+  @ManyToOne(() => PlantillaFormulario, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'plantilla_linea_base_id' })
+  plantillaLineaBase: PlantillaFormulario | null;
 
   @OneToMany(() => Actividad, (actividad) => actividad.proyecto)
   actividades: Actividad[];

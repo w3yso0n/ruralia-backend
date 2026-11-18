@@ -11,6 +11,7 @@ import {
 import { LineaProductiva } from '../../lineas-productivas/entities/linea-productiva.entity';
 import { ProyectoBeneficiario } from '../../proyectos/entities/proyecto-beneficiario.entity';
 import { Vereda } from '../../territorios/entities/vereda.entity';
+import { VeredaPdet } from '../../territorios/entities/vereda-pdet.entity';
 import { Genero } from '../enums/genero.enum';
 import { TipoDocumento } from '../enums/tipo-documento.enum';
 import type { DatosAdicionales } from './campo-beneficiario.entity';
@@ -21,6 +22,7 @@ import type {
 
 @Entity('beneficiarios')
 @Index('IDX_beneficiarios_linea_productiva_id', ['lineaProductivaId'])
+@Index('IDX_beneficiarios_vereda_pdet_id', ['veredaPdet'])
 export class Beneficiario {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -104,19 +106,37 @@ export class Beneficiario {
    * De dónde salió la ubicación. GPS (campo GPS de un formulario) es la fuente
    * de mayor confianza: ni el Excel la reemplaza. Ver `utils/ubicacion-beneficiario.ts`.
    */
-  @Column({ name: 'ubicacion_fuente', type: 'varchar', length: 20, nullable: true })
+  @Column({
+    name: 'ubicacion_fuente',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
   ubicacionFuente: FuenteUbicacion | null;
 
   /** Solo con fuente GPS: lectura en vivo o última posición que tenía el teléfono. */
-  @Column({ name: 'ubicacion_origen_gps', type: 'varchar', length: 20, nullable: true })
+  @Column({
+    name: 'ubicacion_origen_gps',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
   ubicacionOrigenGps: OrigenGps | null;
 
   /** Solo con fuente GPS: precisión reportada por el teléfono, en metros. */
-  @Column({ name: 'ubicacion_precision_m', type: 'double precision', nullable: true })
+  @Column({
+    name: 'ubicacion_precision_m',
+    type: 'double precision',
+    nullable: true,
+  })
   ubicacionPrecisionMetros: number | null;
 
   /** Momento de la captura (GPS) o de la carga/edición. */
-  @Column({ name: 'ubicacion_capturada_en', type: 'timestamptz', nullable: true })
+  @Column({
+    name: 'ubicacion_capturada_en',
+    type: 'timestamptz',
+    nullable: true,
+  })
   ubicacionCapturadaEn: Date | null;
 
   /** Envío de formulario que aportó el GPS, para trazabilidad. */
@@ -124,7 +144,11 @@ export class Beneficiario {
   ubicacionEnvioId: string | null;
 
   /** Una persona revisó la ubicación y la dio por buena. Se limpia si cambia. */
-  @Column({ name: 'ubicacion_confirmada_en', type: 'timestamptz', nullable: true })
+  @Column({
+    name: 'ubicacion_confirmada_en',
+    type: 'timestamptz',
+    nullable: true,
+  })
   ubicacionConfirmadaEn: Date | null;
 
   @Column({ name: 'ubicacion_confirmada_por_id', type: 'uuid', nullable: true })
@@ -158,4 +182,12 @@ export class Beneficiario {
   @ManyToOne(() => Vereda, { nullable: true })
   @JoinColumn({ name: 'vereda_id' })
   vereda: Vereda | null;
+
+  /**
+   * Vereda según la división PDET. Convive con la vereda DANE (`vereda`):
+   * no la reemplaza.
+   */
+  @ManyToOne(() => VeredaPdet, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'vereda_pdet_id' })
+  veredaPdet: VeredaPdet | null;
 }

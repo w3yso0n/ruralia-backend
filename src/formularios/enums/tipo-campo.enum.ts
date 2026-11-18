@@ -11,4 +11,10 @@ export enum TipoCampo {
   ARCHIVO = 'ARCHIVO',
   /** Matriz/lista repetible (p. ej. asistencia). Columnas en opciones; filas en valorJson. */
   TABLA = 'TABLA',
+  /**
+   * Selector en cascada departamento -> municipio -> vereda PDET (catálogo
+   * `veredas_pdet`, distinto de la vereda DANE). Respuesta en valorJson:
+   * `{ veredaPdetId, codigo, nombre, municipioCodigo }`.
+   */
+  VEREDA_PDET = 'VEREDA_PDET',
 }

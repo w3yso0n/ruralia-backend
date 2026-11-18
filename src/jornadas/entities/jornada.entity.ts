@@ -23,6 +23,7 @@ import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 import { TipoJornada } from '../enums/tipo-jornada.enum';
 import { PlantillaFormulario } from '../../formularios/entities/plantilla-formulario.entity';
+import { FaseFormulario } from '../../formularios/enums/fase-formulario.enum';
 import { JornadaActividad } from './jornada-actividad.entity';
 import { JornadaAsistente } from './jornada-asistente.entity';
 
@@ -30,6 +31,7 @@ import { JornadaAsistente } from './jornada-asistente.entity';
 @Index('IDX_jornadas_proyecto_fecha', ['proyecto', 'fecha'])
 @Index('IDX_jornadas_meta_id', ['meta'])
 @Index('IDX_jornadas_tecnico_responsable_id', ['tecnicoResponsable'])
+@Index('IDX_jornadas_proyecto_fase', ['proyecto', 'fase'])
 @Unique('UQ_jornada_dispositivo_id_local', ['dispositivoId', 'idLocal'])
 export class Jornada {
   @PrimaryGeneratedColumn('uuid')
@@ -75,6 +77,19 @@ export class Jornada {
     default: TipoJornada.INDIVIDUAL,
   })
   tipo: TipoJornada;
+
+  /**
+   * Copia de la fase del formulario al crear la jornada. Las jornadas de
+   * LINEA_BASE no tienen meta ni subactividad y se excluyen de toda métrica,
+   * avance, Gantt, evaluación, reporte y expediente: filtrar siempre con
+   * `soloEjecucion` (utils/fase-jornada.ts).
+   */
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: FaseFormulario.EJECUCION,
+  })
+  fase: FaseFormulario;
 
   /** Nombre de identificación opcional para distinguir jornadas en listados. */
   @Column({ type: 'varchar', length: 200, nullable: true })

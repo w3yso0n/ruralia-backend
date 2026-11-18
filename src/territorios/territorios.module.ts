@@ -5,6 +5,7 @@ import { Departamento } from './entities/departamento.entity';
 import { Municipio } from './entities/municipio.entity';
 import { Region } from './entities/region.entity';
 import { Vereda } from './entities/vereda.entity';
+import { VeredaPdet } from './entities/vereda-pdet.entity';
 import { TerritoriosController } from './territorios.controller';
 import { TerritoriosService } from './territorios.service';
 
@@ -16,6 +17,7 @@ import { TerritoriosService } from './territorios.service';
       Municipio,
       Corregimiento,
       Vereda,
+      VeredaPdet,
     ]),
   ],
   controllers: [TerritoriosController],
