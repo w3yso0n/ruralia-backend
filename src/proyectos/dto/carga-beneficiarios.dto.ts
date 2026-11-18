@@ -21,23 +21,32 @@ export class ReemplazarBeneficiarioProyectoDto {
   @IsOptional()
   nuevoBeneficiarioId?: string;
 
-  @ApiPropertyOptional({ description: 'Nombres (obligatorio si se crea uno nuevo)' })
-  @ValidateIf((dto: ReemplazarBeneficiarioProyectoDto) => !dto.nuevoBeneficiarioId)
+  @ApiPropertyOptional({
+    description: 'Nombres (obligatorio si se crea uno nuevo)',
+  })
+  @ValidateIf(
+    (dto: ReemplazarBeneficiarioProyectoDto) => !dto.nuevoBeneficiarioId,
+  )
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
   nombres?: string;
 
-  @ApiPropertyOptional({ description: 'Apellidos (si no se envían se infieren del nombre)' })
+  @ApiPropertyOptional({
+    description: 'Apellidos (si no se envían se infieren del nombre)',
+  })
   @IsString()
   @IsOptional()
   @MaxLength(120)
   apellidos?: string;
 
   @ApiPropertyOptional({
-    description: 'Identificador único (cédula u otro documento). Obligatorio al crear.',
+    description:
+      'Identificador único (cédula u otro documento). Obligatorio al crear.',
   })
-  @ValidateIf((dto: ReemplazarBeneficiarioProyectoDto) => !dto.nuevoBeneficiarioId)
+  @ValidateIf(
+    (dto: ReemplazarBeneficiarioProyectoDto) => !dto.nuevoBeneficiarioId,
+  )
   @IsString()
   @IsNotEmpty()
   @MaxLength(40)
@@ -95,7 +104,8 @@ export class FilaCargaBeneficiarioDto {
 
   @ApiPropertyOptional({
     type: [CambioDatoBeneficiarioDto],
-    description: 'La cédula ya existía: datos de la persona que se sobrescribieron',
+    description:
+      'La cédula ya existía: datos de la persona que se sobrescribieron',
   })
   @Type(() => CambioDatoBeneficiarioDto)
   cambios?: CambioDatoBeneficiarioDto[];
@@ -115,7 +125,8 @@ export class RespuestaCargaMasivaBeneficiariosDto {
   yaEnProyecto: number;
 
   @ApiProperty({
-    description: 'Personas que ya existían y a las que se les modificó algún dato',
+    description:
+      'Personas que ya existían y a las que se les modificó algún dato',
   })
   actualizados: number;
 
@@ -139,6 +150,9 @@ export class EventoJornadaHistorialDto {
 
   @ApiProperty()
   estado: string;
+
+  @ApiProperty({ description: 'EJECUCION o LINEA_BASE' })
+  fase: string;
 
   @ApiPropertyOptional()
   vereda?: string;
@@ -175,7 +189,8 @@ export class RespuestaHistorialBeneficiarioProyectoDto {
 
   @ApiProperty({
     type: [RespuestaBeneficiarioResumenDto],
-    description: 'Cadena de personas que ocuparon este cupo, de más antigua a más reciente',
+    description:
+      'Cadena de personas que ocuparon este cupo, de más antigua a más reciente',
   })
   @Type(() => RespuestaBeneficiarioResumenDto)
   cadenaReemplazos: RespuestaBeneficiarioResumenDto[];

@@ -1,3 +1,4 @@
+import { esLineaBase, sqlSoloEjecucion } from '../jornadas/utils/fase-jornada';
 import {
   BadRequestException,
   Injectable,
@@ -100,6 +101,12 @@ export class IndicadoresService {
       throw new NotFoundException(`Jornada ${dto.jornadaId} no encontrada`);
     }
 
+    if (esLineaBase(jornada)) {
+      throw new BadRequestException(
+        'Las jornadas de línea base no registran indicadores.',
+      );
+    }
+
     const proyectoIds = indicador.proyectos?.map((p) => p.id) ?? [];
 
     if (!proyectoIds.includes(jornada.proyecto.id)) {
@@ -132,9 +139,14 @@ export class IndicadoresService {
 
     const indicadores = await this.indicadorRepository
       .createQueryBuilder('indicador')
-      .innerJoin('indicador.proyectos', 'proyecto', 'proyecto.id = :proyectoId', {
-        proyectoId,
-      })
+      .innerJoin(
+        'indicador.proyectos',
+        'proyecto',
+        'proyecto.id = :proyectoId',
+        {
+          proyectoId,
+        },
+      )
       .getMany();
 
     const avances: AvanceIndicadorDto[] = [];
@@ -147,20 +159,21 @@ export class IndicadoresService {
           indicadorId: indicador.id,
         })
         .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere(sqlSoloEjecucion('jornada'))
         .orderBy('registro.registrado_en', 'DESC')
         .getMany();
 
       const valorActual = this.calcularValorActual(indicador.tipo, registros);
       const meta = Number(indicador.valorMeta ?? 0);
       const porcentaje =
-        meta > 0 ? Math.min(100, Math.round((valorActual / meta) * 10000) / 100) : 0;
+        meta > 0
+          ? Math.min(100, Math.round((valorActual / meta) * 10000) / 100)
+          : 0;
 
-      const tendencia: PuntoTendenciaDto[] = registros
-        .slice(0, 5)
-        .map((r) => ({
-          registradoEn: r.registradoEn,
-          valor: Number(r.valor),
-        }));
+      const tendencia: PuntoTendenciaDto[] = registros.slice(0, 5).map((r) => ({
+        registradoEn: r.registradoEn,
+        valor: Number(r.valor),
+      }));
 
       avances.push(
         aAvanceIndicador({

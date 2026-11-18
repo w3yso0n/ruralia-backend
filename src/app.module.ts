@@ -21,6 +21,7 @@ import { EvidenciasModule } from './evidencias/evidencias.module';
 import { FormulariosModule } from './formularios/formularios.module';
 import { IndicadoresModule } from './indicadores/indicadores.module';
 import { JornadasModule } from './jornadas/jornadas.module';
+import { LineaBaseModule } from './linea-base/linea-base.module';
 import { LineasProductivasModule } from './lineas-productivas/lineas-productivas.module';
 import { ProyectosModule } from './proyectos/proyectos.module';
 import { ReportesModule } from './reportes/reportes.module';
@@ -58,6 +59,7 @@ const modulosBase = [
   AsociacionesModule,
   ActividadesModule,
   JornadasModule,
+  LineaBaseModule,
   FormulariosModule,
   EvidenciasModule,
   IndicadoresModule,

@@ -372,9 +372,36 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     ],
     1350,
   ),
+  ...defs(
+    'linea_base',
+    [
+      {
+        accion: 'ver',
+        descripcion: 'Ver la línea base del proyecto y sus respuestas',
+      },
+      {
+        accion: 'asignar',
+        descripcion:
+          'Configurar el formulario de línea base, dar de alta beneficiarios y asignar jornadas de línea base',
+      },
+      {
+        accion: 'exportar',
+        descripcion: 'Descargar el Excel de línea base del proyecto',
+      },
+    ],
+    1360,
+  ),
+];
+
+/** Línea base: coordinadores y administración por defecto. */
+const PERMISOS_LINEA_BASE: string[] = [
+  'linea_base.ver',
+  'linea_base.asignar',
+  'linea_base.exportar',
 ];
 
 const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
+  ...PERMISOS_LINEA_BASE,
   'dashboard.ver',
   'configuracion.editar_dashboard',
   'evaluaciones.ver',
@@ -426,6 +453,7 @@ const PERMISOS_COORDINADOR_DEPARTAMENTAL: string[] = [
 ];
 
 const PERMISOS_COORDINADOR_ZONA: string[] = [
+  ...PERMISOS_LINEA_BASE,
   'dashboard.ver',
   'configuracion.editar_dashboard',
   'evaluaciones.ver',
@@ -546,14 +574,22 @@ const PERMISOS_VISUALIZADOR: string[] = [
 ];
 
 /** Admin operativo: casi todo, sin la cadena de aprobación (esa solo la tienen Admin y Cuantiva). */
-const PERMISOS_OPERATIVOS: string[] = CATALOGO_PERMISOS.map((p) => p.clave).filter(
-  (clave) => clave !== 'proyectos.configurar_aprobaciones',
+const PERMISOS_OPERATIVOS: string[] = CATALOGO_PERMISOS.map(
+  (p) => p.clave,
+).filter(
+  (clave) =>
+    clave !== 'proyectos.configurar_aprobaciones' &&
+    !PERMISOS_LINEA_BASE.includes(clave),
 );
 
+// Sin repetidos: un permiso duplicado rompe la creación del rol en una base nueva.
 const PERMISOS_ADMINISTRADOR: string[] = [
-  ...PERMISOS_OPERATIVOS,
-  'proyectos.configurar_aprobaciones',
-  'formularios.corregir_respuestas',
+  ...new Set([
+    ...PERMISOS_OPERATIVOS,
+    'proyectos.configurar_aprobaciones',
+    'formularios.corregir_respuestas',
+    ...PERMISOS_LINEA_BASE,
+  ]),
 ];
 
 /**
@@ -567,6 +603,17 @@ export const PERMISOS_NUEVOS_POR_ROL: Record<string, RolSistema[]> = {
     RolSistema.ADMINISTRADOR,
     RolSistema.PROFESIONAL_OFICINA_PROYECTOS,
   ],
+  ...Object.fromEntries(
+    PERMISOS_LINEA_BASE.map((clave) => [
+      clave,
+      [
+        RolSistema.ADMINISTRADOR,
+        RolSistema.COORDINADOR_DEPARTAMENTAL,
+        RolSistema.COORDINADOR_ZONA,
+        RolSistema.COORDINADOR_PROYECTO,
+      ],
+    ]),
+  ),
 };
 
 /** Permisos por defecto de cada rol de sistema (claves). */
@@ -576,7 +623,10 @@ export const PERMISOS_POR_ROL_SISTEMA: Record<RolSistema, string[] | 'ALL'> = {
   [RolSistema.PROFESIONAL_OFICINA_PROYECTOS]: PERMISOS_OPERATIVOS,
   [RolSistema.COORDINADOR_DEPARTAMENTAL]: PERMISOS_COORDINADOR_DEPARTAMENTAL,
   [RolSistema.COORDINADOR_ZONA]: PERMISOS_COORDINADOR_ZONA,
-  [RolSistema.COORDINADOR_PROYECTO]: PERMISOS_GESTION_PROYECTO_ASIGNADO,
+  [RolSistema.COORDINADOR_PROYECTO]: [
+    ...PERMISOS_GESTION_PROYECTO_ASIGNADO,
+    ...PERMISOS_LINEA_BASE,
+  ],
   [RolSistema.PROFESIONAL_APOYO]: PERMISOS_GESTION_PROYECTO_ASIGNADO,
   [RolSistema.CAMPO]: PERMISOS_CAMPO,
   [RolSistema.VISUALIZADOR]: PERMISOS_VISUALIZADOR,

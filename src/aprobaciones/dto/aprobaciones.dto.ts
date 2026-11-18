@@ -1,3 +1,4 @@
+import { FaseFormulario } from '../../formularios/enums/fase-formulario.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -94,7 +95,9 @@ export class ReasignarPasoDto {
   @IsUUID()
   usuarioId?: string;
 
-  @ApiPropertyOptional({ description: 'Rol con al menos un candidato elegible' })
+  @ApiPropertyOptional({
+    description: 'Rol con al menos un candidato elegible',
+  })
   @IsOptional()
   @IsUUID()
   rolId?: string;
@@ -128,6 +131,14 @@ export class GuardarNivelesAprobacionDto {
 }
 
 export class FiltrosBandejaDto {
+  @ApiPropertyOptional({
+    enum: FaseFormulario,
+    description: 'EJECUCION o LINEA_BASE. Sin valor: ambas.',
+  })
+  @IsOptional()
+  @IsEnum(FaseFormulario)
+  fase?: FaseFormulario;
+
   @ApiPropertyOptional({ enum: EstadoFuncional })
   @IsOptional()
   @IsEnum(EstadoFuncional)

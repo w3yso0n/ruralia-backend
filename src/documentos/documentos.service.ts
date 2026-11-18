@@ -1,3 +1,5 @@
+import { FaseFormulario } from '../formularios/enums/fase-formulario.enum';
+import { esLineaBase } from '../jornadas/utils/fase-jornada';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -51,8 +53,9 @@ export class DocumentosService {
   }
 
   async listarPorProyecto(proyectoId: string): Promise<Documento[]> {
+    // Las versiones de línea base no son documentos del expediente.
     return this.documentoRepo.find({
-      where: { proyectoId },
+      where: { proyectoId, jornada: { fase: FaseFormulario.EJECUCION } },
       relations: { versiones: true, jornada: { beneficiarios: true } },
       order: { creadoEn: 'DESC' },
     });
@@ -210,16 +213,20 @@ export class DocumentosService {
       return { documento, version: ultima };
     }
 
-    const pdfBuffer =
-      jornada.tipo === TipoJornada.GRUPAL
-        ? await this.jornadasService.generarPdfAsistencia(jornadaId)
-        : await this.jornadasService.generarPdfFormulario(jornadaId);
-
-    const filePath = await this.guardarPdf(
-      jornada.proyecto.id,
-      jornada.id,
-      pdfBuffer,
-    );
+    // Línea base: la versión guarda el snapshot de respuestas (historial de
+    // versiones) pero no genera PDF ni entra al expediente.
+    let filePath: string | null = null;
+    if (!esLineaBase(jornada)) {
+      const pdfBuffer =
+        jornada.tipo === TipoJornada.GRUPAL
+          ? await this.jornadasService.generarPdfAsistencia(jornadaId)
+          : await this.jornadasService.generarPdfFormulario(jornadaId);
+      filePath = await this.guardarPdf(
+        jornada.proyecto.id,
+        jornada.id,
+        pdfBuffer,
+      );
+    }
 
     const versionNumber = (ultima?.versionNumber ?? 0) + 1;
     const status =
@@ -419,10 +426,7 @@ export class DocumentosService {
     return cambios;
   }
 
-  private compactarValorParaAuditoria(
-    valor: unknown,
-    tipo?: string,
-  ): unknown {
+  private compactarValorParaAuditoria(valor: unknown, tipo?: string): unknown {
     if (valor == null || valor === '') return null;
     if (
       tipo === 'FIRMA' ||
@@ -440,7 +444,8 @@ export class DocumentosService {
         typeof valor === 'object' &&
         Array.isArray((valor as { filas?: unknown }).filas))
     ) {
-      const filas = (valor as { filas?: Record<string, unknown>[] }).filas ?? [];
+      const filas =
+        (valor as { filas?: Record<string, unknown>[] }).filas ?? [];
       return {
         registros: filas.length,
         filas: filas.map((fila) => {

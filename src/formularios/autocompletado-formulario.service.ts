@@ -1,3 +1,10 @@
+import { claveDesdeEncabezado } from '../proyectos/utils/excel-beneficiarios';
+import type { TipoCampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
+import {
+  DESTINOS_FICHA,
+  PREFIJO_DESTINO_EXTRA,
+  type DestinoEscribible,
+} from './utils/vinculo-beneficiario';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
@@ -69,6 +76,81 @@ export class AutocompletadoFormularioService {
     };
   }
 
+  /**
+   * Datos del beneficiario donde puede guardarse una pregunta de línea base:
+   * campos de la ficha que se pueden modificar, vereda PDET y datos adicionales.
+   */
+  async listarDestinos(): Promise<{
+    ficha: DestinoEscribible[];
+    adicionales: DestinoEscribible[];
+  }> {
+    const adicionales = await this.campoBeneficiarioRepository.find({
+      where: { proyecto: IsNull() },
+      order: { etiqueta: 'ASC' },
+    });
+    return {
+      ficha: DESTINOS_FICHA,
+      adicionales: adicionales.map((campo) => ({
+        destino: `${PREFIJO_DESTINO_EXTRA}${campo.clave}`,
+        etiqueta: campo.etiqueta,
+        tipo: campo.tipo,
+        grupo: 'adicional',
+      })),
+    };
+  }
+
+  /**
+   * Dato adicional nuevo del catálogo de beneficiarios, creado desde el
+   * constructor de formularios para vincular una pregunta de línea base. Si
+   * ya existe uno con la misma etiqueta, se reutiliza.
+   */
+  async crearDatoAdicional(
+    etiqueta: string,
+    tipo: TipoCampoBeneficiario,
+  ): Promise<DestinoEscribible> {
+    const limpia = etiqueta.trim();
+    const existentes = await this.campoBeneficiarioRepository.find({
+      where: { proyecto: IsNull() },
+    });
+    const igual = existentes.find(
+      (c) => c.etiqueta.trim().toLowerCase() === limpia.toLowerCase(),
+    );
+    if (igual) {
+      if (igual.tipo !== tipo) {
+        throw new BadRequestException(
+          `Ya existe el dato "${igual.etiqueta}" pero es de tipo ${igual.tipo}.`,
+        );
+      }
+      return {
+        destino: `${PREFIJO_DESTINO_EXTRA}${igual.clave}`,
+        etiqueta: igual.etiqueta,
+        tipo: igual.tipo,
+        grupo: 'adicional',
+      };
+    }
+    const usadas = new Set(existentes.map((c) => c.clave));
+    const base = claveDesdeEncabezado(limpia);
+    let clave = base;
+    for (let n = 2; usadas.has(clave); n += 1) clave = `${base}_${n}`;
+    const orden = existentes.reduce((max, c) => Math.max(max, c.orden), 0) + 1;
+    const campo = await this.campoBeneficiarioRepository.save(
+      this.campoBeneficiarioRepository.create({
+        proyecto: null,
+        clave,
+        etiqueta: limpia.slice(0, 120),
+        tipo,
+        orden,
+        columnaOrigen: null,
+      }),
+    );
+    return {
+      destino: `${PREFIJO_DESTINO_EXTRA}${campo.clave}`,
+      etiqueta: campo.etiqueta,
+      tipo: campo.tipo,
+      grupo: 'adicional',
+    };
+  }
+
   /** Personas de la jornada con lo necesario para resolver valores, en orden alfabético. */
   async beneficiariosDeJornada(jornadaId: string): Promise<Beneficiario[]> {
     return this.beneficiarioRepository
@@ -101,7 +183,10 @@ export class AutocompletadoFormularioService {
     const usaAutocompletado =
       plantillaEsPorPersona(opciones.tipoPlantilla, opciones.campos) ||
       opciones.campos.some(tablaTieneAutocompletado);
-    if (!opciones.jornadaId || (!usaAutocompletado && !opciones.beneficiarioId)) {
+    if (
+      !opciones.jornadaId ||
+      (!usaAutocompletado && !opciones.beneficiarioId)
+    ) {
       return vacio;
     }
 
@@ -111,7 +196,8 @@ export class AutocompletadoFormularioService {
     let beneficiario: Beneficiario | null = null;
     if (opciones.beneficiarioId) {
       beneficiario =
-        beneficiariosJornada.find((b) => b.id === opciones.beneficiarioId) ?? null;
+        beneficiariosJornada.find((b) => b.id === opciones.beneficiarioId) ??
+        null;
       if (!beneficiario) {
         throw new BadRequestException(
           'Esa persona no está en la jornada. Agrégala a la jornada antes de llenar su formulario.',
@@ -176,9 +262,14 @@ export class AutocompletadoFormularioService {
     for (const { plantilla, campos } of conAutocompletado) {
       resultado.plantillas[plantilla.id] = {
         porPersona: plantillaEsPorPersona(plantilla.tipoPlantilla, campos),
-        tablasFijas: campos.filter(tablaTieneAutocompletado).map((c) => c.clave),
+        tablasFijas: campos
+          .filter(tablaTieneAutocompletado)
+          .map((c) => c.clave),
         valores: Object.fromEntries(
-          personas.map((persona) => [persona.id, valoresParaPersona(campos, persona)]),
+          personas.map((persona) => [
+            persona.id,
+            valoresParaPersona(campos, persona),
+          ]),
         ),
       };
     }

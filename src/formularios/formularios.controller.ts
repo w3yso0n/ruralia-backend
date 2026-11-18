@@ -1,3 +1,6 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import type { TipoCampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
 import {
   Body,
   Controller,
@@ -47,6 +50,20 @@ import { EnviosFormularioService } from './envios-formulario.service';
 import { PlantillasFormularioService } from './plantillas-formulario.service';
 import { AlcanceTerritorialService } from '../usuarios/alcance-territorial.service';
 
+class CrearDatoAdicionalDto {
+  @ApiProperty({
+    description: 'Nombre visible del dato, p. ej. "Área de la finca (ha)"',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  etiqueta: string;
+
+  @ApiProperty({ enum: ['texto', 'numero', 'fecha', 'booleano'] })
+  @IsIn(['texto', 'numero', 'fecha', 'booleano'])
+  tipo: TipoCampoBeneficiario;
+}
+
 @ApiTags('Formularios')
 @ApiBearerAuth('bearer')
 @Controller('formularios')
@@ -66,6 +83,29 @@ export class FormulariosController {
   })
   listarOrigenesAutocompletado(): Promise<OrigenesAutocompletado> {
     return this.autocompletadoService.listarOrigenes();
+  }
+
+  @Get('vinculos/destinos')
+  @RequierePermisos('formularios.ver')
+  @ApiOperation({
+    summary:
+      'Datos del beneficiario donde se puede guardar una pregunta de línea base',
+  })
+  listarDestinosVinculo() {
+    return this.autocompletadoService.listarDestinos();
+  }
+
+  @Post('vinculos/datos-adicionales')
+  @RequierePermisos('formularios.editar')
+  @ApiOperation({
+    summary:
+      'Crear un dato adicional del beneficiario para vincular una pregunta de línea base',
+  })
+  crearDatoAdicional(@Body() dto: CrearDatoAdicionalDto) {
+    return this.autocompletadoService.crearDatoAdicional(
+      dto.etiqueta,
+      dto.tipo,
+    );
   }
 
   @Get('autocompletado/jornada/:jornadaId')

@@ -1,3 +1,5 @@
+import { FaseFormulario } from '../formularios/enums/fase-formulario.enum';
+import { esLineaBase } from './utils/fase-jornada';
 import { valorLegibleAdjunto } from '../common/utils/data-url';
 import {
   BadRequestException,
@@ -469,7 +471,7 @@ export class JornadasService {
     }>
   > {
     const plantillas = await this.plantillaRepository.find({
-      where: { estaActivo: true },
+      where: { estaActivo: true, fase: FaseFormulario.EJECUCION },
       select: { id: true, nombre: true, tipoPlantilla: true, version: true },
       order: { nombre: 'ASC' },
     });
@@ -483,6 +485,7 @@ export class JornadasService {
 
   private async resolverPlantillaOpcional(
     plantillaId?: string | null,
+    faseEsperada: FaseFormulario = FaseFormulario.EJECUCION,
   ): Promise<PlantillaFormulario | null> {
     if (!plantillaId) return null;
     const plantilla = await this.plantillaRepository.findOne({
@@ -494,6 +497,13 @@ export class JornadasService {
     if (!plantilla.estaActivo) {
       throw new BadRequestException(
         'Solo se pueden usar plantillas publicadas',
+      );
+    }
+    if (plantilla.fase !== faseEsperada) {
+      throw new BadRequestException(
+        faseEsperada === FaseFormulario.EJECUCION
+          ? 'Ese formulario es de línea base: se asigna desde la pestaña Línea base del proyecto, no en jornadas de ejecución.'
+          : 'Ese formulario es de ejecución: no se puede usar en una jornada de línea base.',
       );
     }
     return plantilla;
@@ -541,6 +551,11 @@ export class JornadasService {
       .createQueryBuilder('jornada')
       .select(['jornada.id', 'jornada.fecha'])
       .orderBy('jornada.fecha', 'DESC');
+
+    const fase = filtros.fase ?? FaseFormulario.EJECUCION;
+    if (fase !== 'TODAS') {
+      query.andWhere('jornada.fase = :fase', { fase });
+    }
 
     if (filtros.proyectoId) {
       query.andWhere('jornada.proyecto_id = :proyectoId', {
@@ -814,6 +829,17 @@ export class JornadasService {
         })
       : [jornada];
 
+    if (
+      esLineaBase(jornada) &&
+      (dto.metaId !== undefined ||
+        dto.actividades !== undefined ||
+        dto.plantillaFormularioId !== undefined)
+    ) {
+      throw new BadRequestException(
+        'Una jornada de línea base no tiene meta, actividades ni otro formulario: solo se cambian fecha, técnico u observaciones.',
+      );
+    }
+
     let metaValidada: Meta | null | undefined;
     if (dto.metaId !== undefined) {
       const meta = await this.metaRepository.findOne({
@@ -1002,32 +1028,27 @@ export class JornadasService {
 
     if (!forzar) {
       for (const objetivo of objetivos) {
-        const [
-          envios,
-          evidencias,
-          documentos,
-          documentosExternos,
-          registros,
-        ] = await Promise.all([
-          this.envioRepository.count({
-            where: { jornada: { id: objetivo.id } },
-          }),
-          this.evidenciaRepository.count({
-            where: { jornada: { id: objetivo.id } },
-          }),
-          this.dataSource.query<{ count: string }[]>(
-            `SELECT COUNT(*)::text AS count FROM documents WHERE jornada_id = $1`,
-            [objetivo.id],
-          ),
-          this.dataSource.query<{ count: string }[]>(
-            `SELECT COUNT(*)::text AS count FROM documentos_externos WHERE jornada_id = $1`,
-            [objetivo.id],
-          ),
-          this.dataSource.query<{ count: string }[]>(
-            `SELECT COUNT(*)::text AS count FROM registros_indicador WHERE jornada_id = $1`,
-            [objetivo.id],
-          ),
-        ]);
+        const [envios, evidencias, documentos, documentosExternos, registros] =
+          await Promise.all([
+            this.envioRepository.count({
+              where: { jornada: { id: objetivo.id } },
+            }),
+            this.evidenciaRepository.count({
+              where: { jornada: { id: objetivo.id } },
+            }),
+            this.dataSource.query<{ count: string }[]>(
+              `SELECT COUNT(*)::text AS count FROM documents WHERE jornada_id = $1`,
+              [objetivo.id],
+            ),
+            this.dataSource.query<{ count: string }[]>(
+              `SELECT COUNT(*)::text AS count FROM documentos_externos WHERE jornada_id = $1`,
+              [objetivo.id],
+            ),
+            this.dataSource.query<{ count: string }[]>(
+              `SELECT COUNT(*)::text AS count FROM registros_indicador WHERE jornada_id = $1`,
+              [objetivo.id],
+            ),
+          ]);
 
         const totalDocumentos = Number(documentos[0]?.count ?? 0);
         const totalDocumentosExternos = Number(
@@ -1427,6 +1448,12 @@ export class JornadasService {
       throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
     }
 
+    if (esLineaBase(jornada)) {
+      throw new BadRequestException(
+        'Las jornadas de línea base no generan PDF: sus respuestas se consultan en la pestaña Línea base.',
+      );
+    }
+
     if (jornada.tipo !== TipoJornada.GRUPAL) {
       throw new BadRequestException(
         'Solo las jornadas grupales tienen lista de asistencia en PDF',
@@ -1600,6 +1627,12 @@ export class JornadasService {
 
     if (!jornada) {
       throw new NotFoundException(`Jornada ${jornadaId} no encontrada`);
+    }
+
+    if (esLineaBase(jornada)) {
+      throw new BadRequestException(
+        'Las jornadas de línea base no generan PDF: sus respuestas se consultan en la pestaña Línea base.',
+      );
     }
 
     if (jornada.tipo === TipoJornada.GRUPAL) {

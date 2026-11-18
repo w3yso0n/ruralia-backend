@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsUUID,
@@ -12,6 +13,16 @@ import {
 import { EstadoJornada } from '../enums/estado-jornada.enum';
 
 export class FiltrosJornadaDto {
+  @ApiPropertyOptional({
+    enum: ['EJECUCION', 'LINEA_BASE', 'TODAS'],
+    description:
+      'Fase de las jornadas. Por defecto EJECUCION: la línea base se consulta aparte (pestaña Línea base) o con TODAS (lista del técnico).',
+    default: 'EJECUCION',
+  })
+  @IsIn(['EJECUCION', 'LINEA_BASE', 'TODAS'])
+  @IsOptional()
+  fase?: 'EJECUCION' | 'LINEA_BASE' | 'TODAS';
+
   @ApiPropertyOptional({ description: 'Filtrar por proyecto' })
   @IsUUID('4')
   @IsOptional()
@@ -27,7 +38,10 @@ export class FiltrosJornadaDto {
   @IsOptional()
   usuarioId?: string;
 
-  @ApiPropertyOptional({ enum: EstadoJornada, description: 'Filtrar por estado' })
+  @ApiPropertyOptional({
+    enum: EstadoJornada,
+    description: 'Filtrar por estado',
+  })
   @IsEnum(EstadoJornada)
   @IsOptional()
   estado?: EstadoJornada;
@@ -42,7 +56,11 @@ export class FiltrosJornadaDto {
   @IsOptional()
   fechaHasta?: string;
 
-  @ApiPropertyOptional({ description: 'Número de página', default: 1, minimum: 1 })
+  @ApiPropertyOptional({
+    description: 'Número de página',
+    default: 1,
+    minimum: 1,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)

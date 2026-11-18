@@ -1,3 +1,4 @@
+import { FaseFormulario } from '../enums/fase-formulario.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { TipoCampo } from '../enums/tipo-campo.enum';
@@ -42,6 +43,14 @@ export class RespuestaCampoFormularioDto {
   })
   @Expose()
   autocompletar?: { origen: string } | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Dato del beneficiario donde se guarda la respuesta (línea base)',
+    nullable: true,
+  })
+  @Expose()
+  vincularBeneficiario?: { destino: string; permitirCambio?: boolean } | null;
 }
 
 export class RespuestaPlantillaFormularioDto {
@@ -67,10 +76,15 @@ export class RespuestaPlantillaFormularioDto {
 
   @ApiProperty({
     enum: TipoPlantilla,
-    description: 'INDIVIDUAL o GRUPAL (cabecera + matrices/listas de asistencia)',
+    description:
+      'INDIVIDUAL o GRUPAL (cabecera + matrices/listas de asistencia)',
   })
   @Expose()
   tipoPlantilla: TipoPlantilla;
+
+  @ApiProperty({ enum: FaseFormulario, description: 'EJECUCION o LINEA_BASE' })
+  @Expose()
+  fase: FaseFormulario;
 
   @ApiPropertyOptional({
     description: 'IDs de los procesos asignados a la plantilla',
@@ -162,7 +176,8 @@ export class RespuestaEnvioFormularioDto {
   esOffline: boolean;
 
   @ApiPropertyOptional({
-    description: 'ID de la jornada asociada (ausente si es un envío sin jornada)',
+    description:
+      'ID de la jornada asociada (ausente si es un envío sin jornada)',
   })
   @Expose()
   @Transform(({ obj, value }) => obj.jornada?.id ?? value)
@@ -188,10 +203,14 @@ export class RespuestaEnvioFormularioDto {
     description: 'Beneficiario del formulario (formularios por persona)',
   })
   @Expose()
-  @Transform(({ obj }: { obj: EnvioConBeneficiario }) => obj.beneficiario?.id ?? null)
+  @Transform(
+    ({ obj }: { obj: EnvioConBeneficiario }) => obj.beneficiario?.id ?? null,
+  )
   beneficiarioId?: string | null;
 
-  @ApiPropertyOptional({ description: 'Nombre del beneficiario del formulario' })
+  @ApiPropertyOptional({
+    description: 'Nombre del beneficiario del formulario',
+  })
   @Expose()
   @Transform(({ obj }: { obj: EnvioConBeneficiario }) =>
     obj.beneficiario

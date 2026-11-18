@@ -1,0 +1,18 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/.*\\.integracion-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "testTimeout": 600000,
+  "moduleNameMapper": {
+    "^firebase-admin/auth$": "<rootDir>/test/stubs/firebase-admin-auth.ts",
+    "^archiver$": "<rootDir>/test/stubs/archiver.ts"
+  }
+}

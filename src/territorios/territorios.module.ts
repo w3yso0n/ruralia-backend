@@ -8,6 +8,8 @@ import { Vereda } from './entities/vereda.entity';
 import { VeredaPdet } from './entities/vereda-pdet.entity';
 import { TerritoriosController } from './territorios.controller';
 import { TerritoriosService } from './territorios.service';
+import { VeredasPdetController } from './veredas-pdet.controller';
+import { VeredasPdetService } from './veredas-pdet.service';
 
 @Module({
   imports: [
@@ -20,8 +22,8 @@ import { TerritoriosService } from './territorios.service';
       VeredaPdet,
     ]),
   ],
-  controllers: [TerritoriosController],
-  providers: [TerritoriosService],
-  exports: [TypeOrmModule, TerritoriosService],
+  controllers: [VeredasPdetController, TerritoriosController],
+  providers: [TerritoriosService, VeredasPdetService],
+  exports: [TypeOrmModule, TerritoriosService, VeredasPdetService],
 })
 export class TerritoriosModule {}

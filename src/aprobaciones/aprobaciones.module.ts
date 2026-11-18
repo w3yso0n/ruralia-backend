@@ -8,6 +8,7 @@ import { Documento } from '../documentos/entities/documento.entity';
 import { DocumentoVersion } from '../documentos/entities/documento-version.entity';
 import { Evidencia } from '../evidencias/entities/evidencia.entity';
 import { Jornada } from '../jornadas/entities/jornada.entity';
+import { LineaBaseModule } from '../linea-base/linea-base.module';
 import { AprobacionesController } from './aprobaciones.controller';
 import { AprobacionesService } from './aprobaciones.service';
 import { CadenaRevisionService } from './cadena-revision.service';
@@ -32,6 +33,7 @@ import { Rejection } from './entities/rejection.entity';
     UsuariosModule,
     CronologiaModule,
     forwardRef(() => DocumentosModule),
+    LineaBaseModule,
   ],
   controllers: [AprobacionesController],
   providers: [AprobacionesService, CadenaRevisionService],

@@ -1,3 +1,7 @@
+import {
+  FILTRO_EJECUCION,
+  sqlSoloEjecucion,
+} from '../jornadas/utils/fase-jornada';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -59,6 +63,7 @@ export class ReportesService {
 
     const conteoJornadas = await this.jornadaRepository.countBy({
       proyecto: { id: proyectoId },
+      ...FILTRO_EJECUCION,
     });
 
     const conteoBeneficiarios = await this.proyectoRepository
@@ -71,12 +76,14 @@ export class ReportesService {
       .createQueryBuilder('envio')
       .innerJoin('envio.jornada', 'jornada')
       .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere(sqlSoloEjecucion('jornada'))
       .getCount();
 
     const conteoEvidencias = await this.evidenciaRepository
       .createQueryBuilder('evidencia')
       .innerJoin('evidencia.jornada', 'jornada')
       .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere(sqlSoloEjecucion('jornada'))
       .getCount();
 
     const conteoActividades = await this.actividadRepository.countBy({
@@ -152,6 +159,7 @@ export class ReportesService {
           beneficiarioId: beneficiario.id,
         })
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere(sqlSoloEjecucion('jornada'))
         .getCount();
 
       resultado.push({
@@ -184,15 +192,23 @@ export class ReportesService {
         .createQueryBuilder('jornada')
         .innerJoin('jornada.jornadaActividades', 'ja')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-        .andWhere('ja.actividad_id = :actividadId', { actividadId: actividad.id })
-        .andWhere('jornada.estado = :estado', { estado: EstadoJornada.PLANIFICADA })
+        .andWhere(sqlSoloEjecucion('jornada'))
+        .andWhere('ja.actividad_id = :actividadId', {
+          actividadId: actividad.id,
+        })
+        .andWhere('jornada.estado = :estado', {
+          estado: EstadoJornada.PLANIFICADA,
+        })
         .getCount();
 
       const jornadasEjecutadas = await this.jornadaRepository
         .createQueryBuilder('jornada')
         .innerJoin('jornada.jornadaActividades', 'ja')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
-        .andWhere('ja.actividad_id = :actividadId', { actividadId: actividad.id })
+        .andWhere(sqlSoloEjecucion('jornada'))
+        .andWhere('ja.actividad_id = :actividadId', {
+          actividadId: actividad.id,
+        })
         .andWhere('jornada.estado IN (:...estados)', {
           estados: [EstadoJornada.COMPLETADA, EstadoJornada.EN_PROGRESO],
         })
@@ -204,7 +220,9 @@ export class ReportesService {
         const plantillasActivas = await this.plantillaRepository
           .createQueryBuilder('plantilla')
           .innerJoin('plantilla.subactividades', 'subactividad')
-          .where('subactividad.id = :subactividadId', { subactividadId: sub.id })
+          .where('subactividad.id = :subactividadId', {
+            subactividadId: sub.id,
+          })
           .andWhere('plantilla.esta_activo = true')
           .getCount();
 
@@ -214,6 +232,7 @@ export class ReportesService {
           .innerJoin('envio.plantillaFormulario', 'plantilla')
           .innerJoin('plantilla.subactividades', 'subactividad')
           .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+          .andWhere(sqlSoloEjecucion('jornada'))
           .andWhere('subactividad.id = :subactividadId', {
             subactividadId: sub.id,
           })
@@ -265,6 +284,7 @@ export class ReportesService {
       const conteoJornadas = await this.jornadaRepository.countBy({
         proyecto: { id: proyectoId },
         vereda: { id: vereda.id },
+        ...FILTRO_EJECUCION,
       });
 
       const centroide = await this.jornadaRepository
@@ -272,6 +292,7 @@ export class ReportesService {
         .select('AVG(jornada.latitud)', 'latitud')
         .addSelect('AVG(jornada.longitud)', 'longitud')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere(sqlSoloEjecucion('jornada'))
         .andWhere('jornada.vereda_id = :veredaId', { veredaId: vereda.id })
         .andWhere('jornada.latitud IS NOT NULL')
         .getRawOne<{ latitud: string; longitud: string }>();
@@ -352,10 +373,7 @@ export class ReportesService {
           for (const meta of metas) {
             const planMap = new Map<string, number>();
             for (const p of meta.periodos ?? []) {
-              planMap.set(
-                `${p.anio}-${p.mes}`,
-                Number(p.cantidadPlaneada),
-              );
+              planMap.set(`${p.anio}-${p.mes}`, Number(p.cantidadPlaneada));
             }
 
             const planPorMes = meses.map((m) => {
@@ -455,7 +473,9 @@ export class ReportesService {
         if (!sub.estaActivo) continue;
         for (const proceso of sub.procesos ?? []) {
           if (!proceso.estaActivo) continue;
-          for (const meta of (proceso.metas ?? []).filter((m) => m.estaActivo)) {
+          for (const meta of (proceso.metas ?? []).filter(
+            (m) => m.estaActivo,
+          )) {
             const periodoMes = (meta.periodos ?? []).find(
               (p) => p.anio === anio && p.mes === mes,
             );
@@ -522,6 +542,7 @@ export class ReportesService {
         'total',
       )
       .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere(sqlSoloEjecucion('jornada'))
       .andWhere('jornada.estado != :estadoCancelada', {
         estadoCancelada: EstadoJornada.CANCELADA,
       })
@@ -570,6 +591,7 @@ export class ReportesService {
         'total',
       )
       .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere(sqlSoloEjecucion('jornada'))
       .andWhere('jornada.estado != :estadoCancelada', {
         estadoCancelada: EstadoJornada.CANCELADA,
       })

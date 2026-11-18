@@ -1,3 +1,4 @@
+import { FaseFormulario } from '../formularios/enums/fase-formulario.enum';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -25,12 +26,22 @@ export class ExpedienteService {
         this.documentosService.listarPorProyecto(proyectoId),
         this.documentosExternosService.listar({ proyectoId }),
         this.evidenciaRepo.find({
-          where: { jornada: { proyecto: { id: proyectoId } } },
+          where: {
+            jornada: {
+              proyecto: { id: proyectoId },
+              fase: FaseFormulario.EJECUCION,
+            },
+          },
           relations: { jornada: { beneficiarios: true } },
           order: { capturadoEn: 'DESC' },
         }),
         this.envioRepo.find({
-          where: { jornada: { proyecto: { id: proyectoId } } },
+          where: {
+            jornada: {
+              proyecto: { id: proyectoId },
+              fase: FaseFormulario.EJECUCION,
+            },
+          },
           relations: {
             jornada: { beneficiarios: true },
             plantillaFormulario: true,
@@ -98,7 +109,11 @@ export class ExpedienteService {
         ? respuesta.valorTexto
         : null);
     if (!url) return null;
-    if (tipo && !['FOTO', 'FIRMA', 'ARCHIVO'].includes(tipo) && !url.startsWith('data:image')) {
+    if (
+      tipo &&
+      !['FOTO', 'FIRMA', 'ARCHIVO'].includes(tipo) &&
+      !url.startsWith('data:image')
+    ) {
       return null;
     }
     return {

@@ -1,4 +1,9 @@
 import {
+  FILTRO_EJECUCION,
+  soloEjecucion,
+  sqlSoloEjecucion,
+} from '../jornadas/utils/fase-jornada';
+import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -323,6 +328,12 @@ export class DashboardService {
     if (id || alcance.permitidos) {
       formulariosPorMesQb.innerJoin('envio.jornada', 'jornada');
       this.aplicarProyecto(formulariosPorMesQb, alcance);
+    } else {
+      // Sin filtro de proyecto se cuentan también los envíos sin jornada
+      // (documentos generales), pero no los de línea base.
+      formulariosPorMesQb
+        .leftJoin('envio.jornada', 'jornada')
+        .andWhere(`(jornada.id IS NULL OR ${sqlSoloEjecucion('jornada')})`);
     }
 
     const beneficiariosPorMesQb = this.jornadaRepository
@@ -567,6 +578,7 @@ export class DashboardService {
     const jornadas = await this.jornadaRepository.find({
       where: {
         proyecto: { id: proyectoIdDestacado },
+        ...FILTRO_EJECUCION,
       },
       order: { fecha: 'ASC' },
       take: 60,
@@ -612,10 +624,10 @@ export class DashboardService {
     if (!id && whereTodos === null) return [];
     const jornadas = await this.jornadaRepository.find({
       where: id
-        ? { proyecto: { id } }
+        ? { proyecto: { id }, ...FILTRO_EJECUCION }
         : alcance.permitidos
-          ? { proyecto: { id: In(alcance.permitidos) } }
-          : {},
+          ? { proyecto: { id: In(alcance.permitidos) }, ...FILTRO_EJECUCION }
+          : FILTRO_EJECUCION,
       relations: {
         proyecto: true,
         vereda: true,
@@ -761,13 +773,14 @@ export class DashboardService {
   private async contarJornadas(alcance: AlcanceConsulta): Promise<number> {
     if (alcance.filtro) {
       return this.jornadaRepository.count({
-        where: { proyecto: { id: alcance.filtro } },
+        where: { proyecto: { id: alcance.filtro }, ...FILTRO_EJECUCION },
       });
     }
-    if (alcance.permitidos === null) return this.jornadaRepository.count();
+    if (alcance.permitidos === null)
+      return this.jornadaRepository.count({ where: FILTRO_EJECUCION });
     if (!alcance.permitidos.length) return 0;
     return this.jornadaRepository.count({
-      where: { proyecto: { id: In(alcance.permitidos) } },
+      where: { proyecto: { id: In(alcance.permitidos) }, ...FILTRO_EJECUCION },
     });
   }
 
@@ -790,6 +803,7 @@ export class DashboardService {
         cancelada: EstadoJornada.CANCELADA,
       });
     if (alcance) this.aplicarProyecto(qb, alcance);
+    else soloEjecucion(qb);
     return qb;
   }
 
@@ -798,6 +812,9 @@ export class DashboardService {
     alcance: AlcanceConsulta,
     alias = 'jornada',
   ) {
+    // Toda consulta del dashboard sobre jornadas pasa por aquí: la línea base
+    // no cuenta en ningún indicador.
+    qb.andWhere(sqlSoloEjecucion(alias));
     if (alcance.filtro) {
       qb.andWhere(`${alias}.proyecto_id = :proyectoId`, {
         proyectoId: alcance.filtro,

@@ -1,0 +1,27 @@
+SUBREGION PDET;DEPARTAMENTO;COD_DANE_MPIO;MUNICIPIO;COD_VEREDA_PDET;NOMBRE VEREDA PDET;COD VEREDA DANE
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-001;Aceituno Alto;13244002
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-002;Aceituno Bajo;13244002
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-003;Alferez;13244003
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-004;Arenas Del Sur;13244004
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-005;Arroyo De Arena;13244005
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-006;Arroyo De Venado;13244006
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-007;Bajo De Las Flores;13244007
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-13244-008;Núcleo PDET sin equivalente El Carmen de Bolívar;
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-001;Altamira Alto;13654000
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-002;Altamira Bajo;13654000
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-003;Arenas;13654001
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-004;Arriba Del Arroyo;13654002
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-005;Arroyo De Maria;13654003
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-006;Bajo De Osos;13654004
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-007;Bajo Grande;13654005
+Montes de María;Bolívar;13654;San Jacinto;PDET-13654-008;Núcleo PDET sin equivalente San Jacinto;
+Montes de María;Sucre;70508;Ovejas;PDET-70508-001;Alemania Alto;70508001
+Montes de María;Sucre;70508;Ovejas;PDET-70508-002;Alemania Bajo;70508001
+Montes de María;Sucre;70508;Ovejas;PDET-70508-003;Almagra;70508002
+Montes de María;Sucre;70508;Ovejas;PDET-70508-004;Buenos Aires;70508003
+Montes de María;Sucre;70508;Ovejas;PDET-70508-005;Buenos Aires El Palmar;70508004
+Montes de María;Sucre;70508;Ovejas;PDET-70508-006;Capiro;70508007
+Montes de María;Sucre;70508;Ovejas;PDET-70508-007;Chengue;70508008
+Montes de María;Sucre;70508;Ovejas;PDET-70508-008;Núcleo PDET sin equivalente Ovejas;
+Montes de María;Bolívar;99999;Inexistente;PDET-ERR-001;Vereda con municipio inválido;
+Montes de María;Bolívar;13244;El Carmen de Bolívar;PDET-ERR-002;;

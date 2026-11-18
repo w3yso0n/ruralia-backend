@@ -1,3 +1,4 @@
+import { FaseFormulario } from '../formularios/enums/fase-formulario.enum';
 import { leerDataUrl } from '../common/utils/data-url';
 import {
   BadRequestException,
@@ -67,8 +68,9 @@ export class ExpedienteDescargaService {
       throw new NotFoundException(`Proyecto ${proyectoId} no encontrado`);
     }
 
+    // Línea base fuera del expediente: solo jornadas de ejecución.
     const jornadas = await this.jornadaRepo.find({
-      where: { proyecto: { id: proyectoId } },
+      where: { proyecto: { id: proyectoId }, fase: FaseFormulario.EJECUCION },
       relations: {
         meta: { proceso: { subactividad: { actividad: true } } },
         tecnicoResponsable: true,

@@ -2,6 +2,7 @@ import { Repository } from 'typeorm';
 import { EstadoFuncional } from '../../common/workflow/estado-funcional.enum';
 import { Jornada } from '../entities/jornada.entity';
 import { EstadoJornada } from '../enums/estado-jornada.enum';
+import { sqlSoloEjecucion } from './fase-jornada';
 
 /**
  * Suma unidades ejecutadas hacia una meta.
@@ -73,6 +74,7 @@ export async function sumarEjecutadoPorMeta(
     .andWhere('jornada.estado != :estadoCancelada', {
       estadoCancelada: EstadoJornada.CANCELADA,
     })
+    .andWhere(sqlSoloEjecucion('jornada'))
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
 
@@ -97,6 +99,7 @@ export async function sumarEjecutadoPorMetaYUsuario(
     .andWhere('jornada.estado != :estadoCancelada', {
       estadoCancelada: EstadoJornada.CANCELADA,
     })
+    .andWhere(sqlSoloEjecucion('jornada'))
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO);
 
@@ -118,6 +121,7 @@ export async function sumarEjecutadoPorProyecto(
     .andWhere('jornada.estado != :estadoCancelada', {
       estadoCancelada: EstadoJornada.CANCELADA,
     })
+    .andWhere(sqlSoloEjecucion('jornada'))
     .andWhere('jornada.meta_id IS NOT NULL')
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO)
@@ -147,6 +151,7 @@ export async function sumarEjecutadoPorProyectos(
     .andWhere('jornada.estado != :estadoCancelada', {
       estadoCancelada: EstadoJornada.CANCELADA,
     })
+    .andWhere(sqlSoloEjecucion('jornada'))
     .andWhere('jornada.meta_id IS NOT NULL')
     .setParameter('estadoCompletada', EstadoJornada.COMPLETADA)
     .setParameter('estadoAprobado', EstadoFuncional.APROBADO)

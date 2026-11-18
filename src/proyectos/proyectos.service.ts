@@ -1,4 +1,8 @@
 import {
+  FILTRO_EJECUCION,
+  sqlSoloEjecucion,
+} from '../jornadas/utils/fase-jornada';
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -1326,6 +1330,7 @@ export class ProyectosService {
           fecha: jornada.fecha,
           nombre: jornada.nombre,
           estado: jornada.estado,
+          fase: jornada.fase,
           vereda: jornada.vereda?.nombre,
           esHeredada: enRegistro ? enRegistro.id !== titularId : false,
           beneficiarioEnRegistro: resumenDeBeneficiario(enRegistro),
@@ -1411,7 +1416,11 @@ export class ProyectosService {
       if (existente.eliminadoEn) {
         throw new ConflictException(MENSAJE_DOCUMENTO_ELIMINADO);
       }
-      const cambios = calcularCambios(existente, opts.fila, opts.etiquetasExtra);
+      const cambios = calcularCambios(
+        existente,
+        opts.fila,
+        opts.etiquetasExtra,
+      );
       const documento = existente.numeroDocumento;
       asignarFilaABeneficiario(existente, opts.fila, opts.veredaId);
       existente.numeroDocumento = documento;
@@ -1466,11 +1475,15 @@ export class ProyectosService {
     ] = await Promise.all([
       this.buscarProyecto(proyectoId),
       this.contarBeneficiarios(proyectoId),
-      this.jornadaRepository.countBy({ proyecto: { id: proyectoId } }),
+      this.jornadaRepository.countBy({
+        proyecto: { id: proyectoId },
+        ...FILTRO_EJECUCION,
+      }),
       this.envioFormularioRepository
         .createQueryBuilder('envio')
         .innerJoin('envio.jornada', 'jornada')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere(sqlSoloEjecucion('jornada'))
         .getCount(),
       this.calcularPorcentajeAvanceIndicadores(proyectoId),
     ]);
@@ -1501,11 +1514,15 @@ export class ProyectosService {
     ] = await Promise.all([
       this.buscarProyecto(proyectoId),
       this.actividadesService.obtenerProgreso(proyectoId),
-      this.jornadaRepository.countBy({ proyecto: { id: proyectoId } }),
+      this.jornadaRepository.countBy({
+        proyecto: { id: proyectoId },
+        ...FILTRO_EJECUCION,
+      }),
       this.envioFormularioRepository
         .createQueryBuilder('envio')
         .innerJoin('envio.jornada', 'jornada')
         .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .andWhere(sqlSoloEjecucion('jornada'))
         .getCount(),
       this.cargarPersonalConRoles(proyectoId),
       this.proyectoBeneficiarioRepository
@@ -1670,6 +1687,7 @@ export class ProyectosService {
         indicadorIds: indicadores.map((i) => i.id),
       })
       .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .andWhere(sqlSoloEjecucion('jornada'))
       .select('COALESCE(SUM(registro.valor), 0)', 'suma')
       .getRawOne<{ suma: string }>();
     const totalAlcanzado = Number(resultado?.suma ?? 0);

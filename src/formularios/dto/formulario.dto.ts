@@ -1,3 +1,5 @@
+import { FaseFormulario } from '../enums/fase-formulario.enum';
+import type { VinculoBeneficiario } from '../utils/vinculo-beneficiario';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -42,7 +44,10 @@ export class CrearCampoFormularioDto {
   @IsOptional()
   esObligatorio?: boolean;
 
-  @ApiPropertyOptional({ description: 'Orden de visualización del campo', minimum: 0 })
+  @ApiPropertyOptional({
+    description: 'Orden de visualización del campo',
+    minimum: 0,
+  })
   @IsInt()
   @Min(0)
   @IsOptional()
@@ -61,6 +66,15 @@ export class CrearCampoFormularioDto {
   @IsObject()
   @IsOptional()
   autocompletar?: { origen: string } | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Solo formularios de línea base: dato del beneficiario donde se guarda la respuesta al aprobar. { destino: "beneficiario.telefono" } o { destino: "beneficiario.extra.<clave>" }. null para quitarlo.',
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  vincularBeneficiario?: VinculoBeneficiario | null;
 }
 
 export class CrearPlantillaFormularioDto {
@@ -120,6 +134,16 @@ export class CrearPlantillaFormularioDto {
   @IsOptional()
   tipoPlantilla?: TipoPlantilla;
 
+  @ApiPropertyOptional({
+    enum: FaseFormulario,
+    description:
+      'EJECUCION (jornadas del plan) o LINEA_BASE (levantamiento previo del beneficiario). No se puede cambiar después de usarse en jornadas.',
+    default: FaseFormulario.EJECUCION,
+  })
+  @IsEnum(FaseFormulario)
+  @IsOptional()
+  fase?: FaseFormulario;
+
   @ApiProperty({
     type: [CrearCampoFormularioDto],
     description: 'Campos del formulario',
@@ -131,7 +155,9 @@ export class CrearPlantillaFormularioDto {
 }
 
 export class ActualizarCampoFormularioDto {
-  @ApiPropertyOptional({ description: 'ID del campo existente (omitir si es nuevo)' })
+  @ApiPropertyOptional({
+    description: 'ID del campo existente (omitir si es nuevo)',
+  })
   @IsUUID('4')
   @IsOptional()
   id?: string;
@@ -160,7 +186,10 @@ export class ActualizarCampoFormularioDto {
   @IsOptional()
   esObligatorio?: boolean;
 
-  @ApiPropertyOptional({ description: 'Orden de visualización del campo', minimum: 0 })
+  @ApiPropertyOptional({
+    description: 'Orden de visualización del campo',
+    minimum: 0,
+  })
   @IsInt()
   @Min(0)
   @IsOptional()
@@ -179,6 +208,15 @@ export class ActualizarCampoFormularioDto {
   @IsObject()
   @IsOptional()
   autocompletar?: { origen: string } | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Solo formularios de línea base: dato del beneficiario donde se guarda la respuesta al aprobar. { destino: "beneficiario.telefono" } o { destino: "beneficiario.extra.<clave>" }. null para quitarlo.',
+    nullable: true,
+  })
+  @IsObject()
+  @IsOptional()
+  vincularBeneficiario?: VinculoBeneficiario | null;
 }
 
 export class ActualizarPlantillaFormularioDto {
@@ -231,6 +269,16 @@ export class ActualizarPlantillaFormularioDto {
   tipoPlantilla?: TipoPlantilla;
 
   @ApiPropertyOptional({
+    enum: FaseFormulario,
+    description:
+      'EJECUCION (jornadas del plan) o LINEA_BASE (levantamiento previo del beneficiario). No se puede cambiar después de usarse en jornadas.',
+    default: FaseFormulario.EJECUCION,
+  })
+  @IsEnum(FaseFormulario)
+  @IsOptional()
+  fase?: FaseFormulario;
+
+  @ApiPropertyOptional({
     type: [ActualizarCampoFormularioDto],
     description: 'Campos de la plantilla (reemplaza el conjunto completo)',
   })
@@ -253,7 +301,8 @@ export class AsignarProcesosDto {
 
 export class AsignarSubactividadesDto {
   @ApiProperty({
-    description: 'IDs de subactividades a asignar (modo legacy; usar procesoIds)',
+    description:
+      'IDs de subactividades a asignar (modo legacy; usar procesoIds)',
     type: [String],
   })
   @IsArray()
@@ -363,7 +412,9 @@ export class CorregirEnvioFormularioDto {
   @Type(() => RespuestaEnviarDto)
   respuestas: RespuestaEnviarDto[];
 
-  @ApiProperty({ description: 'Motivo de la corrección (queda en la auditoría)' })
+  @ApiProperty({
+    description: 'Motivo de la corrección (queda en la auditoría)',
+  })
   @IsString()
   @IsNotEmpty()
   motivo: string;

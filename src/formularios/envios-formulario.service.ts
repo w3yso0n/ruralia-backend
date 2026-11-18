@@ -68,7 +68,9 @@ function valorComparable(respuesta: RespuestaFormulario): unknown {
     (respuesta.valorNumero != null ? Number(respuesta.valorNumero) : null) ??
     respuesta.valorBooleano ??
     // El adjunto se resume en una huella: la bitácora no copia el archivo.
-    (respuesta.urlArchivo != null ? huellaAdjunto(respuesta.urlArchivo) : null) ??
+    (respuesta.urlArchivo != null
+      ? huellaAdjunto(respuesta.urlArchivo)
+      : null) ??
     respuesta.valorTexto ??
     null
   );
@@ -104,7 +106,8 @@ export class EnviosFormularioService {
     respuestas: RespuestaEntrada[];
     corregidasPorAdmin?: string[];
   }) {
-    const campos = (opciones.plantilla.campos ?? []) as CampoConAutocompletado[];
+    const campos = (opciones.plantilla.campos ??
+      []) as CampoConAutocompletado[];
     const contexto = await this.autocompletadoService.contextoEnvio({
       jornadaId: opciones.jornadaId,
       tipoPlantilla: opciones.plantilla.tipoPlantilla,
@@ -523,12 +526,18 @@ export class EnviosFormularioService {
     const motivo = dto.motivo.trim();
 
     const anteriores = new Map(
-      (await this.respuestaRepository.find({
-        where: { envioFormulario: { id: envioId } },
-      })).map((r) => [r.claveCampo, valorComparable(r)]),
+      (
+        await this.respuestaRepository.find({
+          where: { envioFormulario: { id: envioId } },
+        })
+      ).map((r) => [r.claveCampo, valorComparable(r)]),
     );
 
-    const cambiadas: Array<{ clave: string; antes: unknown; despues: unknown }> = [];
+    const cambiadas: Array<{
+      clave: string;
+      antes: unknown;
+      despues: unknown;
+    }> = [];
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(RespuestaFormulario, {
         envioFormulario: { id: envioId },
@@ -536,10 +545,18 @@ export class EnviosFormularioService {
       for (const entrada of dto.respuestas) {
         const campo = campos.find((c) => c.clave === entrada.claveCampo);
         if (!campo) continue;
-        const respuesta = this.mapearRespuesta(manager, envioId, campo, entrada.valor);
+        const respuesta = this.mapearRespuesta(
+          manager,
+          envioId,
+          campo,
+          entrada.valor,
+        );
         await manager.save(RespuestaFormulario, respuesta);
         const despues = valorComparable(respuesta);
-        if (JSON.stringify(anteriores.get(campo.clave) ?? null) !== JSON.stringify(despues)) {
+        if (
+          JSON.stringify(anteriores.get(campo.clave) ?? null) !==
+          JSON.stringify(despues)
+        ) {
           cambiadas.push({
             clave: campo.clave,
             antes: anteriores.get(campo.clave) ?? null,
@@ -607,7 +624,9 @@ export class EnviosFormularioService {
     if (!corregidas.length) return respuestas;
     const guardadas = await this.obtenerRespuestas(envioId);
     const porClave = new Map(guardadas.map((r) => [r.claveCampo, r]));
-    const resultado = respuestas.filter((r) => !corregidas.includes(r.claveCampo));
+    const resultado = respuestas.filter(
+      (r) => !corregidas.includes(r.claveCampo),
+    );
     for (const clave of corregidas) {
       const guardada = porClave.get(clave);
       if (!guardada) continue;
@@ -846,6 +865,7 @@ export class EnviosFormularioService {
         });
       case TipoCampo.GPS:
       case TipoCampo.SELECCION_MULTIPLE:
+      case TipoCampo.VEREDA_PDET:
         return manager.create(RespuestaFormulario, {
           ...base,
           valorJson:

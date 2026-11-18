@@ -1,3 +1,4 @@
+import { FaseFormulario } from '../../formularios/enums/fase-formulario.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { EstadoEjecucionJornada } from '../enums/estado-ejecucion-jornada.enum';
@@ -83,7 +84,8 @@ export class RespuestaMetaResumenDto {
   cantidadTotal?: number;
 
   @ApiPropertyOptional({
-    description: 'Unidades ya ejecutadas (suma de cantidad_ejecutada en jornadas no canceladas)',
+    description:
+      'Unidades ya ejecutadas (suma de cantidad_ejecutada en jornadas no canceladas)',
   })
   @Expose()
   ejecutadoTotal?: number;
@@ -112,7 +114,10 @@ export class RespuestaHermanoGrupoDto {
   @Expose()
   id: string;
 
-  @ApiProperty({ enum: EstadoJornada, description: 'Estado de la jornada hermana' })
+  @ApiProperty({
+    enum: EstadoJornada,
+    description: 'Estado de la jornada hermana',
+  })
   @Expose()
   estado: EstadoJornada;
 
@@ -139,7 +144,15 @@ export class RespuestaJornadaDto {
   estado: EstadoJornada;
 
   @ApiProperty({
-    enum: ['BORRADOR', 'CAPTURADO', 'SINCRONIZADO', 'EN_REVISION', 'APROBADO', 'RECHAZADO', 'EN_CORRECCION'],
+    enum: [
+      'BORRADOR',
+      'CAPTURADO',
+      'SINCRONIZADO',
+      'EN_REVISION',
+      'APROBADO',
+      'RECHAZADO',
+      'EN_CORRECCION',
+    ],
     description: 'Estado funcional de revisión/aprobación (RF-19)',
   })
   @Expose()
@@ -158,6 +171,14 @@ export class RespuestaJornadaDto {
   })
   @Expose()
   tipo: TipoJornada;
+
+  @ApiProperty({
+    enum: FaseFormulario,
+    description:
+      'EJECUCION (plan del proyecto) o LINEA_BASE (levantamiento previo del beneficiario; no cuenta en métricas)',
+  })
+  @Expose()
+  fase: FaseFormulario;
 
   @ApiPropertyOptional({
     type: PlantillaFormularioResumenDto,
@@ -206,7 +227,10 @@ export class RespuestaJornadaDto {
   @Expose()
   sincronizadoEn?: Date;
 
-  @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Proyecto asociado' })
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Proyecto asociado',
+  })
   @Expose()
   @Type(() => RespuestaResumenDto)
   proyecto?: RespuestaResumenDto;
@@ -227,7 +251,10 @@ export class RespuestaJornadaDto {
   @Type(() => RespuestaJornadaActividadDto)
   actividades?: RespuestaJornadaActividadDto[];
 
-  @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Vereda asociada' })
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Vereda asociada',
+  })
   @Expose()
   @Type(() => RespuestaResumenDto)
   vereda?: RespuestaResumenDto;
@@ -248,7 +275,10 @@ export class RespuestaJornadaDto {
   @Type(() => RespuestaResumenDto)
   geocerca?: RespuestaResumenDto;
 
-  @ApiPropertyOptional({ type: RespuestaResumenDto, description: 'Técnico responsable' })
+  @ApiPropertyOptional({
+    type: RespuestaResumenDto,
+    description: 'Técnico responsable',
+  })
   @Expose()
   @Type(() => RespuestaResumenDto)
   tecnicoResponsable?: RespuestaResumenDto;
@@ -334,7 +364,10 @@ export class ResumenJornadaDto {
 }
 
 export class RespuestaPaginadaJornadasDto {
-  @ApiProperty({ type: [RespuestaJornadaDto], description: 'Lista de jornadas' })
+  @ApiProperty({
+    type: [RespuestaJornadaDto],
+    description: 'Lista de jornadas',
+  })
   @Expose()
   @Type(() => RespuestaJornadaDto)
   datos: RespuestaJornadaDto[];

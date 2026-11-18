@@ -29,6 +29,12 @@ import { TipoCampo } from './enums/tipo-campo.enum';
 import { TipoPlantilla } from './enums/tipo-plantilla.enum';
 import { aRespuestaPlantilla } from './utils/serializar-formulario';
 import { validarAutocompletadoPlantilla } from './utils/autocompletado';
+import {
+  normalizarVinculos,
+  validarVinculosPlantilla,
+} from './utils/vinculo-beneficiario';
+import { FaseFormulario } from './enums/fase-formulario.enum';
+import { Proyecto } from '../proyectos/entities/proyecto.entity';
 import { CampoBeneficiario } from '../beneficiarios/entities/campo-beneficiario.entity';
 import { TipoJornada } from '../jornadas/enums/tipo-jornada.enum';
 
@@ -50,30 +56,95 @@ export class PlantillasFormularioService {
     private readonly campoBeneficiarioRepository: Repository<CampoBeneficiario>,
   ) {}
 
-  /** Origen conocido y compatible con el tipo de cada pregunta que se autocompleta. */
-  private async validarAutocompletado(
-    tipoPlantilla: TipoPlantilla,
-    campos: Array<{
+  /**
+   * Valida fase, vínculos con el beneficiario y autocompletado, y devuelve los
+   * campos con los vínculos normalizados (una pregunta vinculada se prellena
+   * con el mismo dato; ver `normalizarVinculos`).
+   */
+  private async prepararCampos<
+    T extends {
       clave: string;
       etiqueta: string;
       tipoCampo: TipoCampo;
       opciones?: Record<string, unknown> | null;
       autocompletar?: unknown;
-    }>,
-  ): Promise<void> {
+      vincularBeneficiario?: unknown;
+    },
+  >(
+    tipoPlantilla: TipoPlantilla,
+    fase: FaseFormulario,
+    campos: T[],
+  ): Promise<T[]> {
+    if (
+      fase === FaseFormulario.LINEA_BASE &&
+      tipoPlantilla !== TipoPlantilla.INDIVIDUAL
+    ) {
+      throw new BadRequestException(
+        'Un formulario de línea base es individual: cada beneficiario responde el suyo.',
+      );
+    }
     const usaAdicionales = JSON.stringify(
-      campos.map((c) => [c.autocompletar, c.opciones]),
+      campos.map((c) => [c.autocompletar, c.opciones, c.vincularBeneficiario]),
     ).includes('beneficiario.extra.');
     const adicionales = usaAdicionales
       ? await this.campoBeneficiarioRepository.find({
           where: { proyecto: IsNull() },
         })
       : [];
-    validarAutocompletadoPlantilla(
-      tipoPlantilla,
-      campos,
-      new Map(adicionales.map((campo) => [campo.clave, campo.tipo])),
+    const tipos = new Map(
+      adicionales.map((campo) => [campo.clave, campo.tipo]),
     );
+    validarVinculosPlantilla(fase, campos, tipos);
+    const normalizados = normalizarVinculos(campos, tipos);
+    validarAutocompletadoPlantilla(tipoPlantilla, normalizados, tipos);
+    return normalizados;
+  }
+
+  /** Un formulario de línea base no se asigna a procesos ni subactividades del plan. */
+  private asegurarSinPlanSiLineaBase(
+    fase: FaseFormulario,
+    procesoIds?: string[],
+    subactividadIds?: string[],
+  ): void {
+    if (
+      fase === FaseFormulario.LINEA_BASE &&
+      ((procesoIds?.length ?? 0) > 0 || (subactividadIds?.length ?? 0) > 0)
+    ) {
+      throw new BadRequestException(
+        'Un formulario de línea base no se asigna al plan del proyecto (procesos o subactividades).',
+      );
+    }
+  }
+
+  /**
+   * La fase solo cambia mientras el formulario no se haya usado: sin
+   * jornadas, sin procesos o subactividades y sin ser el de línea base de un
+   * proyecto.
+   */
+  private async asegurarFaseCambiable(plantillaId: string): Promise<void> {
+    const [jornadas, procesos, subactividades, proyectos] = await Promise.all([
+      this.jornadaRepository.count({
+        where: { plantillaFormulario: { id: plantillaId } },
+      }),
+      this.plantillaRepository
+        .createQueryBuilder('p')
+        .innerJoin('p.procesos', 'proceso')
+        .where('p.id = :plantillaId', { plantillaId })
+        .getCount(),
+      this.plantillaRepository
+        .createQueryBuilder('p')
+        .innerJoin('p.subactividades', 'subactividad')
+        .where('p.id = :plantillaId', { plantillaId })
+        .getCount(),
+      this.dataSource
+        .getRepository(Proyecto)
+        .count({ where: { plantillaLineaBase: { id: plantillaId } } }),
+    ]);
+    if (jornadas + procesos + subactividades + proyectos > 0) {
+      throw new BadRequestException(
+        'No se puede cambiar el tipo de un formulario que ya está en uso (jornadas, plan o línea base de un proyecto). Clónalo y cambia el tipo de la copia.',
+      );
+    }
   }
 
   private asegurarClavesCamposUnicas(
@@ -100,8 +171,11 @@ export class PlantillasFormularioService {
     dto: CrearPlantillaFormularioDto,
   ): Promise<RespuestaPlantillaFormularioDto> {
     this.asegurarClavesCamposUnicas(dto.campos);
-    await this.validarAutocompletado(
+    const fase = dto.fase ?? FaseFormulario.EJECUCION;
+    this.asegurarSinPlanSiLineaBase(fase, dto.procesoIds, dto.subactividadIds);
+    const camposDto = await this.prepararCampos(
       dto.tipoPlantilla ?? TipoPlantilla.INDIVIDUAL,
+      fase,
       dto.campos,
     );
     const procesos = await this.resolverProcesos(dto.procesoIds);
@@ -118,6 +192,7 @@ export class PlantillasFormularioService {
           version: dto.version ?? 1,
           estaActivo: false,
           tipoPlantilla: dto.tipoPlantilla ?? TipoPlantilla.INDIVIDUAL,
+          fase,
           procesos,
           subactividades,
           usuarios,
@@ -125,7 +200,7 @@ export class PlantillasFormularioService {
 
         const guardada = await manager.save(PlantillaFormulario, plantilla);
 
-        const campos = dto.campos.map((campoDto, indice) =>
+        const campos = camposDto.map((campoDto, indice) =>
           manager.create(CampoFormulario, {
             etiqueta: campoDto.etiqueta,
             clave: campoDto.clave,
@@ -135,6 +210,7 @@ export class PlantillasFormularioService {
             orden: campoDto.orden ?? indice,
             reglasValidacion: campoDto.reglasValidacion ?? null,
             autocompletar: campoDto.autocompletar ?? null,
+            vincularBeneficiario: campoDto.vincularBeneficiario ?? null,
             plantillaFormulario: { id: guardada.id },
           }),
         );
@@ -149,7 +225,12 @@ export class PlantillasFormularioService {
 
   async listarTodas(): Promise<RespuestaPlantillaFormularioDto[]> {
     const plantillas = await this.plantillaRepository.find({
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
       order: { nombre: 'ASC' },
     });
 
@@ -176,10 +257,25 @@ export class PlantillasFormularioService {
       throw new NotFoundException(`Plantilla ${id} no encontrada`);
     }
 
-    await this.validarAutocompletado(
-      dto.tipoPlantilla ?? plantilla.tipoPlantilla,
-      dto.campos ?? plantilla.campos ?? [],
-    );
+    const fase = dto.fase ?? plantilla.fase;
+    if (fase !== plantilla.fase) {
+      await this.asegurarFaseCambiable(id);
+    }
+    this.asegurarSinPlanSiLineaBase(fase, dto.procesoIds, dto.subactividadIds);
+    const camposDto = dto.campos
+      ? await this.prepararCampos(
+          dto.tipoPlantilla ?? plantilla.tipoPlantilla,
+          fase,
+          dto.campos,
+        )
+      : undefined;
+    if (!camposDto) {
+      await this.prepararCampos(
+        dto.tipoPlantilla ?? plantilla.tipoPlantilla,
+        fase,
+        plantilla.campos ?? [],
+      );
+    }
 
     const subactividades = dto.subactividadIds
       ? await this.resolverSubactividades(dto.subactividadIds)
@@ -197,14 +293,15 @@ export class PlantillasFormularioService {
         nombre: dto.nombre ?? plantilla.nombre,
         descripcion: dto.descripcion ?? plantilla.descripcion,
         tipoPlantilla: dto.tipoPlantilla ?? plantilla.tipoPlantilla,
+        fase,
         procesos,
         subactividades,
         usuarios,
       });
 
-      if (dto.campos) {
+      if (camposDto) {
         const idsExistentes = plantilla.campos.map((c) => c.id);
-        const idsConservados = dto.campos
+        const idsConservados = camposDto
           .map((c) => c.id)
           .filter((cid): cid is string => Boolean(cid));
 
@@ -216,7 +313,7 @@ export class PlantillasFormularioService {
           await manager.delete(CampoFormulario, idsAEliminar);
         }
 
-        for (const [indice, campoDto] of dto.campos.entries()) {
+        for (const [indice, campoDto] of camposDto.entries()) {
           const datosCampo = {
             etiqueta: campoDto.etiqueta,
             clave: campoDto.clave,
@@ -226,6 +323,7 @@ export class PlantillasFormularioService {
             orden: campoDto.orden ?? indice,
             reglasValidacion: campoDto.reglasValidacion ?? null,
             autocompletar: campoDto.autocompletar ?? null,
+            vincularBeneficiario: campoDto.vincularBeneficiario ?? null,
           };
 
           if (campoDto.id) {
@@ -257,6 +355,7 @@ export class PlantillasFormularioService {
       throw new NotFoundException(`Plantilla ${id} no encontrada`);
     }
 
+    this.asegurarSinPlanSiLineaBase(plantilla.fase, procesoIds);
     const procesos = await this.resolverProcesos(procesoIds);
     await this.plantillaRepository.save({ id, procesos });
     return this.obtenerPlantilla(id);
@@ -267,7 +366,12 @@ export class PlantillasFormularioService {
   ): Promise<RespuestaPlantillaFormularioDto[]> {
     const plantillas = await this.plantillaRepository.find({
       where: { procesos: { id: procesoId } },
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
       order: { version: 'DESC' },
     });
 
@@ -280,7 +384,12 @@ export class PlantillasFormularioService {
     await this.asegurarProceso(procesoId);
     const plantillas = await this.plantillaRepository.find({
       where: { procesos: { id: procesoId } },
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
       order: { nombre: 'ASC' },
     });
 
@@ -333,6 +442,8 @@ export class PlantillasFormularioService {
       throw new NotFoundException(`Plantilla ${id} no encontrada`);
     }
 
+    this.asegurarSinPlanSiLineaBase(plantilla.fase, undefined, subactividadIds);
+
     const subactividades = await this.resolverSubactividades(subactividadIds);
 
     await this.plantillaRepository.save({ id, subactividades });
@@ -350,6 +461,12 @@ export class PlantillasFormularioService {
 
     if (!plantilla) {
       throw new NotFoundException(`Plantilla ${id} no encontrada`);
+    }
+
+    if (plantilla.fase === FaseFormulario.LINEA_BASE && usuarioIds.length) {
+      throw new BadRequestException(
+        'Un formulario de línea base se responde en jornadas de línea base, no se asigna directo a usuarios.',
+      );
     }
 
     const usuarios = await this.resolverUsuarios(usuarioIds);
@@ -376,7 +493,12 @@ export class PlantillasFormularioService {
   ): Promise<PlantillaFormulario[]> {
     return this.plantillaRepository.find({
       where: { procesos: { id: procesoId }, estaActivo: true },
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
       order: { nombre: 'ASC' },
     });
   }
@@ -387,7 +509,12 @@ export class PlantillasFormularioService {
     if (!procesoIds.length) return [];
     return this.plantillaRepository.find({
       where: { procesos: { id: In(procesoIds) }, estaActivo: true },
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
       order: { nombre: 'ASC' },
     });
   }
@@ -426,9 +553,7 @@ export class PlantillasFormularioService {
       .getMany();
 
     const ids = [...new Set(plantillas.map((p) => p.id))];
-    const deduplicadas = ids.map(
-      (id) => plantillas.find((p) => p.id === id)!,
-    );
+    const deduplicadas = ids.map((id) => plantillas.find((p) => p.id === id)!);
 
     return deduplicadas.map((p) => aRespuestaPlantilla(p));
   }
@@ -472,7 +597,7 @@ export class PlantillasFormularioService {
         .where('j.id = :jornadaId', { jornadaId })
         .andWhere(
           '(EXISTS (SELECT 1 FROM jornada_equipo je WHERE je.jornada_id = j.id AND je.usuario_id = :usuarioId)' +
-          ' OR EXISTS (SELECT 1 FROM proyecto_personal pp WHERE pp.proyecto_id = j.proyecto_id AND pp.usuario_id = :usuarioId))',
+            ' OR EXISTS (SELECT 1 FROM proyecto_personal pp WHERE pp.proyecto_id = j.proyecto_id AND pp.usuario_id = :usuarioId))',
           { usuarioId: usuario.id },
         )
         .getCount();
@@ -512,7 +637,9 @@ export class PlantillasFormularioService {
     return plantillas.map((p) => aRespuestaPlantilla(p));
   }
 
-  async publicar(plantillaId: string): Promise<RespuestaPlantillaFormularioDto> {
+  async publicar(
+    plantillaId: string,
+  ): Promise<RespuestaPlantillaFormularioDto> {
     const plantilla = await this.plantillaRepository.findOne({
       where: { id: plantillaId },
       relations: { campos: true },
@@ -660,14 +787,27 @@ export class PlantillasFormularioService {
     plantillaId: string | null,
     tipo: TipoPlantilla,
   ): Promise<void> {
+    if (plantillaId) {
+      const elegida = await this.plantillaRepository.findOne({
+        where: { id: plantillaId },
+        select: { id: true, fase: true },
+      });
+      if (elegida) this.asegurarSinPlanSiLineaBase(elegida.fase, [procesoId]);
+    }
+
     const vinculadas = await this.plantillaRepository.find({
       where: { procesos: { id: procesoId }, tipoPlantilla: tipo },
       relations: { procesos: true },
     });
 
     for (const plantilla of vinculadas) {
-      const restantes = (plantilla.procesos ?? []).filter((p) => p.id !== procesoId);
-      await this.plantillaRepository.save({ id: plantilla.id, procesos: restantes });
+      const restantes = (plantilla.procesos ?? []).filter(
+        (p) => p.id !== procesoId,
+      );
+      await this.plantillaRepository.save({
+        id: plantilla.id,
+        procesos: restantes,
+      });
     }
 
     if (!plantillaId) return;
@@ -700,7 +840,12 @@ export class PlantillasFormularioService {
   ): Promise<RespuestaPlantillaFormularioDto> {
     const plantilla = await this.plantillaRepository.findOne({
       where: { id },
-      relations: { campos: true, procesos: true, subactividades: true, usuarios: true },
+      relations: {
+        campos: true,
+        procesos: true,
+        subactividades: true,
+        usuarios: true,
+      },
     });
 
     if (!plantilla) {

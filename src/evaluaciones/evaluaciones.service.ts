@@ -1,3 +1,4 @@
+import { sqlSoloEjecucion } from '../jornadas/utils/fase-jornada';
 import {
   BadRequestException,
   ForbiddenException,
@@ -234,7 +235,8 @@ export class EvaluacionesService {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
       .innerJoin('jornada.tecnicoResponsable', 'tecnico')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
       .andWhere('jornada.meta_id = :metaId', { metaId })
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
@@ -541,7 +543,8 @@ export class EvaluacionesService {
       const qb = this.jornadaRepository
         .createQueryBuilder('jornada')
         .select('jornada.tecnico_responsable_id', 'usuarioId')
-        .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+        .where(sqlSoloEjecucion('jornada'))
+        .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
         .andWhere('jornada.tecnico_responsable_id IN (:...usuarioIds)', {
           usuarioIds,
         })
@@ -585,7 +588,8 @@ export class EvaluacionesService {
         .innerJoin('envio.jornada', 'jornada')
         .select('envio.usuario_id', 'usuarioId')
         .addSelect('COUNT(*)', 'total')
-        .where('envio.usuario_id IN (:...usuarioIds)', { usuarioIds })
+        .where(sqlSoloEjecucion('jornada'))
+        .andWhere('envio.usuario_id IN (:...usuarioIds)', { usuarioIds })
         .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
         .andWhere('envio.enviado_en >= :inicio', { inicio })
         .andWhere('envio.enviado_en <= :fin', { fin })
@@ -596,7 +600,8 @@ export class EvaluacionesService {
         .innerJoin(Jornada, 'jornada', 'jornada.id = rechazo.jornada_id')
         .select('jornada.tecnico_responsable_id', 'usuarioId')
         .addSelect('COUNT(*)', 'total')
-        .where('jornada.tecnico_responsable_id IN (:...usuarioIds)', {
+        .where(sqlSoloEjecucion('jornada'))
+        .andWhere('jornada.tecnico_responsable_id IN (:...usuarioIds)', {
           usuarioIds,
         })
         .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
@@ -692,7 +697,8 @@ export class EvaluacionesService {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
       .innerJoin('jornada.tecnicoResponsable', 'tecnico')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
       })
@@ -717,7 +723,8 @@ export class EvaluacionesService {
     const qb = this.rejectionRepository
       .createQueryBuilder('rechazo')
       .innerJoin(Jornada, 'jornada', 'jornada.id = rechazo.jornada_id')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
       });
@@ -979,7 +986,8 @@ export class EvaluacionesService {
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
       .andWhere('jornada.meta_id = :metaId', { metaId })
       .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.estado != :cancelada', {
@@ -1001,7 +1009,8 @@ export class EvaluacionesService {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
       .innerJoin('jornada.beneficiarios', 'b')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
       .andWhere('jornada.meta_id = :metaId', { metaId })
       .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.estado != :cancelada', {
@@ -1021,7 +1030,8 @@ export class EvaluacionesService {
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
       });
@@ -1041,7 +1051,8 @@ export class EvaluacionesService {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
       .innerJoin('jornada.beneficiarios', 'b')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
       })
@@ -1062,7 +1073,8 @@ export class EvaluacionesService {
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
-      .where('jornada.proyecto_id = :proyectoId', { proyectoId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.proyecto_id = :proyectoId', { proyectoId })
       .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.vereda_id IS NOT NULL')
       .andWhere('jornada.estado != :cancelada', {
@@ -1081,7 +1093,8 @@ export class EvaluacionesService {
   ): Promise<number> {
     const qb = this.jornadaRepository
       .createQueryBuilder('jornada')
-      .where('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
+      .where(sqlSoloEjecucion('jornada'))
+      .andWhere('jornada.tecnico_responsable_id = :usuarioId', { usuarioId })
       .andWhere('jornada.vereda_id IS NOT NULL')
       .andWhere('jornada.estado != :cancelada', {
         cancelada: EstadoJornada.CANCELADA,
