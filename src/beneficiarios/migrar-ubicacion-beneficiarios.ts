@@ -178,26 +178,34 @@ async function main(): Promise<void> {
     if (aplicar && actualizaciones.length) {
       await client.query('BEGIN');
       try {
-        for (const a of actualizaciones) {
-          await client.query(
-            `UPDATE beneficiarios
-               SET latitud = $2, longitud = $3,
-                   altitud = COALESCE(altitud, $4),
-                   ubicacion_fuente = 'EXCEL',
-                   ubicacion_capturada_en = now()
-             WHERE id = $1 AND latitud IS NULL`,
-            [a.id, a.latitud, a.longitud, a.altitud],
-          );
-          if (limpiar) {
-            await client.query(
-              `UPDATE beneficiarios
-                 SET datos_adicionales = datos_adicionales - $2::text - $3::text - $4::text
-               WHERE id = $1`,
-              [a.id, CLAVE_LAT, CLAVE_LNG, CLAVE_ALT],
-            );
-          }
-        }
+        // Un solo UPDATE en lote: cientos de viajes contra una BD remota
+        // pueden cortar la conexión a mitad de la transacción.
+        const resultado = await client.query(
+          `UPDATE beneficiarios b
+              SET latitud = v.latitud,
+                  longitud = v.longitud,
+                  altitud = COALESCE(b.altitud, v.altitud),
+                  ubicacion_fuente = 'EXCEL',
+                  ubicacion_capturada_en = now(),
+                  datos_adicionales = CASE WHEN $5::boolean
+                    THEN b.datos_adicionales - $6::text - $7::text - $8::text
+                    ELSE b.datos_adicionales END
+             FROM unnest($1::uuid[], $2::float8[], $3::float8[], $4::float8[])
+                  AS v(id, latitud, longitud, altitud)
+            WHERE b.id = v.id AND b.latitud IS NULL`,
+          [
+            actualizaciones.map((a) => a.id),
+            actualizaciones.map((a) => a.latitud),
+            actualizaciones.map((a) => a.longitud),
+            actualizaciones.map((a) => a.altitud),
+            limpiar,
+            CLAVE_LAT,
+            CLAVE_LNG,
+            CLAVE_ALT,
+          ],
+        );
         await client.query('COMMIT');
+        console.log(`Filas actualizadas en BD: ${resultado.rowCount}`);
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
