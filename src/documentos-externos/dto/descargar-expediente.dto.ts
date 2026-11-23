@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsOptional,
@@ -37,4 +39,15 @@ export class DescargarExpedienteDto {
   @IsOptional()
   @IsBoolean()
   incluirExternos?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Descargar exactamente estas jornadas del proyecto (las que quedaron en la pantalla de jornadas tras filtrar). Si se envía, se ignoran los demás filtros y los documentos externos.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @IsUUID('all', { each: true })
+  jornadaIds?: string[];
 }

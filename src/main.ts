@@ -62,6 +62,13 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    // El panel lee el nombre del archivo y el tamaño estimado del ZIP.
+    exposedHeaders: [
+      'Content-Disposition',
+      'X-Expediente-Archivos',
+      'X-Expediente-Jornadas',
+      'X-Expediente-Bytes',
+    ],
   });
 
   const rutaSubidas =
