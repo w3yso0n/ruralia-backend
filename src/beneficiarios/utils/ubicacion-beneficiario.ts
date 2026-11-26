@@ -8,7 +8,8 @@ import type { Beneficiario } from '../entities/beneficiario.entity';
  * Prioridad de fuentes:
  *   GPS (campo GPS de un formulario de levantamiento) > MANUAL > EXCEL
  * - Un GPS siempre entra, salvo que ya haya un GPS más confiable: una lectura
- *   en vivo no la reemplaza una "última conocida", ni una captura más vieja.
+ *   confiable (en vivo y de ±50 m o mejor) no la reemplaza una de precisión
+ *   baja ni una "última conocida", ni una captura más vieja.
  * - El Excel nunca pisa una ubicación tomada por GPS.
  * - La corrección manual (ficha o revisión en Territorio) siempre entra:
  *   es una decisión deliberada de una persona.
@@ -26,6 +27,27 @@ const ORIGENES_GPS: OrigenGps[] = [
   'ULTIMA_REGISTRADA',
 ];
 
+/** Mismos valores que `UbicacionGps.calidad` de la app de campo. */
+export type CalidadGps = 'PRECISA' | 'EN_RANGO' | 'BAJA';
+
+/** Mismos umbrales que la app de campo (`ruralia-expo/src/lib/ubicacion.ts`). */
+export const PRECISION_GPS_OBJETIVO_M = 10;
+export const PRECISION_GPS_MAXIMA_M = 50;
+
+/**
+ * Calidad de un punto GPS. Las capturas anteriores al campo `calidad` se
+ * deducen de la precisión y el origen.
+ */
+export function calidadGps(
+  precisionMetros: number | null | undefined,
+  origen: OrigenGps | null | undefined = 'GPS',
+): CalidadGps {
+  if ((origen ?? 'GPS') !== 'GPS' || precisionMetros == null) return 'BAJA';
+  if (precisionMetros <= PRECISION_GPS_OBJETIVO_M) return 'PRECISA';
+  if (precisionMetros <= PRECISION_GPS_MAXIMA_M) return 'EN_RANGO';
+  return 'BAJA';
+}
+
 /** Valor de un campo GPS de formulario, tal como lo envía la app. */
 export interface PuntoGpsFormulario {
   latitud: number;
@@ -33,6 +55,7 @@ export interface PuntoGpsFormulario {
   precisionMetros: number | null;
   capturadoEn: Date | null;
   origen: OrigenGps;
+  calidad: CalidadGps;
 }
 
 export interface NuevaUbicacion {
@@ -85,12 +108,19 @@ export function leerPuntoGps(valor: unknown): PuntoGpsFormulario | null {
     ? (v.origen as OrigenGps)
     : 'GPS'; // capturas anteriores al campo `origen` eran lectura en vivo
 
+  const precisionMetros = precision !== null && precision >= 0 ? precision : null;
+  const calidad: CalidadGps =
+    v.calidad === 'PRECISA' || v.calidad === 'EN_RANGO' || v.calidad === 'BAJA'
+      ? v.calidad
+      : calidadGps(precisionMetros, origen);
+
   return {
     latitud,
     longitud,
-    precisionMetros: precision !== null && precision >= 0 ? precision : null,
+    precisionMetros,
     capturadoEn,
     origen,
+    calidad,
   };
 }
 
@@ -101,17 +131,22 @@ export function gpsDebeReemplazar(
     | 'latitud'
     | 'ubicacionFuente'
     | 'ubicacionOrigenGps'
+    | 'ubicacionPrecisionMetros'
     | 'ubicacionCapturadaEn'
   >,
   nuevo: PuntoGpsFormulario,
 ): boolean {
   if (actual.latitud === null || actual.ubicacionFuente !== 'GPS') return true;
-  const actualEnVivo =
-    actual.ubicacionOrigenGps !== 'ULTIMA_CONOCIDA' &&
-    actual.ubicacionOrigenGps !== 'ULTIMA_REGISTRADA';
-  const nuevoEnVivo = nuevo.origen === 'GPS';
-  if (actualEnVivo && !nuevoEnVivo) return false;
-  if (!actualEnVivo && nuevoEnVivo) return true;
+  const actualConfiable =
+    calidadGps(
+      actual.ubicacionPrecisionMetros == null
+        ? null
+        : Number(actual.ubicacionPrecisionMetros),
+      actual.ubicacionOrigenGps,
+    ) !== 'BAJA';
+  const nuevoConfiable = nuevo.calidad !== 'BAJA';
+  if (actualConfiable && !nuevoConfiable) return false;
+  if (!actualConfiable && nuevoConfiable) return true;
   if (actual.ubicacionCapturadaEn && nuevo.capturadoEn) {
     return nuevo.capturadoEn.getTime() >= actual.ubicacionCapturadaEn.getTime();
   }

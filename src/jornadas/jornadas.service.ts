@@ -76,6 +76,7 @@ import {
 } from './utils/serializar-jornada';
 import { sumarEjecutadoPorMeta } from './utils/calcular-ejecutado-meta';
 import { generarPdfAsistenciaJornada } from './utils/generar-pdf-asistencia';
+import { leerPuntoGps } from '../beneficiarios/utils/ubicacion-beneficiario';
 
 const TRANSICIONES_VALIDAS: Partial<Record<EstadoJornada, EstadoJornada[]>> = {
   [EstadoJornada.PLANIFICADA]: [
@@ -1853,20 +1854,15 @@ export class JornadasService {
           .filter(Boolean)
           .join(', ');
       }
-      const ubicacion = resp.valorJson as {
-        latitud?: unknown;
-        longitud?: unknown;
-        precisionMetros?: unknown;
-      };
-      if (
-        typeof ubicacion.latitud === 'number' &&
-        typeof ubicacion.longitud === 'number'
-      ) {
-        const precision =
-          typeof ubicacion.precisionMetros === 'number'
-            ? ` (±${Math.round(ubicacion.precisionMetros)} m)`
-            : '';
-        return `${ubicacion.latitud.toFixed(6)}, ${ubicacion.longitud.toFixed(6)}${precision}`;
+      const punto = leerPuntoGps(resp.valorJson);
+      if (punto) {
+        const partes: string[] = [];
+        if (punto.precisionMetros !== null) {
+          partes.push(`±${Math.round(punto.precisionMetros)} m`);
+        }
+        if (punto.calidad === 'BAJA') partes.push('precisión baja');
+        const detalle = partes.length ? ` (${partes.join(', ')})` : '';
+        return `${punto.latitud.toFixed(6)}, ${punto.longitud.toFixed(6)}${detalle}`;
       }
       return JSON.stringify(resp.valorJson);
     }
