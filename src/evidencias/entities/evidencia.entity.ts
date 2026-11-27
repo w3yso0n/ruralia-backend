@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -13,6 +14,7 @@ import { TipoEvidencia } from '../enums/tipo-evidencia.enum';
 
 @Entity('evidencias')
 @Unique('UQ_evidencia_dispositivo_id_local', ['dispositivoId', 'idLocal'])
+@Index('IDX_evidencias_jornada_id', ['jornada'])
 export class Evidencia {
   @PrimaryGeneratedColumn('uuid')
   id: string;
